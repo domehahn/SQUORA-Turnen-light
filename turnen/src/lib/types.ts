@@ -40,3 +40,27 @@ export interface ClubMember {
   name: string | null;
   email: string;
 }
+
+export type MoveRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface MoveRequest {
+  id: string;
+  childId: string;
+  childName: string;
+  fromGroupId: string | null;
+  fromGroupName: string | null;
+  toGroupId: string;
+  toGroupName: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  status: MoveRequestStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface MoveChildResponse {
+  status: "moved" | "pending";
+  groupId?: string;
+  requestId?: string;
+}

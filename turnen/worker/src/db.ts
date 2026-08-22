@@ -7,6 +7,9 @@ import type {
   ClubRow,
   Group,
   GroupRow,
+  MoveRequestDetail,
+  MoveRequestRow,
+  MoveRequestStatus,
   User,
   UserRow,
 } from "./types";
@@ -18,6 +21,23 @@ type GroupOwnership = { owner_id: string | null; club_id: string | null };
 // ohne Verein ist (Bestandsschutz für Gruppen aus der Zeit vor Vereinen).
 export function canWriteGroup(group: GroupOwnership, userId: string): boolean {
   return group.owner_id === userId || (group.owner_id === null && group.club_id === null);
+}
+
+// Volle Lebensjahre am heutigen Tag - dieselbe Logik wie src/lib/age.ts im
+// Frontend, hier serverseitig für die Altersprüfung beim Verschieben nötig.
+function calculateAgeYears(birthDate: string, atDate: Date = new Date()): number {
+  const [year, month, day] = birthDate.split("-").map(Number);
+  let age = atDate.getFullYear() - year;
+  const hadBirthdayThisYear =
+    atDate.getMonth() + 1 > month || (atDate.getMonth() + 1 === month && atDate.getDate() >= day);
+  if (!hadBirthdayThisYear) age -= 1;
+  return age;
+}
+
+// `maxAge` ist exklusiv zu verstehen, siehe src/lib/age.ts#groupForAge.
+export function ageFitsGroup(birthDate: string, group: { min_age: number; max_age: number }): boolean {
+  const age = calculateAgeYears(birthDate);
+  return age >= group.min_age && age < group.max_age;
 }
 
 function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | null }): Group {
@@ -325,4 +345,106 @@ export async function saveAttendance(
     );
   }
   await db.batch(statements);
+}
+
+// --- Gruppenwechsel / Verschiebe-Anfragen ---------------------------------
+
+export async function moveChildToGroup(db: D1Database, childId: string, groupId: string): Promise<void> {
+  await db.prepare("UPDATE children SET group_id = ? WHERE id = ?").bind(groupId, childId).run();
+}
+
+export async function getPendingMoveRequestForChild(db: D1Database, childId: string): Promise<MoveRequestRow | null> {
+  return db
+    .prepare("SELECT * FROM move_requests WHERE child_id = ? AND status = 'pending'")
+    .bind(childId)
+    .first<MoveRequestRow>();
+}
+
+export async function getMoveRequestRowById(db: D1Database, id: string): Promise<MoveRequestRow | null> {
+  return db.prepare("SELECT * FROM move_requests WHERE id = ?").bind(id).first<MoveRequestRow>();
+}
+
+export async function createMoveRequest(
+  db: D1Database,
+  input: { childId: string; fromGroupId: string | null; toGroupId: string; requestedBy: string }
+): Promise<MoveRequestRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO move_requests (id, child_id, from_group_id, to_group_id, requested_by) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(id, input.childId, input.fromGroupId, input.toGroupId, input.requestedBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM move_requests WHERE id = ?").bind(id).first<MoveRequestRow>();
+  return row as MoveRequestRow;
+}
+
+export async function setMoveRequestStatus(
+  db: D1Database,
+  id: string,
+  status: MoveRequestStatus,
+  reviewedBy: string | null
+): Promise<void> {
+  await db
+    .prepare("UPDATE move_requests SET status = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?")
+    .bind(status, reviewedBy, id)
+    .run();
+}
+
+type MoveRequestJoinRow = MoveRequestRow & {
+  child_first_name: string;
+  child_last_name: string;
+  from_group_name: string | null;
+  to_group_name: string;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+};
+
+function rowToMoveRequestDetail(row: MoveRequestJoinRow): MoveRequestDetail {
+  return {
+    id: row.id,
+    childId: row.child_id,
+    childName: `${row.child_first_name} ${row.child_last_name}`,
+    fromGroupId: row.from_group_id,
+    fromGroupName: row.from_group_name,
+    toGroupId: row.to_group_id,
+    toGroupName: row.to_group_name,
+    requestedBy: row.requested_by,
+    requestedByName: row.requested_by_name ?? row.requested_by_email ?? null,
+    status: row.status,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    createdAt: row.created_at,
+  };
+}
+
+const MOVE_REQUEST_DETAIL_SELECT = `
+  SELECT mr.*,
+         c.first_name as child_first_name, c.last_name as child_last_name,
+         fg.name as from_group_name, tg.name as to_group_name,
+         ru.name as requested_by_name, ru.email as requested_by_email
+  FROM move_requests mr
+  JOIN children c ON c.id = mr.child_id
+  JOIN groups tg ON tg.id = mr.to_group_id
+  LEFT JOIN groups fg ON fg.id = mr.from_group_id
+  LEFT JOIN users ru ON ru.id = mr.requested_by
+`;
+
+// Offene Anfragen, die auf die Freigabe des aufrufenden Nutzers warten (er
+// besitzt die Zielgruppe).
+export async function listIncomingMoveRequests(db: D1Database, userId: string): Promise<MoveRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${MOVE_REQUEST_DETAIL_SELECT} WHERE mr.status = 'pending' AND tg.owner_id = ?1 ORDER BY mr.created_at ASC`)
+    .bind(userId)
+    .all<MoveRequestJoinRow>();
+  return results.map(rowToMoveRequestDetail);
+}
+
+// Vom aufrufenden Nutzer gestellte Anfragen (alle Status, neueste zuerst).
+export async function listOutgoingMoveRequests(db: D1Database, userId: string): Promise<MoveRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${MOVE_REQUEST_DETAIL_SELECT} WHERE mr.requested_by = ?1 ORDER BY mr.created_at DESC LIMIT 50`)
+    .bind(userId)
+    .all<MoveRequestJoinRow>();
+  return results.map(rowToMoveRequestDetail);
 }

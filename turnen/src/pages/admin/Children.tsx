@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Child, Group } from "../../lib/types";
+import type { Child, Group, MoveChildResponse, MoveRequest } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import {
   calculateAgeYears,
@@ -48,7 +48,11 @@ export default function Children() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [moveSelection, setMoveSelection] = useState<Record<string, string>>({});
+  const [incomingRequests, setIncomingRequests] = useState<MoveRequest[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<MoveRequest[]>([]);
 
   async function load() {
     setLoading(true);
@@ -66,9 +70,72 @@ export default function Children() {
     }
   }
 
+  async function loadMoveRequests() {
+    try {
+      const [incoming, outgoing] = await Promise.all([
+        api.get<MoveRequest[]>("/api/move-requests/incoming"),
+        api.get<MoveRequest[]>("/api/move-requests/outgoing"),
+      ]);
+      setIncomingRequests(incoming);
+      setOutgoingRequests(outgoing.filter((r) => r.status === "pending"));
+    } catch {
+      // Anfragen sind ein Zusatzfeature - ein Ladefehler soll die restliche
+      // Seite nicht blockieren.
+    }
+  }
+
   useEffect(() => {
     load();
+    loadMoveRequests();
   }, []);
+
+  async function handleMove(childId: string, toGroupId: string) {
+    if (!toGroupId) return;
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await api.post<MoveChildResponse>(`/api/children/${childId}/move`, { toGroupId });
+      if (res.status === "pending") {
+        const targetName = groups.find((g) => g.id === toGroupId)?.name ?? "die Zielgruppe";
+        setInfo(`Kind erfüllt die Altersvoraussetzung nicht – Anfrage an den Turnleiter von „${targetName}“ gesendet.`);
+      }
+      await Promise.all([load(), loadMoveRequests()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Verschieben");
+    } finally {
+      setMoveSelection((prev) => ({ ...prev, [childId]: "" }));
+    }
+  }
+
+  async function handleApprove(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/move-requests/${id}/approve`, {});
+      await Promise.all([load(), loadMoveRequests()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
+    }
+  }
+
+  async function handleReject(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/move-requests/${id}/reject`, {});
+      await loadMoveRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
+    }
+  }
+
+  async function handleCancelRequest(id: string) {
+    setError(null);
+    try {
+      await api.del(`/api/move-requests/${id}`);
+      await loadMoveRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zurückziehen");
+    }
+  }
 
   function startEdit(child: Child) {
     setEditingId(child.id);
@@ -180,6 +247,64 @@ export default function Children() {
         </div>
       )}
 
+      {(incomingRequests.length > 0 || outgoingRequests.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {incomingRequests.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+              <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Wartet auf deine Freigabe ({incomingRequests.length})
+              </h3>
+              <ul className="space-y-2 text-sm text-amber-900 dark:text-amber-200">
+                {incomingRequests.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {r.childName}: {r.fromGroupName ?? "keine Gruppe"} → {r.toGroupName}
+                      {r.requestedByName ? ` (angefragt von ${r.requestedByName})` : ""}
+                    </span>
+                    <span className="flex gap-2">
+                      <button
+                        onClick={() => handleApprove(r.id)}
+                        className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                      >
+                        Freigeben
+                      </button>
+                      <button
+                        onClick={() => handleReject(r.id)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                      >
+                        Ablehnen
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {outgoingRequests.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Eigene offene Anfragen ({outgoingRequests.length})
+              </h3>
+              <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {outgoingRequests.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {r.childName}: {r.fromGroupName ?? "keine Gruppe"} → {r.toGroupName} · wartet auf Freigabe
+                    </span>
+                    <button
+                      onClick={() => handleCancelRequest(r.id)}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      Zurückziehen
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex-1 min-w-[140px]">
           <FloatingInput
@@ -238,6 +363,7 @@ export default function Children() {
       </form>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
+      {info && <p className="text-sm text-amber-700 dark:text-amber-400">{info}</p>}
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : (
@@ -250,6 +376,7 @@ export default function Children() {
                 <th className="px-4 py-2 font-medium">Alter</th>
                 <th className="px-4 py-2 font-medium">Gruppe</th>
                 <th className="px-4 py-2 font-medium">Wechsel zur nächsten Gruppe</th>
+                <th className="px-4 py-2 font-medium">Verschieben</th>
                 <th className="px-4 py-2 font-medium"></th>
               </tr>
             </thead>
@@ -268,6 +395,9 @@ export default function Children() {
                     ? `${target.name} ab ${formatMonthYear(switchDate)}`
                     : `ab ${formatMonthYear(switchDate)}`;
                 }
+
+                const moveTargets = groups.filter((g) => g.id !== child.groupId);
+                const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
 
                 return (
                   <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
@@ -288,6 +418,34 @@ export default function Children() {
                       )}
                     </td>
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{switchLabel}</td>
+                    <td className="px-4 py-2">
+                      {!child.canEdit ? (
+                        <span className="text-xs text-slate-300 dark:text-slate-600">–</span>
+                      ) : hasOpenRequest ? (
+                        <span className="text-xs text-amber-600 dark:text-amber-400">wartet auf Freigabe</span>
+                      ) : (
+                        <select
+                          value={moveSelection[child.id] ?? ""}
+                          onChange={(e) => {
+                            const groupId = e.target.value;
+                            setMoveSelection((prev) => ({ ...prev, [child.id]: groupId }));
+                            handleMove(child.id, groupId);
+                          }}
+                          className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          <option value="">Verschieben nach…</option>
+                          {moveTargets.map((g) => {
+                            const fits = age >= g.minAge && age < g.maxAge;
+                            return (
+                              <option key={g.id} value={g.id}>
+                                {g.name}
+                                {fits ? "" : " (benötigt Freigabe)"}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       {child.canEdit ? (
                         <>
@@ -312,7 +470,7 @@ export default function Children() {
               })}
               {children.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={7} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
                     Noch keine Kinder angelegt.
                   </td>
                 </tr>

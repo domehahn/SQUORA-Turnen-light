@@ -91,3 +91,33 @@ export interface AttendanceEntryRow {
   child_id: string;
   present: number;
 }
+
+export type MoveRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface MoveRequestRow {
+  id: string;
+  child_id: string;
+  from_group_id: string | null;
+  to_group_id: string;
+  requested_by: string | null;
+  status: MoveRequestStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface MoveRequestDetail {
+  id: string;
+  childId: string;
+  childName: string;
+  fromGroupId: string | null;
+  fromGroupName: string | null;
+  toGroupId: string;
+  toGroupName: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  status: MoveRequestStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}

@@ -289,6 +289,103 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
   return c.body(null, 204);
 });
 
+// Ein Kind in eine andere Gruppe verschieben. Erfüllt es die
+// Altersvoraussetzung der Zielgruppe (oder gehört die Zielgruppe dem
+// anfragenden Nutzer selbst bzw. ist herrenlos), wird sofort verschoben.
+// Andernfalls entsteht eine Verschiebe-Anfrage, die der Turnleiter der
+// Zielgruppe erst noch freigeben muss.
+app.post("/api/children/:id/move", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const toGroupId = validId(body?.toGroupId);
+  if (!id || !toGroupId) return c.json({ error: "Ungültige Anfrage" }, 400);
+
+  const child = await db.getChildRowById(c.env.DB, id);
+  if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
+  if (!(await isChildWritable(c.env.DB, child, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+  if (child.group_id === toGroupId) return c.json({ error: "Kind ist bereits in dieser Gruppe" }, 400);
+
+  const targetGroup = await db.getGroupRowById(c.env.DB, toGroupId);
+  if (!targetGroup) return c.json({ error: "Zielgruppe nicht gefunden" }, 404);
+
+  const existingPending = await db.getPendingMoveRequestForChild(c.env.DB, id);
+  if (existingPending) return c.json({ error: "Für dieses Kind liegt bereits eine offene Verschiebe-Anfrage vor" }, 409);
+
+  const fits = db.ageFitsGroup(child.birth_date, targetGroup);
+  const targetOwnedByRequester = targetGroup.owner_id === c.get("userId");
+  const targetUnclaimed = targetGroup.owner_id === null;
+
+  if (fits || targetOwnedByRequester || targetUnclaimed) {
+    await db.moveChildToGroup(c.env.DB, id, toGroupId);
+    return c.json({ status: "moved", groupId: toGroupId });
+  }
+
+  const request = await db.createMoveRequest(c.env.DB, {
+    childId: id,
+    fromGroupId: child.group_id,
+    toGroupId,
+    requestedBy: c.get("userId"),
+  });
+  return c.json({ status: "pending", requestId: request.id }, 202);
+});
+
+// --- Verschiebe-Anfragen ---------------------------------------------------
+
+app.get("/api/move-requests/incoming", requireAuth, async (c) => {
+  return c.json(await db.listIncomingMoveRequests(c.env.DB, c.get("userId")));
+});
+
+app.get("/api/move-requests/outgoing", requireAuth, async (c) => {
+  return c.json(await db.listOutgoingMoveRequests(c.env.DB, c.get("userId")));
+});
+
+app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getMoveRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const targetGroup = await db.getGroupRowById(c.env.DB, request.to_group_id);
+  if (!targetGroup || targetGroup.owner_id !== c.get("userId"))
+    return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  await db.moveChildToGroup(c.env.DB, request.child_id, request.to_group_id);
+  await db.setMoveRequestStatus(c.env.DB, id, "approved", c.get("userId"));
+  return c.json({ ok: true });
+});
+
+app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getMoveRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const targetGroup = await db.getGroupRowById(c.env.DB, request.to_group_id);
+  if (!targetGroup || targetGroup.owner_id !== c.get("userId"))
+    return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  await db.setMoveRequestStatus(c.env.DB, id, "rejected", c.get("userId"));
+  return c.json({ ok: true });
+});
+
+app.delete("/api/move-requests/:id", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getMoveRequestRowById(c.env.DB, id);
+  if (!request) return c.body(null, 204);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.requested_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.setMoveRequestStatus(c.env.DB, id, "cancelled", c.get("userId"));
+  return c.body(null, 204);
+});
+
 // --- Anwesenheit -----------------------------------------------------------
 
 // Anwesenheit ist – anders als Gruppen/Kinder – nicht vereinsweit lesbar:
