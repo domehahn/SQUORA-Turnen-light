@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+/* Manueller Darkmode-Umschalter statt reinem prefers-color-scheme: die
+   "dark"-Klasse wird per Theme-Toggle auf <html> gesetzt/entfernt (siehe
+   src/lib/theme.ts), Default richtet sich nach dem System. */
+@custom-variant dark (&:is(.dark *));
+
+body {
+  background-image:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(15, 23, 42, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(240, 253, 244, 1) 0%, rgba(255, 255, 255, 1) 100%);
+  background-attachment: fixed;
+  background-color: #ffffff;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.04), transparent 26%),
+    linear-gradient(180deg, rgba(2, 6, 23, 1) 0%, rgba(15, 23, 42, 1) 100%);
+  background-attachment: fixed;
+  background-color: #020617;
+}

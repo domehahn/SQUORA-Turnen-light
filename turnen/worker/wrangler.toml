@@ -1,0 +1,21 @@
+# API-Worker der Turnen-App: besitzt die D1-Datenbank und beantwortet
+# /api/*-Requests. Kein eigenes öffentliches Routing - wird vom Web-Worker
+# (siehe ../wrangler.toml) per Service Binding angesprochen.
+name = "turnen-api"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "turnen"
+database_id = "60c1750c-a2c9-4036-b217-1376ea80f216"
+migrations_dir = "migrations"
+
+[vars]
+FRONTEND_URL = "https://turnen-web.squora.workers.dev"
+
+# JWT_SECRET wird NICHT hier eingetragen, sondern per Secret gesetzt:
+#   wrangler secret put JWT_SECRET
+
+[observability]
+enabled = true
