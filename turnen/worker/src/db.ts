@@ -212,6 +212,22 @@ export async function deleteGroup(db: D1Database, id: string): Promise<void> {
   await db.prepare("DELETE FROM groups WHERE id = ?").bind(id).run();
 }
 
+// Eine herrenlose Alt-Gruppe (owner_id/club_id NULL) für sich beanspruchen
+// und dem eigenen Verein zuordnen. Nur für Gruppen möglich, die noch
+// niemandem gehören - bereits zugeordnete Gruppen bleiben unangetastet.
+export async function claimGroup(
+  db: D1Database,
+  id: string,
+  ctx: { ownerId: string; ownerName: string | null; clubId: string }
+): Promise<Group | null> {
+  await db
+    .prepare("UPDATE groups SET owner_id = ?, club_id = ? WHERE id = ? AND owner_id IS NULL AND club_id IS NULL")
+    .bind(ctx.ownerId, ctx.clubId, id)
+    .run();
+  const row = await db.prepare("SELECT * FROM groups WHERE id = ?").bind(id).first<GroupRow>();
+  return row ? rowToGroup(row, { userId: ctx.ownerId, ownerName: ctx.ownerName }) : null;
+}
+
 // --- Kinder --------------------------------------------------------------
 
 // Sichtbar sind: Kinder ohne Gruppe (Alt-Bestand, weiterhin für alle offen),

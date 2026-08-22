@@ -204,6 +204,27 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   return c.json(group);
 });
 
+// Eine herrenlose Alt-Gruppe (aus der Zeit vor Vereinen) dem eigenen Verein
+// zuordnen. Danach gehört sie dem aufrufenden Nutzer und ist für andere
+// Vereinsmitglieder lesend sichtbar.
+app.post("/api/groups/:id/claim", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+
+  const existing = await db.getGroupRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (existing.owner_id !== null || existing.club_id !== null) {
+    return c.json({ error: "Gruppe ist bereits einem Turnleiter bzw. Verein zugeordnet" }, 409);
+  }
+
+  const group = await db.claimGroup(c.env.DB, id, { ownerId: c.get("userId"), ownerName: c.get("name"), clubId });
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  return c.json(group);
+});
+
 app.delete("/api/groups/:id", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);

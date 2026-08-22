@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Child, Group } from "../../lib/types";
 import { FloatingInput } from "../../components/FloatingField";
+import { useAuth } from "../../context/useAuth";
 
 type CapacityLevel = "unset" | "ok" | "warn" | "over";
 
@@ -21,6 +22,7 @@ function capacityLevel(count: number, max: number | null): CapacityLevel {
 }
 
 export default function Groups() {
+  const { clubId, clubName } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [name, setName] = useState("");
@@ -91,6 +93,16 @@ export default function Groups() {
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Löschen");
+    }
+  }
+
+  async function handleClaim(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/groups/${id}/claim`, {});
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zuordnen");
     }
   }
 
@@ -182,8 +194,15 @@ export default function Groups() {
                     </span>
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
-                    {g.canEdit ? (
+                    {g.canEdit && g.ownerId !== null ? (
                       <span className="text-xs text-slate-400 dark:text-slate-500">eigene Gruppe</span>
+                    ) : g.canEdit && g.ownerId === null ? (
+                      <span
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                        title="Noch keinem Turnleiter/Verein zugeordnet – aktuell für alle bearbeitbar"
+                      >
+                        unzugeordnet
+                      </span>
                     ) : (
                       <span
                         className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
@@ -196,6 +215,16 @@ export default function Groups() {
                   <td className="px-4 py-2 text-right">
                     {g.canEdit ? (
                       <>
+                        {g.ownerId === null && (
+                          <button
+                            onClick={() => handleClaim(g.id)}
+                            disabled={!clubId}
+                            title={clubId ? `Dieser Gruppe deinen Verein (${clubName}) zuordnen` : "Erst einem Verein beitreten, um Gruppen zuzuordnen"}
+                            className="mr-3 text-sm text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline dark:text-emerald-400 dark:disabled:text-slate-600"
+                          >
+                            Verein zuordnen
+                          </button>
+                        )}
                         <button onClick={() => startEdit(g)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
                           Bearbeiten
                         </button>
