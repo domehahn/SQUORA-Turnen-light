@@ -195,7 +195,24 @@ export default function Groups() {
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.canEdit && g.ownerId !== null ? (
-                      <span className="text-xs text-slate-400 dark:text-slate-500">eigene Gruppe</span>
+                      <span className="flex flex-col text-xs leading-tight">
+                        <span className="text-slate-400 dark:text-slate-500">eigene Gruppe</span>
+                        {g.clubId ? (
+                          <span
+                            className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                            title="Für andere Mitglieder dieses Vereins lesend sichtbar"
+                          >
+                            ✓ {g.clubId === clubId ? clubName : "Verein"}
+                          </span>
+                        ) : (
+                          <span
+                            className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                            title="Keinem Verein zugeordnet – für andere Turnleiter nicht sichtbar"
+                          >
+                            kein Verein
+                          </span>
+                        )}
+                      </span>
                     ) : g.canEdit && g.ownerId === null ? (
                       <span
                         className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
