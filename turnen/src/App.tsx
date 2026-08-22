@@ -7,6 +7,7 @@ import Groups from "./pages/admin/Groups";
 import Children from "./pages/admin/Children";
 import Attendance from "./pages/admin/Attendance";
 import Overview from "./pages/admin/Overview";
+import ClubPage from "./pages/admin/Club";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
               <Route path="kinder" element={<Children />} />
               <Route path="anwesenheit" element={<Attendance />} />
               <Route path="uebersicht" element={<Overview />} />
+              <Route path="verein" element={<ClubPage />} />
             </Route>
           </Route>
 

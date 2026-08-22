@@ -1,13 +1,32 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Group } from "../../lib/types";
+import type { Child, Group } from "../../lib/types";
 import { FloatingInput } from "../../components/FloatingField";
+
+type CapacityLevel = "unset" | "ok" | "warn" | "over";
+
+const CAPACITY_BADGE_CLASSES: Record<CapacityLevel, string> = {
+  unset: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  ok: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+  warn: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+  over: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+};
+
+function capacityLevel(count: number, max: number | null): CapacityLevel {
+  if (max === null || max === 0) return "unset";
+  const ratio = count / max;
+  if (ratio <= 1) return "ok";
+  if (ratio <= 1.15) return "warn";
+  return "over";
+}
 
 export default function Groups() {
   const [groups, setGroups] = useState<Group[]>([]);
+  const [children, setChildren] = useState<Child[]>([]);
   const [name, setName] = useState("");
   const [minAge, setMinAge] = useState("3");
   const [maxAge, setMaxAge] = useState("6");
+  const [maxChildren, setMaxChildren] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -15,7 +34,9 @@ export default function Groups() {
   async function load() {
     setLoading(true);
     try {
-      setGroups(await api.get<Group[]>("/api/groups"));
+      const [g, c] = await Promise.all([api.get<Group[]>("/api/groups"), api.get<Child[]>("/api/children")]);
+      setGroups(g);
+      setChildren(c);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
     } finally {
@@ -32,6 +53,7 @@ export default function Groups() {
     setName(g.name);
     setMinAge(String(g.minAge));
     setMaxAge(String(g.maxAge));
+    setMaxChildren(g.maxChildren != null ? String(g.maxChildren) : "");
   }
 
   function resetForm() {
@@ -39,6 +61,7 @@ export default function Groups() {
     setName("");
     setMinAge("3");
     setMaxAge("6");
+    setMaxChildren("");
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -50,6 +73,7 @@ export default function Groups() {
         minAge: Number(minAge),
         maxAge: Number(maxAge),
         sortOrder: Number(minAge),
+        maxChildren: maxChildren === "" ? null : Number(maxChildren),
       };
       if (editingId) await api.put(`/api/groups/${editingId}`, payload);
       else await api.post("/api/groups", payload);
@@ -103,6 +127,15 @@ export default function Groups() {
             onChange={(e) => setMaxAge(e.target.value)}
           />
         </div>
+        <div className="w-36">
+          <FloatingInput
+            label="Max. Kinder (optional)"
+            type="number"
+            min={0}
+            value={maxChildren}
+            onChange={(e) => setMaxChildren(e.target.value)}
+          />
+        </div>
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}
         </button>
@@ -127,29 +160,59 @@ export default function Groups() {
               <tr>
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Altersspanne</th>
+                <th className="px-4 py-2 font-medium">Kinder</th>
+                <th className="px-4 py-2 font-medium">Turnleiter</th>
                 <th className="px-4 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody>
-              {groups.map((g) => (
+              {groups.map((g) => {
+                const count = children.filter((c) => c.groupId === g.id).length;
+                const level = capacityLevel(count, g.maxChildren);
+                const label = g.maxChildren != null ? `${count} / ${g.maxChildren}` : `${count}`;
+                return (
                 <tr key={g.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{g.name}</td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.minAge}–{g.maxAge} Jahre
                   </td>
+                  <td className="px-4 py-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}>
+                      {label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
+                    {g.canEdit ? (
+                      <span className="text-xs text-slate-400 dark:text-slate-500">eigene Gruppe</span>
+                    ) : (
+                      <span
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        title="Nur lesbar – gehört einem anderen Turnleiter im Verein"
+                      >
+                        {g.ownerName ?? "anderer Turnleiter"} · nur lesbar
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
-                    <button onClick={() => startEdit(g)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
-                      Bearbeiten
-                    </button>
-                    <button onClick={() => handleDelete(g.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
-                      Löschen
-                    </button>
+                    {g.canEdit ? (
+                      <>
+                        <button onClick={() => startEdit(g)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
+                          Bearbeiten
+                        </button>
+                        <button onClick={() => handleDelete(g.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                          Löschen
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-sm text-slate-300 dark:text-slate-600">–</span>
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {groups.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
                     Noch keine Gruppen angelegt.
                   </td>
                 </tr>

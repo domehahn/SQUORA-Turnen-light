@@ -120,6 +120,10 @@ export default function Children() {
     return groups.find((g) => g.id === id)?.name ?? "–";
   }
 
+  // Kinder können nur in eigene (bearbeitbare) Gruppen einsortiert werden -
+  // fremde, lediglich lesbare Vereinsgruppen fehlen bewusst in der Auswahl.
+  const writableGroups = groups.filter((g) => g.canEdit);
+
   const upcomingByUrgency = useMemo(() => {
     const buckets: Record<SwitchUrgency, UpcomingSwitch[]> = {
       "next-month": [],
@@ -205,7 +209,7 @@ export default function Children() {
         <div className="w-44">
           <FloatingSelect label="Gruppe" value={form.groupId} onChange={(e) => setForm({ ...form, groupId: e.target.value })}>
             <option value="">Keine Gruppe</option>
-            {groups.map((g) => (
+            {writableGroups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name} ({g.minAge}–{g.maxAge} Jahre)
               </option>
@@ -285,12 +289,23 @@ export default function Children() {
                     </td>
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{switchLabel}</td>
                     <td className="px-4 py-2 text-right">
-                      <button onClick={() => startEdit(child)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
-                        Bearbeiten
-                      </button>
-                      <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
-                        Löschen
-                      </button>
+                      {child.canEdit ? (
+                        <>
+                          <button onClick={() => startEdit(child)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
+                            Bearbeiten
+                          </button>
+                          <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                            Löschen
+                          </button>
+                        </>
+                      ) : (
+                        <span
+                          className="text-sm text-slate-300 dark:text-slate-600"
+                          title="Nur lesbar – Kind einer fremden Vereinsgruppe"
+                        >
+                          nur lesbar
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

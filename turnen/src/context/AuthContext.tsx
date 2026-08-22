@@ -10,20 +10,54 @@ interface TokenPayload {
   exp?: number;
 }
 
+interface MeResponse {
+  id: string;
+  email: string;
+  name: string | null;
+  clubId: string | null;
+  clubName: string | null;
+}
+
+const EMPTY_STATE: AuthState = {
+  isAuthenticated: false,
+  userId: null,
+  userEmail: null,
+  userName: null,
+  clubId: null,
+  clubName: null,
+};
+
 function readState(token: string | null): AuthState {
-  const empty: AuthState = { isAuthenticated: false, userEmail: null, userName: null };
-  if (!token) return empty;
+  if (!token) return EMPTY_STATE;
   try {
     const payload = decodeJwt(token) as TokenPayload;
-    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return empty;
-    return { isAuthenticated: true, userEmail: payload.email, userName: payload.name };
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return EMPTY_STATE;
+    return {
+      isAuthenticated: true,
+      userId: payload.sub,
+      userEmail: payload.email,
+      userName: payload.name,
+      clubId: null,
+      clubName: null,
+    };
   } catch {
-    return empty;
+    return EMPTY_STATE;
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() => readState(getToken()));
+
+  async function loadClub() {
+    if (!getToken()) return;
+    try {
+      const me = await api.get<MeResponse>("/api/me");
+      setState((prev) => (prev.isAuthenticated ? { ...prev, clubId: me.clubId, clubName: me.clubName } : prev));
+    } catch {
+      // Netzwerk-/Auth-Fehler beim Nachladen ignorieren wir hier bewusst -
+      // die Kernanmeldung basiert allein auf dem JWT im Local Storage.
+    }
+  }
 
   useEffect(() => {
     function onStorage() {
@@ -32,6 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+
+  useEffect(() => {
+    if (state.isAuthenticated) loadClub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isAuthenticated, state.userId]);
 
   const value = useMemo(
     () => ({
@@ -50,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearToken();
         setState(readState(null));
       },
+      refreshClub: loadClub,
     }),
     [state]
   );

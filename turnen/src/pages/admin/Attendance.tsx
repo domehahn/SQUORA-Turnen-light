@@ -32,9 +32,12 @@ export default function Attendance() {
           api.get<Group[]>("/api/groups"),
           api.get<Child[]>("/api/children"),
         ]);
-        setGroups(groupList);
+        // Anwesenheit lässt sich nur für eigene Gruppen erfassen - fremde,
+        // nur lesbare Vereinsgruppen tauchen hier bewusst nicht auf.
+        const writableGroups = groupList.filter((g) => g.canEdit);
+        setGroups(writableGroups);
         setChildren(childrenList);
-        if (groupList.length > 0) setGroupId(groupList[0].id);
+        if (writableGroups.length > 0) setGroupId(writableGroups[0].id);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden");
       } finally {

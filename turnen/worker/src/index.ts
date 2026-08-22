@@ -12,6 +12,7 @@ import {
   validBool,
   validDate,
   validId,
+  validOptionalCount,
   validPassword,
   validSortOrder,
 } from "./validation";
@@ -21,6 +22,7 @@ type Variables = {
   userId: string;
   email: string;
   name: string | null;
+  clubId: string | null;
 };
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -60,11 +62,22 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("userId", user.id);
     c.set("email", user.email);
     c.set("name", user.name);
+    c.set("clubId", user.clubId);
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
   }
   await next();
 };
+
+// Ein Kind ist bearbeitbar, wenn es keiner Gruppe zugeordnet ist (Alt-Bestand,
+// weiterhin für alle offen) oder wenn die zugehörige Gruppe für den Nutzer
+// beschreibbar ist.
+async function isChildWritable(dbEnv: D1Database, child: { group_id: string | null }, userId: string): Promise<boolean> {
+  if (!child.group_id) return true;
+  const group = await db.getGroupRowById(dbEnv, child.group_id);
+  if (!group) return true;
+  return db.canWriteGroup(group, userId);
+}
 
 app.post("/api/login", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -86,13 +99,59 @@ app.post("/api/login", async (c) => {
 });
 
 app.get("/api/me", requireAuth, async (c) => {
-  return c.json({ id: c.get("userId"), email: c.get("email"), name: c.get("name") });
+  const clubId = c.get("clubId");
+  const club = clubId ? await db.getClubById(c.env.DB, clubId) : null;
+  return c.json({
+    id: c.get("userId"),
+    email: c.get("email"),
+    name: c.get("name"),
+    clubId,
+    clubName: club?.name ?? null,
+  });
+});
+
+// --- Vereine -------------------------------------------------------------
+
+app.get("/api/clubs", requireAuth, async (c) => {
+  return c.json(await db.listClubs(c.env.DB));
+});
+
+app.post("/api/clubs", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const name = requiredText(body?.name, 100);
+  if (!name) return c.json({ error: "Vereinsname fehlt oder ist ungültig" }, 400);
+
+  const existing = await db.getClubByName(c.env.DB, name);
+  if (existing) return c.json({ error: "Ein Verein mit diesem Namen existiert bereits" }, 409);
+
+  const club = await db.createClub(c.env.DB, name);
+  await db.setUserClub(c.env.DB, c.get("userId"), club.id);
+  return c.json({ id: club.id, name: club.name, memberCount: 1, createdAt: club.created_at }, 201);
+});
+
+app.put("/api/me/club", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const clubId = optionalId(body?.clubId);
+  if (clubId === undefined) return c.json({ error: "Ungültige Vereins-ID" }, 400);
+
+  if (clubId !== null) {
+    const club = await db.getClubById(c.env.DB, clubId);
+    if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
+  }
+  await db.setUserClub(c.env.DB, c.get("userId"), clubId);
+  return c.json({ clubId });
+});
+
+app.get("/api/clubs/mine/members", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listClubMembers(c.env.DB, clubId));
 });
 
 // --- Gruppen -----------------------------------------------------------
 
 app.get("/api/groups", requireAuth, async (c) => {
-  return c.json(await db.listGroups(c.env.DB));
+  return c.json(await db.listGroupsForUser(c.env.DB, c.get("userId"), c.get("clubId")));
 });
 
 app.post("/api/groups", requireAuth, async (c) => {
@@ -100,11 +159,21 @@ app.post("/api/groups", requireAuth, async (c) => {
   const name = requiredText(body?.name, 100);
   const ageRange = validAgeRange(body?.minAge, body?.maxAge);
   const sortOrder = validSortOrder(body?.sortOrder);
+  const maxChildren = validOptionalCount(body?.maxChildren);
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
   if (sortOrder === undefined) return c.json({ error: "Sortierung ist ungültig" }, 400);
+  if (maxChildren === undefined) return c.json({ error: "Max. Kinderzahl ist ungültig" }, 400);
 
-  const group = await db.createGroup(c.env.DB, { name, ...ageRange, sortOrder });
+  const group = await db.createGroup(c.env.DB, {
+    name,
+    ...ageRange,
+    sortOrder,
+    maxChildren,
+    ownerId: c.get("userId"),
+    ownerName: c.get("name"),
+    clubId: c.get("clubId"),
+  });
   return c.json(group, 201);
 });
 
@@ -114,12 +183,23 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   const name = requiredText(body?.name, 100);
   const ageRange = validAgeRange(body?.minAge, body?.maxAge);
   const sortOrder = validSortOrder(body?.sortOrder);
+  const maxChildren = validOptionalCount(body?.maxChildren);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
   if (sortOrder === undefined) return c.json({ error: "Sortierung ist ungültig" }, 400);
+  if (maxChildren === undefined) return c.json({ error: "Max. Kinderzahl ist ungültig" }, 400);
 
-  const group = await db.updateGroup(c.env.DB, id, { name, ...ageRange, sortOrder });
+  const existing = await db.getGroupRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(existing, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  const group = await db.updateGroup(
+    c.env.DB,
+    id,
+    { name, ...ageRange, sortOrder, maxChildren },
+    { userId: c.get("userId"), ownerName: c.get("name") }
+  );
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
   return c.json(group);
 });
@@ -127,6 +207,11 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
 app.delete("/api/groups/:id", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getGroupRowById(c.env.DB, id);
+  if (!existing) return c.body(null, 204);
+  if (!db.canWriteGroup(existing, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
   await db.deleteGroup(c.env.DB, id);
   return c.body(null, 204);
 });
@@ -134,7 +219,7 @@ app.delete("/api/groups/:id", requireAuth, async (c) => {
 // --- Kinder --------------------------------------------------------------
 
 app.get("/api/children", requireAuth, async (c) => {
-  return c.json(await db.listChildren(c.env.DB));
+  return c.json(await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId")));
 });
 
 app.post("/api/children", requireAuth, async (c) => {
@@ -149,6 +234,12 @@ app.post("/api/children", requireAuth, async (c) => {
   if (!birthDate) return c.json({ error: "Geburtsdatum ist ungültig (Format JJJJ-MM-TT)" }, 400);
   if (groupId === undefined) return c.json({ error: "Gruppe ist ungültig" }, 400);
   if (notes === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
+
+  if (groupId) {
+    const group = await db.getGroupRowById(c.env.DB, groupId);
+    if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  }
 
   const child = await db.createChild(c.env.DB, { firstName, lastName, birthDate, groupId, notes });
   return c.json(child, 201);
@@ -169,6 +260,17 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (groupId === undefined) return c.json({ error: "Gruppe ist ungültig" }, 400);
   if (notes === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
 
+  const existing = await db.getChildRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+
+  if (groupId) {
+    const group = await db.getGroupRowById(c.env.DB, groupId);
+    if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  }
+
   const child = await db.updateChild(c.env.DB, id, { firstName, lastName, birthDate, groupId, notes });
   if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
   return c.json(child);
@@ -177,17 +279,31 @@ app.put("/api/children/:id", requireAuth, async (c) => {
 app.delete("/api/children/:id", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getChildRowById(c.env.DB, id);
+  if (!existing) return c.body(null, 204);
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+
   await db.deleteChild(c.env.DB, id);
   return c.body(null, 204);
 });
 
 // --- Anwesenheit -----------------------------------------------------------
 
+// Anwesenheit ist – anders als Gruppen/Kinder – nicht vereinsweit lesbar:
+// nur der Besitzer der Gruppe (bzw. bei herrenlosen Alt-Gruppen weiterhin
+// jeder) darf sie sehen oder erfassen.
 app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
   const groupId = validId(c.req.param("groupId"));
   const from = validDate(c.req.query("from"));
   const to = validDate(c.req.query("to"));
   if (!groupId || !from || !to) return c.json({ error: "Ungültige Gruppe oder Zeitraum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
   return c.json(await db.getAttendanceRange(c.env.DB, groupId, from, to));
 });
 
@@ -195,6 +311,11 @@ app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   const groupId = validId(c.req.param("groupId"));
   const date = validDate(c.req.param("date"));
   if (!groupId || !date) return c.json({ error: "Ungültige Gruppe oder Datum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
   return c.json(await db.getAttendance(c.env.DB, groupId, date));
 });
 
@@ -204,6 +325,10 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!groupId || !date) return c.json({ error: "Ungültige Gruppe oder Datum" }, 400);
   if (!Array.isArray(body?.entries)) return c.json({ error: "Liste der Anwesenheiten fehlt" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   const entries: { childId: string; present: boolean }[] = [];
   for (const raw of body.entries) {

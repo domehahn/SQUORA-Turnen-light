@@ -7,10 +7,11 @@ const NAV_ITEMS = [
   { to: "/kinder", label: "Kinder" },
   { to: "/anwesenheit", label: "Anwesenheit" },
   { to: "/uebersicht", label: "Übersicht" },
+  { to: "/verein", label: "Verein" },
 ];
 
 export function AppLayout() {
-  const { userName, userEmail, signOut } = useAuth();
+  const { userName, userEmail, clubName, signOut } = useAuth();
 
   return (
     <div className="min-h-screen">
@@ -19,8 +20,9 @@ export function AppLayout() {
           <div className="flex items-center justify-between gap-3">
             <span className="text-lg font-semibold text-slate-900 dark:text-slate-100">🤸 Turnen</span>
             <div className="flex items-center gap-2">
-              <span className="hidden max-w-[10rem] truncate text-sm text-slate-500 dark:text-slate-400 sm:inline">
+              <span className="hidden max-w-[14rem] truncate text-sm text-slate-500 dark:text-slate-400 sm:inline">
                 {userName ?? userEmail}
+                {clubName ? ` · ${clubName}` : ""}
               </span>
               <ThemeToggle />
               <button

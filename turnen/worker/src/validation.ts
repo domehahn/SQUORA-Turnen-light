@@ -57,6 +57,12 @@ export function validAgeRange(minAge: unknown, maxAge: unknown): { minAge: numbe
   return { minAge: min, maxAge: max };
 }
 
+export function validOptionalCount(value: unknown): number | null | undefined {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return undefined;
+  return value;
+}
+
 export function validSortOrder(value: unknown): number | undefined {
   if (value === undefined || value === null) return 0;
   if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
