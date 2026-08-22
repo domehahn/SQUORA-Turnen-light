@@ -20,6 +20,12 @@ interface UpcomingSwitch {
   targetGroup: Group | undefined;
 }
 
+interface MismatchedChild {
+  child: Child;
+  currentGroup: Group;
+  targetGroup: Group | undefined;
+}
+
 const URGENCY_SECTIONS: {
   urgency: SwitchUrgency;
   title: string;
@@ -214,6 +220,28 @@ export default function Children() {
 
   const hasUpcomingSwitches = URGENCY_SECTIONS.some((s) => upcomingByUrgency[s.urgency].length > 0);
 
+  // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt: entweder
+  // bereits herausgewachsen (Wechsel überfällig) oder noch zu jung für die
+  // Gruppe, in der sie aktuell eingetragen sind.
+  const mismatched = useMemo(() => {
+    const overdue: MismatchedChild[] = [];
+    const tooYoung: MismatchedChild[] = [];
+    for (const child of children) {
+      const currentGroup = groups.find((g) => g.id === child.groupId);
+      if (!currentGroup) continue;
+      const age = calculateAgeYears(child.birthDate);
+      if (age >= currentGroup.maxAge) {
+        overdue.push({ child, currentGroup, targetGroup: groupForAge(age, groups) });
+      } else if (age < currentGroup.minAge) {
+        tooYoung.push({ child, currentGroup, targetGroup: groupForAge(age, groups) });
+      }
+    }
+    const byName = (a: MismatchedChild, b: MismatchedChild) => a.child.lastName.localeCompare(b.child.lastName);
+    overdue.sort(byName);
+    tooYoung.sort(byName);
+    return { overdue, tooYoung };
+  }, [children, groups]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -222,6 +250,51 @@ export default function Children() {
           Name, Geburtsdatum und Gruppe. Alter und Gruppenwechsel werden automatisch berechnet.
         </p>
       </div>
+
+      {(mismatched.overdue.length > 0 || mismatched.tooYoung.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {mismatched.overdue.length > 0 && (
+            <div className="rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/50">
+              <h3 className="mb-2 text-sm font-semibold text-red-800 dark:text-red-300">
+                Wechsel überfällig ({mismatched.overdue.length})
+              </h3>
+              <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
+                {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
+                  <li key={child.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {child.firstName} {child.lastName} – noch in {currentGroup.name}
+                      {targetGroup ? `, gehört eigentlich zu ${targetGroup.name}` : ""}
+                    </span>
+                    {child.canEdit && targetGroup && (
+                      <button
+                        onClick={() => handleMove(child.id, targetGroup.id)}
+                        className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+                      >
+                        Jetzt verschieben
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {mismatched.tooYoung.length > 0 && (
+            <div className="rounded-lg border border-purple-300 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-950/50">
+              <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">
+                Eigentlich noch zu jung für die Gruppe ({mismatched.tooYoung.length})
+              </h3>
+              <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
+                {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
+                  <li key={child.id}>
+                    {child.firstName} {child.lastName} – in {currentGroup.name}
+                    {targetGroup ? `, passt eher zu ${targetGroup.name}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {hasUpcomingSwitches && (
         <div className="grid gap-3 sm:grid-cols-3">
