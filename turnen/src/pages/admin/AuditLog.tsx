@@ -23,7 +23,8 @@ function formatTimestamp(iso: string): string {
 }
 
 export default function AuditLog() {
-  const { clubId, clubName } = useAuth();
+  const { clubId, clubName, clubRole } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,9 @@ export default function AuditLog() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Verlauf</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Nachvollziehbare Änderungen an den gemeinsamen Vereinsdaten von {clubName ?? "deinem Verein"}.
+          {isJugendleiter
+            ? `Nachvollziehbare Änderungen an den gemeinsamen Vereinsdaten von ${clubName ?? "deinem Verein"}.`
+            : "Nachvollziehbare Änderungen an deiner eigenen Gruppe. Die Jugendleitung sieht den Verlauf des gesamten Vereins."}
         </p>
       </div>
 

@@ -444,6 +444,7 @@ app.post("/api/groups", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "group.created",
     targetLabel: group.name,
+    groupId: group.id,
   });
   return c.json(group, 201);
 });
@@ -485,6 +486,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "group.updated",
     targetLabel: group.name,
+    groupId: group.id,
   });
 
   // Wurde die Kapazität erhöht, können jetzt Wartelisten-Einträge nachrücken.
@@ -519,6 +521,7 @@ app.post("/api/groups/:id/claim", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "group.claimed",
     targetLabel: group.name,
+    groupId: group.id,
   });
   return c.json(group);
 });
@@ -785,7 +788,12 @@ app.put("/api/families/:id", requireAuth, async (c) => {
 app.get("/api/audit-log", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
-  return c.json(await db.listAuditLogForClub(c.env.DB, clubId));
+  return c.json(
+    await db.listAuditLogForClub(c.env.DB, clubId, {
+      userId: c.get("userId"),
+      isJugendleiter: c.get("clubRole") === "jugendleiter",
+    })
+  );
 });
 
 // --- Vertretungsbörse ---------------------------------------------------------
@@ -867,6 +875,7 @@ app.post("/api/substitute-requests/:id/claim", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "substitute_request.claimed",
     targetLabel: `${group.name} am ${request.session_date}`,
+    groupId: group.id,
   });
 
   if (request.requested_by) {
@@ -929,6 +938,7 @@ app.post("/api/substitute-requests/:id/return", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "substitute_request.returned",
     targetLabel: `${group.name} am ${request.session_date}`,
+    groupId: group.id,
   });
 
   // Die jeweils andere Seite benachrichtigen.
@@ -1085,6 +1095,7 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "move_request.approved",
     targetLabel: movedChild ? `${movedChild.first_name} ${movedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
+    groupId: targetGroup.id,
   });
   return c.json({ ok: true });
 });
@@ -1109,6 +1120,7 @@ app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "move_request.rejected",
     targetLabel: rejectedChild ? `${rejectedChild.first_name} ${rejectedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
+    groupId: targetGroup.id,
   });
   return c.json({ ok: true });
 });
@@ -1164,6 +1176,7 @@ app.post("/api/capacity-requests/:id/approve", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "capacity_request.approved",
     targetLabel: `${group.name} (${request.action})`,
+    groupId: group.id,
   });
   return c.json({ ok: true });
 });
@@ -1188,6 +1201,7 @@ app.post("/api/capacity-requests/:id/reject", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "capacity_request.rejected",
     targetLabel: `${group.name} (${request.action})`,
+    groupId: group.id,
   });
   return c.json({ ok: true });
 });
@@ -1409,6 +1423,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "placement_request.confirmed",
     targetLabel: `${child.first_name} ${child.last_name} → ${group.name}`,
+    groupId: group.id,
   });
 
   if (request.proposed_by) {
@@ -1821,6 +1836,7 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
       actorName: c.get("name"),
       action: "attendance.substitute_assigned",
       targetLabel: `${group.name} am ${date} → ${substitute?.name ?? substitute?.email ?? ledBy}`,
+      groupId: group.id,
     });
   }
 

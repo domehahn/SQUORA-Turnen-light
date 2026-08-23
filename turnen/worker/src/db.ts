@@ -1195,20 +1195,46 @@ export async function updateFamily(db: D1Database, id: string, input: FamilyInpu
 
 export async function logAudit(
   db: D1Database,
-  input: { clubId: string | null; actorId: string; actorName: string | null; action: string; targetLabel: string }
+  input: {
+    clubId: string | null;
+    actorId: string;
+    actorName: string | null;
+    action: string;
+    targetLabel: string;
+    groupId?: string | null;
+  }
 ): Promise<void> {
   const id = crypto.randomUUID();
   await db
-    .prepare("INSERT INTO audit_log (id, club_id, actor_id, actor_name, action, target_label) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, input.clubId, input.actorId, input.actorName, input.action, input.targetLabel)
+    .prepare(
+      "INSERT INTO audit_log (id, club_id, actor_id, actor_name, action, target_label, group_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(id, input.clubId, input.actorId, input.actorName, input.action, input.targetLabel, input.groupId ?? null)
     .run();
 }
 
-export async function listAuditLogForClub(db: D1Database, clubId: string, limit = 100): Promise<AuditLogEntry[]> {
-  const { results } = await db
-    .prepare("SELECT * FROM audit_log WHERE club_id = ? ORDER BY created_at DESC LIMIT ?")
-    .bind(clubId, limit)
-    .all<AuditLogRow>();
+// Verlauf: die Jugendleitung sieht alles im Verein, normale Turnleiter*innen
+// nur Einträge zu ihren eigenen Gruppen (Einträge ohne Gruppenbezug, z.B.
+// Rollenwechsel, sind dann nicht sichtbar).
+export async function listAuditLogForClub(
+  db: D1Database,
+  clubId: string,
+  viewer: { userId: string; isJugendleiter: boolean },
+  limit = 100
+): Promise<AuditLogEntry[]> {
+  const { results } = viewer.isJugendleiter
+    ? await db
+        .prepare("SELECT * FROM audit_log WHERE club_id = ?1 ORDER BY created_at DESC LIMIT ?2")
+        .bind(clubId, limit)
+        .all<AuditLogRow>()
+    : await db
+        .prepare(
+          `SELECT * FROM audit_log
+           WHERE club_id = ?1 AND group_id IN (SELECT id FROM groups WHERE owner_id = ?2)
+           ORDER BY created_at DESC LIMIT ?3`
+        )
+        .bind(clubId, viewer.userId, limit)
+        .all<AuditLogRow>();
   return results.map((row) => ({
     id: row.id,
     actorName: row.actor_name,

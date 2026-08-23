@@ -32,7 +32,8 @@ interface GroupStats {
 }
 
 export default function Utilization() {
-  const { clubId, clubName } = useAuth();
+  const { userId, clubId, clubName, clubRole } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,8 +57,17 @@ export default function Utilization() {
 
   // Nur Gruppen, die tatsächlich dem eigenen Verein zugeordnet sind - eigene
   // vereinslose Gruppen und rein fremde Gruppen außerhalb des Vereins gehören
-  // nicht zu "allen Gruppen eines Vereins".
-  const clubGroups = useMemo(() => groups.filter((g) => g.clubId !== null && g.clubId === clubId), [groups, clubId]);
+  // nicht zu "allen Gruppen eines Vereins". Turnleiter*innen sehen hier nur
+  // die eigene(n) Gruppe(n), die Jugendleitung sieht alle Gruppen des
+  // Vereins (inklusive ihrer eigenen, falls sie selbst auch eine Gruppe
+  // leitet).
+  const clubGroups = useMemo(
+    () =>
+      groups.filter(
+        (g) => g.clubId !== null && g.clubId === clubId && (isJugendleiter || g.ownerId === userId)
+      ),
+    [groups, clubId, isJugendleiter, userId]
+  );
 
   const stats = useMemo<GroupStats[]>(() => {
     return clubGroups
@@ -94,8 +104,9 @@ export default function Utilization() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Auslastung</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Alle Gruppen von {clubName ?? "deinem Verein"} auf einen Blick: Auslastung, Durchschnittsalter und
-          anstehende bzw. überfällige Wechsel.
+          {isJugendleiter
+            ? `Alle Gruppen von ${clubName ?? "deinem Verein"} auf einen Blick: Auslastung, Durchschnittsalter und anstehende bzw. überfällige Wechsel.`
+            : "Auslastung, Durchschnittsalter und anstehende bzw. überfällige Wechsel deiner eigenen Gruppe(n). Die Jugendleitung sieht zusätzlich alle anderen Gruppen des Vereins."}
         </p>
       </div>
 
@@ -110,8 +121,9 @@ export default function Utilization() {
         </p>
       ) : stats.length === 0 ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          {clubName} hat noch keine zugeordneten Gruppen. Auf der Seite „Gruppen" können Gruppen angelegt oder
-          bestehende Alt-Gruppen dem Verein zugeordnet werden.
+          {isJugendleiter
+            ? `${clubName} hat noch keine zugeordneten Gruppen. Auf der Seite „Gruppen" können Gruppen angelegt oder bestehende Alt-Gruppen dem Verein zugeordnet werden.`
+            : "Du leitest aktuell keine dem Verein zugeordnete Gruppe."}
         </p>
       ) : (
         <>

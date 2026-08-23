@@ -263,6 +263,7 @@ export interface AuditLogRow {
   action: string;
   target_label: string;
   created_at: string;
+  group_id: string | null;
 }
 
 export interface AuditLogEntry {
