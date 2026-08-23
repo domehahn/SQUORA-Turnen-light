@@ -437,14 +437,24 @@ export default function Groups() {
                   </td>
                   <td className="px-4 py-2 text-right">
                     {g.canEdit && (
-                      <a
-                        href={`/druck/${g.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mr-3 text-sm text-slate-600 hover:underline dark:text-slate-300"
-                      >
-                        Drucken
-                      </a>
+                      <>
+                        <a
+                          href={`/druck/${g.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mr-3 text-sm text-slate-600 hover:underline dark:text-slate-300"
+                        >
+                          Drucken
+                        </a>
+                        <a
+                          href={`/druck/${g.id}?mode=namen`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mr-3 text-sm text-slate-600 hover:underline dark:text-slate-300"
+                        >
+                          Namensliste
+                        </a>
+                      </>
                     )}
                     {g.canEdit ? (
                       <>
