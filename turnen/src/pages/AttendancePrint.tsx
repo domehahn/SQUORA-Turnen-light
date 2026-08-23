@@ -85,6 +85,19 @@ export default function AttendancePrint() {
 
   const dates = mode === "anwesenheit" && group.weekday !== null ? trainingDatesInRange(group.weekday, from, to) : [];
 
+  // Zusagen/Absagen zählen nur die tatsächlich im gewählten Zeitraum
+  // erfassten Einträge (nicht die leeren, noch auszufüllenden Zellen).
+  let presentCount = 0;
+  let absentCount = 0;
+  if (mode === "anwesenheit") {
+    for (const d of dates) {
+      for (const entry of attendance[d] ?? []) {
+        if (entry.present) presentCount += 1;
+        else absentCount += 1;
+      }
+    }
+  }
+
   return (
     // Druckansichten sind bewusst immer hell/schwarz auf weiß, unabhängig
     // vom Darkmode der App - sonst ist der Text weder am Bildschirm noch
@@ -149,6 +162,15 @@ export default function AttendancePrint() {
           {group.startTime && group.endTime && ` ${group.startTime}–${group.endTime}`}
           {group.location && ` · ${group.location}`}
           {mode === "anwesenheit" && ` · ${formatDate(from)} – ${formatDate(to)}`}
+        </p>
+        <p className="mb-4 text-sm font-medium text-slate-800">
+          Kinder gesamt: {children.length}
+          {mode === "anwesenheit" && (
+            <>
+              {" "}
+              · Zusagen: {presentCount} · Absagen: {absentCount}
+            </>
+          )}
         </p>
 
         {mode === "anwesenheit" ? (
