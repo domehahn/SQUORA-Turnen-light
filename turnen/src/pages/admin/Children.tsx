@@ -117,6 +117,7 @@ export default function Children() {
   const [attendanceSummary, setAttendanceSummary] = useState<Record<string, AttendanceSummary>>({});
   const [families, setFamilies] = useState<Family[]>([]);
   const [search, setSearch] = useState("");
+  const [printGroupId, setPrintGroupId] = useState("");
 
   async function load() {
     setLoading(true);
@@ -809,12 +810,34 @@ export default function Children() {
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-amber-700 dark:text-amber-400">{info}</p>}
 
-      <div className="max-w-xs">
-        <FloatingInput
-          label="Suche nach Name oder Gruppe"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="max-w-xs flex-1">
+          <FloatingInput
+            label="Suche nach Name oder Gruppe"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="w-52">
+          <FloatingSelect label="Namensliste für Gruppe" value={printGroupId} onChange={(e) => setPrintGroupId(e.target.value)}>
+            <option value="">Gruppe wählen…</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        {printGroupId && (
+          <a
+            href={`/druck/${printGroupId}?mode=namen`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Namensliste drucken
+          </a>
+        )}
       </div>
 
       {loading ? (

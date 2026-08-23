@@ -163,6 +163,17 @@ export default function Overview() {
           </button>
         </div>
 
+        {groupId && (
+          <a
+            href={`/druck/${groupId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Anwesenheitsliste drucken
+          </a>
+        )}
+
         <div className="ml-auto flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
           <span className="flex items-center gap-1.5">
             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">✓</span>
