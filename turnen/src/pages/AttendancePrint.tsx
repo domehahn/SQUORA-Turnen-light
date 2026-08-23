@@ -2,15 +2,31 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { Child, Group } from "../lib/types";
-import { nextTrainingDates, formatShortDate } from "../lib/schedule";
+import { trainingDatesInRange, formatShortDate } from "../lib/schedule";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
 type Mode = "anwesenheit" | "namen";
 
-function formatBirthDate(iso: string): string {
+function formatDate(iso: string): string {
   const [year, month, day] = iso.split("-");
   return `${day}.${month}.${year}`;
+}
+
+// Bewusst NICHT toISOString() (rechnet nach UTC um), sondern lokale
+// Datumsanteile direkt formatieren - siehe auch src/lib/schedule.ts.
+function toIso(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { from: toIso(first), to: toIso(last) };
 }
 
 export default function AttendancePrint() {
@@ -21,6 +37,9 @@ export default function AttendancePrint() {
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const defaultRange = currentMonthRange();
+  const [from, setFrom] = useState(searchParams.get("from") ?? defaultRange.from);
+  const [to, setTo] = useState(searchParams.get("to") ?? defaultRange.to);
 
   useEffect(() => {
     async function load() {
@@ -41,114 +60,154 @@ export default function AttendancePrint() {
     load();
   }, [groupId]);
 
-  if (loading) return <p className="p-6 text-sm text-slate-500">Lädt…</p>;
-  if (error) return <p className="p-6 text-sm text-red-600">Fehler: {error}</p>;
-  if (!group) return <p className="p-6 text-sm text-slate-500">Gruppe nicht gefunden.</p>;
+  function setMode(next: Mode) {
+    const params = new URLSearchParams(searchParams);
+    params.set("mode", next);
+    setSearchParams(params);
+  }
 
-  const dates = group.weekday !== null ? nextTrainingDates(group.weekday, 4) : [];
+  if (loading) return <p className="min-h-screen bg-white p-6 text-sm text-slate-500">Lädt…</p>;
+  if (error) return <p className="min-h-screen bg-white p-6 text-sm text-red-600">Fehler: {error}</p>;
+  if (!group) return <p className="min-h-screen bg-white p-6 text-sm text-slate-500">Gruppe nicht gefunden.</p>;
+
+  const dates = mode === "anwesenheit" && group.weekday !== null ? trainingDatesInRange(group.weekday, from, to) : [];
 
   return (
-    <div className="mx-auto max-w-3xl p-6 text-slate-900">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div className="flex gap-1 rounded-md border border-slate-300 p-0.5">
+    // Druckansichten sind bewusst immer hell/schwarz auf weiß, unabhängig
+    // vom Darkmode der App - sonst ist der Text weder am Bildschirm noch
+    // beim Drucken lesbar (siehe src/index.css für den globalen Print-Fix).
+    <div className="min-h-screen bg-white p-6 text-slate-900" style={{ colorScheme: "light" }}>
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3 print:hidden">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex gap-1 rounded-md border border-slate-300 p-0.5">
+              <button
+                onClick={() => setMode("anwesenheit")}
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  mode === "anwesenheit" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Anwesenheitsliste
+              </button>
+              <button
+                onClick={() => setMode("namen")}
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  mode === "namen" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Namensliste
+              </button>
+            </div>
+            {mode === "anwesenheit" && (
+              <>
+                <label className="text-sm text-slate-600">
+                  Von
+                  <input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="ml-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-sm text-slate-600">
+                  Bis
+                  <input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="ml-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+                  />
+                </label>
+              </>
+            )}
+          </div>
           <button
-            onClick={() => setSearchParams({ mode: "anwesenheit" })}
-            className={`rounded px-3 py-1.5 text-sm font-medium ${
-              mode === "anwesenheit" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
-            }`}
+            onClick={() => window.print()}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
           >
-            Anwesenheitsliste
-          </button>
-          <button
-            onClick={() => setSearchParams({ mode: "namen" })}
-            className={`rounded px-3 py-1.5 text-sm font-medium ${
-              mode === "namen" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            Namensliste
+            Drucken
           </button>
         </div>
-        <button
-          onClick={() => window.print()}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-        >
-          Drucken
-        </button>
-      </div>
 
-      <h1 className="text-xl font-semibold">{group.name}</h1>
-      <p className="mb-4 text-sm text-slate-600">
-        {group.minAge}–{group.maxAge} Jahre
-        {group.weekday !== null && ` · ${WEEKDAY_NAMES[group.weekday]}`}
-        {group.startTime && group.endTime && ` ${group.startTime}–${group.endTime}`}
-        {group.location && ` · ${group.location}`}
-      </p>
+        <h1 className="text-xl font-semibold">{group.name}</h1>
+        <p className="mb-4 text-sm text-slate-600">
+          {group.minAge}–{group.maxAge} Jahre
+          {group.weekday !== null && ` · ${WEEKDAY_NAMES[group.weekday]}`}
+          {group.startTime && group.endTime && ` ${group.startTime}–${group.endTime}`}
+          {group.location && ` · ${group.location}`}
+          {mode === "anwesenheit" && ` · ${formatDate(from)} – ${formatDate(to)}`}
+        </p>
 
-      {mode === "anwesenheit" ? (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="border border-slate-400 px-2 py-1 text-left">Name</th>
-              {dates.length > 0
-                ? dates.map((d) => (
-                    <th key={d} className="border border-slate-400 px-2 py-1">
-                      {formatShortDate(d)}
-                    </th>
-                  ))
-                : [1, 2, 3, 4].map((n) => (
-                    <th key={n} className="border border-slate-400 px-2 py-1">
-                      Termin {n}
-                    </th>
-                  ))}
-            </tr>
-          </thead>
-          <tbody>
-            {children.map((child) => (
-              <tr key={child.id}>
-                <td className="border border-slate-400 px-2 py-1.5">
-                  {child.firstName} {child.lastName}
-                </td>
-                {[0, 1, 2, 3].map((i) => (
-                  <td key={i} className="border border-slate-400 px-2 py-1.5" style={{ width: "3.5rem" }} />
+        {mode === "anwesenheit" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="border border-slate-400 px-2 py-1 text-left">Name</th>
+                  {dates.length > 0
+                    ? dates.map((d) => (
+                        <th key={d} className="border border-slate-400 px-2 py-1">
+                          {formatShortDate(d)}
+                        </th>
+                      ))
+                    : (
+                        <th className="border border-slate-400 px-2 py-1 text-slate-500">
+                          {group.weekday === null
+                            ? "Kein Trainingstag für diese Gruppe hinterlegt"
+                            : "Keine Trainingstermine in diesem Zeitraum"}
+                        </th>
+                      )}
+                </tr>
+              </thead>
+              <tbody>
+                {children.map((child) => (
+                  <tr key={child.id}>
+                    <td className="border border-slate-400 px-2 py-1.5">
+                      {child.firstName} {child.lastName}
+                    </td>
+                    {(dates.length > 0 ? dates : [""]).map((d, i) => (
+                      <td key={d || i} className="border border-slate-400 px-2 py-1.5" style={{ width: "3.5rem" }} />
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-            {children.length === 0 && (
+                {children.length === 0 && (
+                  <tr>
+                    <td colSpan={Math.max(dates.length, 1) + 1} className="border border-slate-400 px-2 py-4 text-center text-slate-500">
+                      Keine Kinder in dieser Gruppe.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <table className="w-full border-collapse text-sm">
+            <thead>
               <tr>
-                <td colSpan={5} className="border border-slate-400 px-2 py-4 text-center text-slate-500">
-                  Keine Kinder in dieser Gruppe.
-                </td>
+                <th className="border border-slate-400 px-2 py-1 text-left">Nachname</th>
+                <th className="border border-slate-400 px-2 py-1 text-left">Vorname</th>
+                <th className="border border-slate-400 px-2 py-1 text-left">Geburtsdatum</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="border border-slate-400 px-2 py-1 text-left">Nachname</th>
-              <th className="border border-slate-400 px-2 py-1 text-left">Vorname</th>
-              <th className="border border-slate-400 px-2 py-1 text-left">Geburtsdatum</th>
-            </tr>
-          </thead>
-          <tbody>
-            {children.map((child) => (
-              <tr key={child.id}>
-                <td className="border border-slate-400 px-2 py-1.5">{child.lastName}</td>
-                <td className="border border-slate-400 px-2 py-1.5">{child.firstName}</td>
-                <td className="border border-slate-400 px-2 py-1.5">{formatBirthDate(child.birthDate)}</td>
-              </tr>
-            ))}
-            {children.length === 0 && (
-              <tr>
-                <td colSpan={3} className="border border-slate-400 px-2 py-4 text-center text-slate-500">
-                  Keine Kinder in dieser Gruppe.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {children.map((child) => (
+                <tr key={child.id}>
+                  <td className="border border-slate-400 px-2 py-1.5">{child.lastName}</td>
+                  <td className="border border-slate-400 px-2 py-1.5">{child.firstName}</td>
+                  <td className="border border-slate-400 px-2 py-1.5">{formatDate(child.birthDate)}</td>
+                </tr>
+              ))}
+              {children.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="border border-slate-400 px-2 py-4 text-center text-slate-500">
+                    Keine Kinder in dieser Gruppe.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

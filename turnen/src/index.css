@@ -22,3 +22,13 @@ body {
   background-attachment: fixed;
   background-color: #020617;
 }
+
+/* Druckansichten (z.B. /druck/:groupId) sind bewusst immer hell/schwarz auf
+   weiß gestaltet, unabhängig vom Darkmode - sonst wird dunkler Text auf
+   dunklem Hintergrund weder am Bildschirm noch beim Drucken lesbar. */
+@media print {
+  body {
+    background: #ffffff !important;
+    background-image: none !important;
+  }
+}

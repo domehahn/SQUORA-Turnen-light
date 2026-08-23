@@ -53,3 +53,23 @@ export function nextTrainingDates(weekday: number, count: number, from: Date = n
   }
   return dates;
 }
+
+/**
+ * Alle Trainingstermine für einen gegebenen Wochentag innerhalb eines
+ * frei wählbaren Zeitraums (inkl. beider Grenzen), außerhalb der RLP-
+ * Schulferien. Für den druckbaren Anwesenheitsbogen, wo der Zeitraum statt
+ * einer festen Terminanzahl gewählt werden können muss.
+ */
+export function trainingDatesInRange(weekday: number, fromIso: string, toIsoDate: string): string[] {
+  const dates: string[] = [];
+  const [fy, fm, fd] = fromIso.split("-").map(Number);
+  const date = new Date(fy, fm - 1, fd);
+  const offset = (weekday - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + offset);
+  while (toIso(date) <= toIsoDate) {
+    const iso = toIso(date);
+    if (!isSchoolHoliday(iso)) dates.push(iso);
+    date.setDate(date.getDate() + 7);
+  }
+  return dates;
+}

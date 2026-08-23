@@ -50,6 +50,8 @@ export default function Overview() {
   }, []);
 
   const trainingDates = useMemo(() => trainingDatesInMonth(year, month), [year, month]);
+  const monthStart = `${year}-${pad(month)}-01`;
+  const monthEnd = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
 
   useEffect(() => {
     async function loadAttendance() {
@@ -165,7 +167,7 @@ export default function Overview() {
 
         {groupId && (
           <a
-            href={`/druck/${groupId}`}
+            href={`/druck/${groupId}?mode=anwesenheit&from=${monthStart}&to=${monthEnd}`}
             target="_blank"
             rel="noreferrer"
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
