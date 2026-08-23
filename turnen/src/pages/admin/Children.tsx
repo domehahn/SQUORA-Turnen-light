@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Child, Group, MoveChildResponse, MoveRequest } from "../../lib/types";
+import type { CapacityRequest, Child, Group, MoveChildResponse, MoveRequest, PendingCapacityApproval } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
 import {
@@ -14,6 +14,29 @@ import {
 } from "../../lib/age";
 
 const emptyForm = { firstName: "", lastName: "", birthDate: "", groupId: "", notes: "" };
+
+function isPendingCapacityApproval(value: unknown): value is PendingCapacityApproval {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    (value as { status: unknown }).status === "pending_capacity_approval"
+  );
+}
+
+function capacityActionLabel(action: CapacityRequest["action"]): string {
+  switch (action) {
+    case "create_child":
+      return "neu anlegen";
+    case "update_child":
+      return "bearbeiten";
+    case "move_child":
+    case "approve_move_request":
+      return "verschieben";
+    default:
+      return action;
+  }
+}
 
 interface UpcomingSwitch {
   child: Child;
@@ -60,6 +83,8 @@ export default function Children() {
   const [moveSelection, setMoveSelection] = useState<Record<string, string>>({});
   const [incomingRequests, setIncomingRequests] = useState<MoveRequest[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<MoveRequest[]>([]);
+  const [incomingCapacityRequests, setIncomingCapacityRequests] = useState<CapacityRequest[]>([]);
+  const [outgoingCapacityRequests, setOutgoingCapacityRequests] = useState<CapacityRequest[]>([]);
 
   async function load() {
     setLoading(true);
@@ -91,9 +116,24 @@ export default function Children() {
     }
   }
 
+  async function loadCapacityRequests() {
+    try {
+      const [incoming, outgoing] = await Promise.all([
+        api.get<CapacityRequest[]>("/api/capacity-requests/incoming"),
+        api.get<CapacityRequest[]>("/api/capacity-requests/outgoing"),
+      ]);
+      setIncomingCapacityRequests(incoming);
+      setOutgoingCapacityRequests(outgoing.filter((r) => r.status === "pending"));
+    } catch {
+      // Anfragen sind ein Zusatzfeature - ein Ladefehler soll die restliche
+      // Seite nicht blockieren.
+    }
+  }
+
   useEffect(() => {
     load();
     loadMoveRequests();
+    loadCapacityRequests();
   }, []);
 
   async function handleMove(childId: string, toGroupId: string) {
@@ -102,14 +142,19 @@ export default function Children() {
     setInfo(null);
     try {
       const res = await withCapacityConfirm((confirmOverCapacity) =>
-        api.post<MoveChildResponse>(`/api/children/${childId}/move`, { toGroupId, confirmOverCapacity })
+        api.post<MoveChildResponse | PendingCapacityApproval>(`/api/children/${childId}/move`, {
+          toGroupId,
+          confirmOverCapacity,
+        })
       );
       if (res === CAPACITY_CANCELLED) return;
-      if (res.status === "pending") {
+      if (isPendingCapacityApproval(res)) {
+        setInfo(`Kapazität von „${res.groupName}“ ist ausgeschöpft – Anfrage an die Jugendleitung gesendet.`);
+      } else if (res.status === "pending") {
         const targetName = groups.find((g) => g.id === toGroupId)?.name ?? "die Zielgruppe";
         setInfo(`Kind erfüllt die Altersvoraussetzung nicht – Anfrage an den Turnleiter von „${targetName}“ gesendet.`);
       }
-      await Promise.all([load(), loadMoveRequests()]);
+      await Promise.all([load(), loadMoveRequests(), loadCapacityRequests()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Verschieben");
     } finally {
@@ -121,10 +166,13 @@ export default function Children() {
     setError(null);
     try {
       const result = await withCapacityConfirm((confirmOverCapacity) =>
-        api.post(`/api/move-requests/${id}/approve`, { confirmOverCapacity })
+        api.post<{ ok: true } | PendingCapacityApproval>(`/api/move-requests/${id}/approve`, { confirmOverCapacity })
       );
       if (result === CAPACITY_CANCELLED) return;
-      await Promise.all([load(), loadMoveRequests()]);
+      if (isPendingCapacityApproval(result)) {
+        setInfo(`Kapazität von „${result.groupName}“ ist ausgeschöpft – Anfrage an die Jugendleitung gesendet.`);
+      }
+      await Promise.all([load(), loadMoveRequests(), loadCapacityRequests()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
     }
@@ -150,6 +198,36 @@ export default function Children() {
     }
   }
 
+  async function handleApproveCapacity(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/capacity-requests/${id}/approve`, {});
+      await Promise.all([load(), loadCapacityRequests()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
+    }
+  }
+
+  async function handleRejectCapacity(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/capacity-requests/${id}/reject`, {});
+      await loadCapacityRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
+    }
+  }
+
+  async function handleCancelCapacityRequest(id: string) {
+    setError(null);
+    try {
+      await api.del(`/api/capacity-requests/${id}`);
+      await loadCapacityRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zurückziehen");
+    }
+  }
+
   function startEdit(child: Child) {
     setEditingId(child.id);
     setForm({
@@ -169,6 +247,7 @@ export default function Children() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     try {
       const result = await withCapacityConfirm((confirmOverCapacity) => {
         const payload = {
@@ -179,9 +258,15 @@ export default function Children() {
           notes: form.notes || null,
           confirmOverCapacity,
         };
-        return editingId ? api.put(`/api/children/${editingId}`, payload) : api.post("/api/children", payload);
+        return editingId
+          ? api.put<Child | PendingCapacityApproval>(`/api/children/${editingId}`, payload)
+          : api.post<Child | PendingCapacityApproval>("/api/children", payload);
       });
       if (result === CAPACITY_CANCELLED) return;
+      if (isPendingCapacityApproval(result)) {
+        setInfo(`Kapazität von „${result.groupName}“ ist ausgeschöpft – Anfrage an die Jugendleitung gesendet.`);
+        await loadCapacityRequests();
+      }
       resetForm();
       load();
     } catch (err) {
@@ -376,6 +461,65 @@ export default function Children() {
                     </span>
                     <button
                       onClick={() => handleCancelRequest(r.id)}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      Zurückziehen
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(incomingCapacityRequests.length > 0 || outgoingCapacityRequests.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {incomingCapacityRequests.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/40">
+              <h3 className="mb-2 text-sm font-semibold text-red-800 dark:text-red-300">
+                Kapazitäts-Anfragen an dich als Jugendleitung ({incomingCapacityRequests.length})
+              </h3>
+              <ul className="space-y-2 text-sm text-red-900 dark:text-red-200">
+                {incomingCapacityRequests.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {r.childName} → {r.groupName} ({capacityActionLabel(r.action)})
+                      {r.requestedByName ? ` · angefragt von ${r.requestedByName}` : ""}
+                    </span>
+                    <span className="flex gap-2">
+                      <button
+                        onClick={() => handleApproveCapacity(r.id)}
+                        className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                      >
+                        Freigeben
+                      </button>
+                      <button
+                        onClick={() => handleRejectCapacity(r.id)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                      >
+                        Ablehnen
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {outgoingCapacityRequests.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Eigene Kapazitäts-Anfragen ({outgoingCapacityRequests.length})
+              </h3>
+              <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {outgoingCapacityRequests.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {r.childName} → {r.groupName} ({capacityActionLabel(r.action)}) · wartet auf Freigabe der
+                      Jugendleitung
+                    </span>
+                    <button
+                      onClick={() => handleCancelCapacityRequest(r.id)}
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
                       Zurückziehen

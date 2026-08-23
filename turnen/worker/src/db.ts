@@ -1,6 +1,9 @@
 import type {
   AttendanceEntry,
   AttendanceEntryRow,
+  CapacityRequestAction,
+  CapacityRequestDetail,
+  CapacityRequestRow,
   Child,
   ChildRow,
   Club,
@@ -524,4 +527,99 @@ export async function listOutgoingMoveRequests(db: D1Database, userId: string): 
     .bind(userId)
     .all<MoveRequestJoinRow>();
   return results.map(rowToMoveRequestDetail);
+}
+
+// --- Kapazitäts-Anfragen ---------------------------------------------------
+
+export async function createCapacityRequest(
+  db: D1Database,
+  input: { groupId: string; action: CapacityRequestAction; childId: string | null; payload: unknown; requestedBy: string }
+): Promise<CapacityRequestRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO capacity_requests (id, group_id, action, child_id, payload, requested_by) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(id, input.groupId, input.action, input.childId, JSON.stringify(input.payload), input.requestedBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM capacity_requests WHERE id = ?").bind(id).first<CapacityRequestRow>();
+  return row as CapacityRequestRow;
+}
+
+export async function getCapacityRequestRowById(db: D1Database, id: string): Promise<CapacityRequestRow | null> {
+  return db.prepare("SELECT * FROM capacity_requests WHERE id = ?").bind(id).first<CapacityRequestRow>();
+}
+
+export async function setCapacityRequestStatus(
+  db: D1Database,
+  id: string,
+  status: MoveRequestStatus,
+  reviewedBy: string | null
+): Promise<void> {
+  await db
+    .prepare("UPDATE capacity_requests SET status = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?")
+    .bind(status, reviewedBy, id)
+    .run();
+}
+
+type CapacityRequestJoinRow = CapacityRequestRow & {
+  group_name: string;
+  child_first_name: string | null;
+  child_last_name: string | null;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+};
+
+function rowToCapacityRequestDetail(row: CapacityRequestJoinRow): CapacityRequestDetail {
+  let childName = row.child_first_name ? `${row.child_first_name} ${row.child_last_name}` : null;
+  if (!childName) {
+    try {
+      const payload = JSON.parse(row.payload) as { firstName?: string; lastName?: string };
+      if (payload.firstName) childName = `${payload.firstName} ${payload.lastName ?? ""}`.trim();
+    } catch {
+      // Payload sollte immer valides JSON sein - im Zweifel Platzhalter zeigen.
+    }
+  }
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    action: row.action,
+    childId: row.child_id,
+    childName: childName ?? "Unbekanntes Kind",
+    requestedBy: row.requested_by,
+    requestedByName: row.requested_by_name ?? row.requested_by_email ?? null,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+const CAPACITY_REQUEST_DETAIL_SELECT = `
+  SELECT cr.*,
+         g.name as group_name,
+         c.first_name as child_first_name, c.last_name as child_last_name,
+         ru.name as requested_by_name, ru.email as requested_by_email
+  FROM capacity_requests cr
+  JOIN groups g ON g.id = cr.group_id
+  LEFT JOIN children c ON c.id = cr.child_id
+  LEFT JOIN users ru ON ru.id = cr.requested_by
+`;
+
+// Offene Kapazitäts-Anfragen für Gruppen im übergebenen Verein - für die
+// Jugendleitung dieses Vereins.
+export async function listIncomingCapacityRequests(db: D1Database, clubId: string): Promise<CapacityRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${CAPACITY_REQUEST_DETAIL_SELECT} WHERE cr.status = 'pending' AND g.club_id = ?1 ORDER BY cr.created_at ASC`)
+    .bind(clubId)
+    .all<CapacityRequestJoinRow>();
+  return results.map(rowToCapacityRequestDetail);
+}
+
+// Vom aufrufenden Nutzer gestellte Kapazitäts-Anfragen (alle Status, neueste zuerst).
+export async function listOutgoingCapacityRequests(db: D1Database, userId: string): Promise<CapacityRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${CAPACITY_REQUEST_DETAIL_SELECT} WHERE cr.requested_by = ?1 ORDER BY cr.created_at DESC LIMIT 50`)
+    .bind(userId)
+    .all<CapacityRequestJoinRow>();
+  return results.map(rowToCapacityRequestDetail);
 }

@@ -125,3 +125,31 @@ export interface MoveRequestDetail {
   reviewedAt: string | null;
   createdAt: string;
 }
+
+export type CapacityRequestAction = "create_child" | "update_child" | "move_child" | "approve_move_request";
+
+export interface CapacityRequestRow {
+  id: string;
+  group_id: string;
+  action: CapacityRequestAction;
+  child_id: string | null;
+  payload: string;
+  requested_by: string | null;
+  status: MoveRequestStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface CapacityRequestDetail {
+  id: string;
+  groupId: string;
+  groupName: string;
+  action: CapacityRequestAction;
+  childId: string | null;
+  childName: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  status: MoveRequestStatus;
+  createdAt: string;
+}

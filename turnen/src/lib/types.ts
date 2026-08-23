@@ -75,3 +75,28 @@ export interface CapacityWarning {
   currentCount: number;
   maxChildren: number;
 }
+
+// Antwort, wenn eine Kapazitätsüberschreitung nicht per Selbstbestätigung
+// gelöst werden kann, weil der Verein der Zielgruppe eine (fremde)
+// Jugendleitung hat - die Aktion wurde NICHT ausgeführt, sondern als
+// Anfrage hinterlegt.
+export interface PendingCapacityApproval {
+  status: "pending_capacity_approval";
+  requestId: string;
+  groupName: string;
+}
+
+export type CapacityRequestAction = "create_child" | "update_child" | "move_child" | "approve_move_request";
+
+export interface CapacityRequest {
+  id: string;
+  groupId: string;
+  groupName: string;
+  action: CapacityRequestAction;
+  childId: string | null;
+  childName: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  status: MoveRequestStatus;
+  createdAt: string;
+}

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Child, Group, MoveRequest } from "../../lib/types";
+import type { CapacityRequest, Child, Group, MoveRequest } from "../../lib/types";
 import { FloatingInput } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
@@ -27,6 +27,7 @@ export default function Groups() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<MoveRequest[]>([]);
+  const [incomingCapacityRequests, setIncomingCapacityRequests] = useState<CapacityRequest[]>([]);
   const [name, setName] = useState("");
   const [minAge, setMinAge] = useState("3");
   const [maxAge, setMaxAge] = useState("6");
@@ -57,9 +58,18 @@ export default function Groups() {
     }
   }
 
+  async function loadCapacityRequests() {
+    try {
+      setIncomingCapacityRequests(await api.get<CapacityRequest[]>("/api/capacity-requests/incoming"));
+    } catch {
+      // s.o.
+    }
+  }
+
   useEffect(() => {
     load();
     loadMoveRequests();
+    loadCapacityRequests();
   }, []);
 
   function startEdit(g: Group) {
@@ -141,6 +151,40 @@ export default function Groups() {
     }
   }
 
+  async function handleApproveCapacityRequest(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/capacity-requests/${id}/approve`, {});
+      await Promise.all([load(), loadCapacityRequests()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
+    }
+  }
+
+  async function handleRejectCapacityRequest(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/capacity-requests/${id}/reject`, {});
+      await loadCapacityRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
+    }
+  }
+
+  function capacityActionLabel(action: CapacityRequest["action"]): string {
+    switch (action) {
+      case "create_child":
+        return "neu anlegen";
+      case "update_child":
+        return "bearbeiten";
+      case "move_child":
+      case "approve_move_request":
+        return "verschieben";
+      default:
+        return action;
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -218,6 +262,7 @@ export default function Groups() {
                 const level = capacityLevel(count, g.maxChildren);
                 const label = g.maxChildren != null ? `${count} / ${g.maxChildren}` : `${count}`;
                 const requestsForGroup = incomingRequests.filter((r) => r.toGroupId === g.id);
+                const capacityRequestsForGroup = incomingCapacityRequests.filter((r) => r.groupId === g.id);
                 return (
                 <Fragment key={g.id}>
                 <tr className="border-t border-slate-100 dark:border-slate-800">
@@ -319,6 +364,39 @@ export default function Groups() {
                               </button>
                               <button
                                 onClick={() => handleRejectRequest(r.id)}
+                                className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                              >
+                                Ablehnen
+                              </button>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
+                )}
+                {capacityRequestsForGroup.length > 0 && (
+                  <tr className="border-t border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30">
+                    <td colSpan={5} className="px-4 py-2">
+                      <p className="mb-1 text-xs font-semibold text-red-800 dark:text-red-300">
+                        Kapazitäts-Anfragen für „{g.name}“ ({capacityRequestsForGroup.length})
+                      </p>
+                      <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
+                        {capacityRequestsForGroup.map((r) => (
+                          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              {r.childName} ({capacityActionLabel(r.action)})
+                              {r.requestedByName ? ` · angefragt von ${r.requestedByName}` : ""}
+                            </span>
+                            <span className="flex gap-2">
+                              <button
+                                onClick={() => handleApproveCapacityRequest(r.id)}
+                                className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                              >
+                                Freigeben
+                              </button>
+                              <button
+                                onClick={() => handleRejectCapacityRequest(r.id)}
                                 className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
                               >
                                 Ablehnen

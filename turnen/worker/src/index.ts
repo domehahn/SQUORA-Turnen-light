@@ -16,7 +16,7 @@ import {
   validPassword,
   validSortOrder,
 } from "./validation";
-import type { ClubRole, Env } from "./types";
+import type { CapacityRequestRow, ClubRole, Env } from "./types";
 
 type Variables = {
   userId: string;
@@ -90,8 +90,7 @@ interface CapacityWarning {
 }
 
 // Prüft, ob das Hinzufügen eines weiteren Kindes die maximale Gruppengröße
-// überschreiten würde. Blockiert das Anlegen NICHT - die Route entscheidet
-// anhand von `confirmOverCapacity`, ob trotzdem gespeichert wird.
+// überschreiten würde.
 async function capacityWarning(
   dbEnv: D1Database,
   group: { id: string; name: string; max_children: number | null },
@@ -107,6 +106,86 @@ async function capacityWarning(
     currentCount: count,
     maxChildren: group.max_children,
   };
+}
+
+type CapacityGate =
+  | { mode: "ok" }
+  // Keine Jugendleitung im Verein (oder Gruppe ohne Verein) bzw. die
+  // anfragende Person IST selbst Jugendleitung dieses Vereins: einfache
+  // Selbstbestätigung reicht, genau wie bisher.
+  | { mode: "self_confirm"; warning: CapacityWarning }
+  // Es gibt eine (fremde) Jugendleitung im Verein der Zielgruppe - die
+  // Aktion wird nicht sofort ausgeführt, sondern muss dort freigegeben
+  // werden.
+  | { mode: "leadership_approval"; warning: CapacityWarning };
+
+async function capacityGate(
+  dbEnv: D1Database,
+  group: { id: string; name: string; max_children: number | null; club_id: string | null },
+  excludeChildId: string | undefined,
+  requester: { userId: string; clubId: string | null; clubRole: ClubRole }
+): Promise<CapacityGate> {
+  const warning = await capacityWarning(dbEnv, group, excludeChildId);
+  if (!warning) return { mode: "ok" };
+
+  const requesterLeadsThisClub =
+    group.club_id !== null && group.club_id === requester.clubId && requester.clubRole === "jugendleiter";
+  if (requesterLeadsThisClub) return { mode: "self_confirm", warning };
+
+  const hasLeadership = group.club_id ? (await db.countClubLeaders(dbEnv, group.club_id)) > 0 : false;
+  return { mode: hasLeadership ? "leadership_approval" : "self_confirm", warning };
+}
+
+interface PendingCapacityApproval {
+  status: "pending_capacity_approval";
+  requestId: string;
+  groupName: string;
+}
+
+async function fileCapacityRequest(
+  dbEnv: D1Database,
+  input: {
+    groupId: string;
+    groupName: string;
+    action: "create_child" | "update_child" | "move_child" | "approve_move_request";
+    childId: string | null;
+    payload: unknown;
+    requestedBy: string;
+  }
+): Promise<PendingCapacityApproval> {
+  const request = await db.createCapacityRequest(dbEnv, {
+    groupId: input.groupId,
+    action: input.action,
+    childId: input.childId,
+    payload: input.payload,
+    requestedBy: input.requestedBy,
+  });
+  return { status: "pending_capacity_approval", requestId: request.id, groupName: input.groupName };
+}
+
+// Führt die ursprünglich geplante Aktion einer freigegebenen
+// Kapazitäts-Anfrage nachträglich aus.
+async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestRow, approvedBy: string): Promise<void> {
+  const payload = JSON.parse(request.payload);
+  switch (request.action) {
+    case "create_child":
+      await db.createChild(dbEnv, payload);
+      break;
+    case "update_child":
+      if (request.child_id) await db.updateChild(dbEnv, request.child_id, payload);
+      break;
+    case "move_child":
+      if (request.child_id) await db.moveChildToGroup(dbEnv, request.child_id, payload.toGroupId);
+      break;
+    case "approve_move_request": {
+      const moveRequest = await db.getMoveRequestRowById(dbEnv, payload.moveRequestId);
+      if (moveRequest && moveRequest.status === "pending") {
+        await db.moveChildToGroup(dbEnv, moveRequest.child_id, moveRequest.to_group_id);
+        await db.setMoveRequestStatus(dbEnv, moveRequest.id, "approved", approvedBy);
+      }
+      break;
+    }
+  }
 }
 
 app.post("/api/login", async (c) => {
@@ -352,9 +431,22 @@ app.post("/api/children", requireAuth, async (c) => {
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
     if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
-    if (body?.confirmOverCapacity !== true) {
-      const warning = await capacityWarning(c.env.DB, group, undefined);
-      if (warning) return c.json(warning, 409);
+    const gate = await capacityGate(c.env.DB, group, undefined, {
+      userId: c.get("userId"),
+      clubId: c.get("clubId"),
+      clubRole: c.get("clubRole"),
+    });
+    if (gate.mode === "self_confirm" && body?.confirmOverCapacity !== true) return c.json(gate.warning, 409);
+    if (gate.mode === "leadership_approval") {
+      const pending = await fileCapacityRequest(c.env.DB, {
+        groupId,
+        groupName: group.name,
+        action: "create_child",
+        childId: null,
+        payload: { firstName, lastName, birthDate, groupId, notes },
+        requestedBy: c.get("userId"),
+      });
+      return c.json(pending, 202);
     }
   }
 
@@ -387,9 +479,24 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
     if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
-    if (groupId !== existing.group_id && body?.confirmOverCapacity !== true) {
-      const warning = await capacityWarning(c.env.DB, group, id);
-      if (warning) return c.json(warning, 409);
+    if (groupId !== existing.group_id) {
+      const gate = await capacityGate(c.env.DB, group, id, {
+        userId: c.get("userId"),
+        clubId: c.get("clubId"),
+        clubRole: c.get("clubRole"),
+      });
+      if (gate.mode === "self_confirm" && body?.confirmOverCapacity !== true) return c.json(gate.warning, 409);
+      if (gate.mode === "leadership_approval") {
+        const pending = await fileCapacityRequest(c.env.DB, {
+          groupId,
+          groupName: group.name,
+          action: "update_child",
+          childId: id,
+          payload: { firstName, lastName, birthDate, groupId, notes },
+          requestedBy: c.get("userId"),
+        });
+        return c.json(pending, 202);
+      }
     }
   }
 
@@ -439,9 +546,22 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
   const targetUnclaimed = targetGroup.owner_id === null;
 
   if (fits || targetOwnedByRequester || targetUnclaimed) {
-    if (body?.confirmOverCapacity !== true) {
-      const warning = await capacityWarning(c.env.DB, targetGroup, id);
-      if (warning) return c.json(warning, 409);
+    const gate = await capacityGate(c.env.DB, targetGroup, id, {
+      userId: c.get("userId"),
+      clubId: c.get("clubId"),
+      clubRole: c.get("clubRole"),
+    });
+    if (gate.mode === "self_confirm" && body?.confirmOverCapacity !== true) return c.json(gate.warning, 409);
+    if (gate.mode === "leadership_approval") {
+      const pending = await fileCapacityRequest(c.env.DB, {
+        groupId: toGroupId,
+        groupName: targetGroup.name,
+        action: "move_child",
+        childId: id,
+        payload: { toGroupId },
+        requestedBy: c.get("userId"),
+      });
+      return c.json(pending, 202);
     }
     await db.moveChildToGroup(c.env.DB, id, toGroupId);
     return c.json({ status: "moved", groupId: toGroupId });
@@ -479,9 +599,22 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
   if (!targetGroup || targetGroup.owner_id !== c.get("userId"))
     return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
-  if (body?.confirmOverCapacity !== true) {
-    const warning = await capacityWarning(c.env.DB, targetGroup, request.child_id);
-    if (warning) return c.json(warning, 409);
+  const gate = await capacityGate(c.env.DB, targetGroup, request.child_id, {
+    userId: c.get("userId"),
+    clubId: c.get("clubId"),
+    clubRole: c.get("clubRole"),
+  });
+  if (gate.mode === "self_confirm" && body?.confirmOverCapacity !== true) return c.json(gate.warning, 409);
+  if (gate.mode === "leadership_approval") {
+    const pending = await fileCapacityRequest(c.env.DB, {
+      groupId: request.to_group_id,
+      groupName: targetGroup.name,
+      action: "approve_move_request",
+      childId: request.child_id,
+      payload: { moveRequestId: request.id },
+      requestedBy: c.get("userId"),
+    });
+    return c.json(pending, 202);
   }
 
   await db.moveChildToGroup(c.env.DB, request.child_id, request.to_group_id);
@@ -515,6 +648,66 @@ app.delete("/api/move-requests/:id", requireAuth, async (c) => {
   if (request.requested_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
 
   await db.setMoveRequestStatus(c.env.DB, id, "cancelled", c.get("userId"));
+  return c.body(null, 204);
+});
+
+// --- Kapazitäts-Anfragen ----------------------------------------------------
+
+app.get("/api/capacity-requests/incoming", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  return c.json(await db.listIncomingCapacityRequests(c.env.DB, clubId));
+});
+
+app.get("/api/capacity-requests/outgoing", requireAuth, async (c) => {
+  return c.json(await db.listOutgoingCapacityRequests(c.env.DB, c.get("userId")));
+});
+
+app.post("/api/capacity-requests/:id/approve", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getCapacityRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group || !group.club_id || group.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Nur die Jugendleitung dieses Vereins kann diese Anfrage freigeben" }, 403);
+  }
+
+  await applyCapacityRequest(c.env.DB, request, c.get("userId"));
+  await db.setCapacityRequestStatus(c.env.DB, id, "approved", c.get("userId"));
+  return c.json({ ok: true });
+});
+
+app.post("/api/capacity-requests/:id/reject", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getCapacityRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group || !group.club_id || group.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Nur die Jugendleitung dieses Vereins kann diese Anfrage ablehnen" }, 403);
+  }
+
+  await db.setCapacityRequestStatus(c.env.DB, id, "rejected", c.get("userId"));
+  return c.json({ ok: true });
+});
+
+app.delete("/api/capacity-requests/:id", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getCapacityRequestRowById(c.env.DB, id);
+  if (!request) return c.body(null, 204);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.requested_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.setCapacityRequestStatus(c.env.DB, id, "cancelled", c.get("userId"));
   return c.body(null, 204);
 });
 
