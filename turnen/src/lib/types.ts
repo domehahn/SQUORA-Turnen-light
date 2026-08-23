@@ -209,6 +209,22 @@ export interface SubstituteRequest {
   createdAt: string;
 }
 
+export interface HoursSummaryYear {
+  year: number;
+  ownHours: number;
+  substituteHours: number;
+  totalHours: number;
+  sessionCount: number;
+}
+
+export interface HoursSummary {
+  ownHours: number;
+  substituteHours: number;
+  totalHours: number;
+  sessionCount: number;
+  byYear: HoursSummaryYear[];
+}
+
 export interface SessionLeader {
   ledBy: string | null;
   ledByName: string | null;

@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type InputHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
-import type { HoursReport } from "../lib/types";
+import type { HoursReport, HoursSummary } from "../lib/types";
 
 const LOCAL_STORAGE_KEYS = {
   licenseNumber: "turnen_nachweis_lizenznr",
@@ -14,12 +14,46 @@ function currentQuarter(): { year: number; quarter: number } {
   return { year: now.getFullYear(), quarter: Math.floor(now.getMonth() / 3) + 1 };
 }
 
+// Immer hell gestylte Eingabefelder, unabhängig vom App-Darkmode - die
+// FloatingField-Komponenten haben dark:-Varianten, die hier nicht greifen
+// dürfen (siehe Begründung für erzwungenes Hell-Theme weiter unten).
+function LightField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const fieldClass =
+  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+
+function LightInput({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  return (
+    <LightField label={label}>
+      <input {...props} className={`${fieldClass} ${className ?? ""}`} />
+    </LightField>
+  );
+}
+
+function LightSelect({ label, className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { label: string }) {
+  return (
+    <LightField label={label}>
+      <select {...props} className={`${fieldClass} ${className ?? ""}`}>
+        {children}
+      </select>
+    </LightField>
+  );
+}
+
 export default function HoursReportPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const defaults = currentQuarter();
   const [year, setYear] = useState(Number(searchParams.get("year")) || defaults.year);
   const [quarter, setQuarter] = useState(Number(searchParams.get("quarter")) || defaults.quarter);
   const [report, setReport] = useState<HoursReport | null>(null);
+  const [summary, setSummary] = useState<HoursSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +91,13 @@ export default function HoursReportPage() {
     load();
   }, [year, quarter]);
 
+  useEffect(() => {
+    api
+      .get<HoursSummary>("/api/hours-summary")
+      .then(setSummary)
+      .catch(() => setSummary(null));
+  }, []);
+
   const totalHours = report ? Math.round(report.months.reduce((sum, m) => sum + m.totalHours, 0) * 100) / 100 : 0;
   const today = new Date();
   const todayLabel = new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(today);
@@ -66,62 +107,81 @@ export default function HoursReportPage() {
     // src/pages/AttendancePrint.tsx für dieselbe Begründung.
     <div className="min-h-screen bg-white p-6 text-slate-900" style={{ colorScheme: "light" }}>
       <div className="mx-auto max-w-4xl">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3 print:hidden">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="text-sm text-slate-600">
-              Jahr
-              <input
-                type="number"
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-                className="ml-2 w-24 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
-              />
-            </label>
-            <label className="text-sm text-slate-600">
-              Quartal
-              <select
-                value={quarter}
-                onChange={(e) => setQuarter(Number(e.target.value))}
-                className="ml-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+        <div className="mb-4 print:hidden">
+          <h1 className="mb-0.5 text-lg font-semibold text-slate-900">Stundennachweis</h1>
+          <p className="mb-4 text-sm text-slate-500">
+            Amtliches Formular für den Zuschussnachweis - Daten werden automatisch aus der Anwesenheitserfassung
+            übernommen.
+          </p>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <LightInput label="Jahr" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24" />
+                <LightSelect label="Quartal" value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} className="w-32">
+                  <option value={1}>1. Quartal</option>
+                  <option value={2}>2. Quartal</option>
+                  <option value={3}>3. Quartal</option>
+                  <option value={4}>4. Quartal</option>
+                </LightSelect>
+              </div>
+              <button
+                onClick={() => window.print()}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
-                <option value={1}>1. Quartal</option>
-                <option value={2}>2. Quartal</option>
-                <option value={3}>3. Quartal</option>
-                <option value={4}>4. Quartal</option>
-              </select>
-            </label>
-            <label className="text-sm text-slate-600">
-              Sportart
-              <input
-                value={sport}
-                onChange={(e) => setSport(e.target.value)}
-                className="ml-2 w-40 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
-              />
-            </label>
-            <label className="text-sm text-slate-600">
-              Lizenz-Nr.
-              <input
-                value={licenseNumber}
-                onChange={(e) => setLicenseNumber(e.target.value)}
-                className="ml-2 w-28 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
-              />
-            </label>
-            <label className="text-sm text-slate-600">
-              Gültig bis
-              <input
-                value={validUntil}
-                onChange={(e) => setValidUntil(e.target.value)}
-                className="ml-2 w-28 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
-              />
-            </label>
+                Drucken
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 sm:grid-cols-3">
+              <LightInput label="Sportart" value={sport} onChange={(e) => setSport(e.target.value)} />
+              <LightInput label="Lizenz-Nr." value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+              <LightInput label="Gültig bis" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} placeholder="TT.MM.JJJJ" />
+            </div>
           </div>
-          <button
-            onClick={() => window.print()}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            Drucken
-          </button>
         </div>
+
+        {summary && summary.sessionCount > 0 && (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 print:hidden">
+            <h2 className="mb-2 text-sm font-semibold text-blue-900">Gesamtübersicht - alle Zeit</h2>
+            <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm text-blue-900">
+              <span>
+                <span className="text-lg font-bold">{summary.totalHours}</span> Std. insgesamt
+              </span>
+              <span>
+                <span className="font-semibold">{summary.ownHours}</span> Std. eigene Gruppen
+              </span>
+              <span>
+                <span className="font-semibold">{summary.substituteHours}</span> Std. als Vertretung
+              </span>
+              <span className="text-blue-700">{summary.sessionCount} Einsätze insgesamt</span>
+            </div>
+            {summary.byYear.length > 1 && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="text-xs text-blue-900">
+                  <thead>
+                    <tr className="text-left text-blue-600">
+                      <th className="pr-4 py-1">Jahr</th>
+                      <th className="pr-4 py-1">Eigene Std.</th>
+                      <th className="pr-4 py-1">Vertretung Std.</th>
+                      <th className="pr-4 py-1">Summe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.byYear.map((y) => (
+                      <tr key={y.year} className="border-t border-blue-100">
+                        <td className="pr-4 py-1 font-medium">{y.year}</td>
+                        <td className="pr-4 py-1">{y.ownHours}</td>
+                        <td className="pr-4 py-1">{y.substituteHours}</td>
+                        <td className="pr-4 py-1 font-medium">{y.totalHours}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {error && <p className="mb-4 text-sm text-red-600 print:hidden">Fehler: {error}</p>}
         {loading || !report ? (

@@ -688,7 +688,7 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
 // --- Familien / Geschwister --------------------------------------------------
 
 app.get("/api/families", requireAuth, async (c) => {
-  return c.json(await db.listFamiliesForUser(c.env.DB, c.get("userId")));
+  return c.json(await db.listFamiliesForUser(c.env.DB, c.get("userId"), c.get("clubId")));
 });
 
 app.post("/api/families", requireAuth, async (c) => {
@@ -1189,6 +1189,28 @@ app.get("/api/children/attendance-summary", requireAuth, async (c) => {
 
 // --- Export ------------------------------------------------------------------
 
+// Aufbauzeit vor dem eigentlichen Trainingsbeginn - zählt bei der
+// Stundenerfassung mit dazu (z.B. Training 16:30-17:30 → angerechnet wird
+// 16:00-17:30). Gilt einheitlich für den CSV-Export und den amtlichen
+// Stundennachweis, da beide derselben Übungsleiterpauschale/dem Zuschuss-
+// nachweis dienen.
+const SETUP_MINUTES = 30;
+
+function subtractMinutes(time: string | null, minutes: number): string | null {
+  if (!time) return null;
+  const [h, m] = time.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  let total = h * 60 + m - minutes;
+  if (total < 0) total += 24 * 60;
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function effectiveStartTime(startTime: string | null): string | null {
+  return subtractMinutes(startTime, SETUP_MINUTES);
+}
+
 function formatDuration(startTime: string | null, endTime: string | null): string {
   if (!startTime || !endTime) return "";
   const [sh, sm] = startTime.split(":").map(Number);
@@ -1226,13 +1248,14 @@ app.get("/api/export/hours", requireAuth, async (c) => {
   const header = ["Datum", "Wochentag", "Gruppe", "Uhrzeit", "Dauer", "Übungsleiter*in", "Anwesende Kinder"];
   const lines = [header.map(csvCell).join(";")];
   for (const row of rows) {
+    const start = effectiveStartTime(row.startTime);
     lines.push(
       [
         row.sessionDate,
         row.weekday !== null ? WEEKDAY_NAMES[row.weekday] : "",
         row.groupName,
-        row.startTime && row.endTime ? `${row.startTime}–${row.endTime}` : "",
-        formatDuration(row.startTime, row.endTime),
+        start && row.endTime ? `${start}–${row.endTime}` : "",
+        formatDuration(start, row.endTime),
         row.ledByName ?? "",
         String(row.presentCount),
       ]
@@ -1296,12 +1319,13 @@ app.get("/api/hours-report", requireAuth, async (c) => {
       .filter((r) => r.sessionDate.slice(5, 7) === monthStr)
       .map((r) => {
         const einsatzort = r.note ?? (r.location ? `Training ${r.location}` : "Training");
+        const start = effectiveStartTime(r.startTime);
         return {
           day: Number(r.sessionDate.slice(8, 10)),
           date: r.sessionDate,
-          startTime: r.startTime,
+          startTime: start,
           endTime: r.endTime,
-          hours: hoursBetween(r.startTime, r.endTime),
+          hours: hoursBetween(start, r.endTime),
           location: einsatzort,
         };
       });
@@ -1318,6 +1342,46 @@ app.get("/api/hours-report", requireAuth, async (c) => {
     clubNumber: club?.clubNumber ?? null,
     userName: c.get("name"),
     months,
+  });
+});
+
+// Gesamtübersicht "wie viele Stunden habe ich insgesamt schon geleitet" -
+// gruppen- und quartalsübergreifend, mit Aufschlüsselung eigene Stunden vs.
+// als Vertretung übernommene, sowie eine Jahres-Aufschlüsselung.
+app.get("/api/hours-summary", requireAuth, async (c) => {
+  const rows = await db.listAllLedSessionsForUser(c.env.DB, c.get("userId"));
+
+  const byYear = new Map<number, { year: number; ownHours: number; substituteHours: number; sessionCount: number }>();
+  let ownHours = 0;
+  let substituteHours = 0;
+
+  for (const row of rows) {
+    const start = effectiveStartTime(row.startTime);
+    const hours = hoursBetween(start, row.endTime);
+    if (hours === null) continue;
+    const year = Number(row.sessionDate.slice(0, 4));
+    if (!byYear.has(year)) byYear.set(year, { year, ownHours: 0, substituteHours: 0, sessionCount: 0 });
+    const bucket = byYear.get(year)!;
+    bucket.sessionCount += 1;
+    if (row.isSubstitute) {
+      substituteHours += hours;
+      bucket.substituteHours += hours;
+    } else {
+      ownHours += hours;
+      bucket.ownHours += hours;
+    }
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  return c.json({
+    ownHours: round2(ownHours),
+    substituteHours: round2(substituteHours),
+    totalHours: round2(ownHours + substituteHours),
+    sessionCount: rows.length,
+    byYear: [...byYear.values()]
+      .sort((a, b) => b.year - a.year)
+      .map((y) => ({ ...y, ownHours: round2(y.ownHours), substituteHours: round2(y.substituteHours), totalHours: round2(y.ownHours + y.substituteHours) })),
   });
 });
 

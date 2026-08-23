@@ -703,6 +703,41 @@ export async function listSessionsForExport(
   }));
 }
 
+export interface LedSessionRow {
+  sessionDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  isSubstitute: boolean;
+}
+
+// Alle Termine, die eine Person jemals geleitet hat - gruppenübergreifend
+// und ohne Zeitraum-Begrenzung. Basis für die Gesamtübersicht "wie viele
+// Stunden habe ich insgesamt schon geleitet" (inkl. als Vertretung).
+// Termine ohne eingetragene Leitung zählen für die/den Gruppenbesitzer:in
+// (Bestandsschutz, wie bei listSessionsForExport).
+export async function listAllLedSessionsForUser(db: D1Database, userId: string): Promise<LedSessionRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT s.session_date as session_date,
+              COALESCE(s.start_time, g.start_time) as start_time,
+              COALESCE(s.end_time, g.end_time) as end_time,
+              g.owner_id as owner_id, s.led_by as led_by
+       FROM attendance_sessions s
+       JOIN groups g ON g.id = s.group_id
+       WHERE s.led_by = ?1 OR (s.led_by IS NULL AND g.owner_id = ?1)
+       ORDER BY s.session_date ASC`
+    )
+    .bind(userId)
+    .all<{ session_date: string; start_time: string | null; end_time: string | null; owner_id: string | null; led_by: string | null }>();
+
+  return results.map((row) => ({
+    sessionDate: row.session_date,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    isSubstitute: row.led_by !== null && row.led_by !== row.owner_id,
+  }));
+}
+
 // --- Gruppenwechsel / Verschiebe-Anfragen ---------------------------------
 
 export async function moveChildToGroup(db: D1Database, childId: string, groupId: string): Promise<void> {
@@ -1107,9 +1142,25 @@ export async function getFamilyRowById(db: D1Database, id: string): Promise<Fami
   return db.prepare("SELECT * FROM families WHERE id = ?").bind(id).first<FamilyRow>();
 }
 
-// Familien, die der Nutzer selbst angelegt hat - für die Auswahl "vorhandene
-// Familie/Geschwister zuordnen" im Kind-Formular.
-export async function listFamiliesForUser(db: D1Database, userId: string): Promise<Family[]> {
+// Familien für die Auswahl "vorhandene Familie/Geschwister zuordnen" im
+// Kind-Formular. Vereinsweit sichtbar (nicht nur die eigenen), damit sich
+// Geschwister auch gruppenübergreifend verknüpfen lassen - z.B. wenn ein
+// Kind bei der eigenen Gruppe und sein Geschwisterkind bei einer anderen
+// Übungsleitung im selben Verein trainiert. Ohne Verein (Alt-Konten) bleibt
+// es bei den eigenen Familien.
+export async function listFamiliesForUser(db: D1Database, userId: string, clubId: string | null): Promise<Family[]> {
+  if (clubId) {
+    const { results } = await db
+      .prepare(
+        `SELECT f.* FROM families f
+         JOIN users u ON u.id = f.created_by
+         WHERE u.club_id = ?
+         ORDER BY f.name ASC`
+      )
+      .bind(clubId)
+      .all<FamilyRow>();
+    return results.map(rowToFamily);
+  }
   const { results } = await db
     .prepare("SELECT * FROM families WHERE created_by = ? ORDER BY name ASC")
     .bind(userId)
