@@ -378,6 +378,14 @@ export async function getChildRowById(db: D1Database, id: string): Promise<Child
   return db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
 }
 
+// Nur die Familien-Zuordnung ändern (Geschwister verknüpfen/trennen), ohne
+// den restlichen Datensatz anzufassen.
+export async function setChildFamily(db: D1Database, id: string, familyId: string | null): Promise<Child | null> {
+  await db.prepare("UPDATE children SET family_id = ? WHERE id = ?").bind(familyId, id).run();
+  const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
+  return row ? rowToChild(row, true) : null;
+}
+
 // Anzahl der Kinder, die aktuell in einer Gruppe stehen - für die
 // Kapazitätsprüfung beim Zuweisen. `excludeChildId` blendet ein Kind aus
 // (z.B. das gerade bearbeitete, das ohnehin schon in der Gruppe steht).

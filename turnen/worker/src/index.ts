@@ -691,6 +691,39 @@ app.get("/api/families", requireAuth, async (c) => {
   return c.json(await db.listFamiliesForUser(c.env.DB, c.get("userId"), c.get("clubId")));
 });
 
+// Nur die Familien-Zuordnung eines Kindes ändern, ohne den restlichen
+// Datensatz erneut mitschicken zu müssen - Basis für das Verknüpfen von
+// Geschwistern direkt aus der Kinder-Liste heraus (siehe Frontend:
+// Geschwister werden über eine Auswahl anderer Kinder verknüpft, nicht über
+// eine separat anzulegende "Familie").
+app.put("/api/children/:id/family", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const familyId = optionalId(body?.familyId);
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
+
+  const existing = await db.getChildRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
+
+  // Bewusst großzügiger als der volle Kind-Bearbeitungsschutz: Geschwister
+  // sollen sich auch gruppen- und übungsleiterübergreifend verknüpfen
+  // lassen. Wer das Kind ohnehin bearbeiten darf, darf das natürlich immer;
+  // zusätzlich reicht es, wenn das Kind über eine Vereinsgruppe im selben
+  // Verein sichtbar ist - es wird ja nur die Familien-Zuordnung berührt,
+  // sonst nichts.
+  let allowed = await isChildWritable(c.env.DB, existing, c.get("userId"));
+  if (!allowed && existing.group_id) {
+    const group = await db.getGroupRowById(c.env.DB, existing.group_id);
+    const clubId = c.get("clubId");
+    allowed = Boolean(group?.club_id && clubId && group.club_id === clubId);
+  }
+  if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+
+  const child = await db.setChildFamily(c.env.DB, id, familyId);
+  return c.json(child);
+});
+
 app.post("/api/families", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   const name = requiredText(body?.name, 100);

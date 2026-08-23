@@ -2,6 +2,12 @@ import { useEffect, useState, type InputHTMLAttributes, type SelectHTMLAttribute
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { HoursReport, HoursSummary } from "../lib/types";
+import SquoraBrand from "../components/SquoraBrand";
+
+// SQUORA-Formularstil (siehe tournament-manager/AufstellungsbogenPdfService):
+// helle blaue Tabellenköpfe statt schlichtem Grau/Schwarz.
+const thClass = "border border-slate-400 bg-blue-100 px-2 py-1 font-semibold text-blue-900";
+const thClassSm = "border border-slate-400 bg-blue-100 px-1 py-1 font-semibold text-blue-900";
 
 const LOCAL_STORAGE_KEYS = {
   licenseNumber: "turnen_nachweis_lizenznr",
@@ -105,8 +111,12 @@ export default function HoursReportPage() {
   return (
     // Immer hell/schwarz-auf-weiß, unabhängig vom Darkmode - siehe
     // src/pages/AttendancePrint.tsx für dieselbe Begründung.
-    <div className="min-h-screen bg-white p-6 text-slate-900" style={{ colorScheme: "light" }}>
+    <div
+      className="min-h-screen bg-white p-6 text-slate-900"
+      style={{ colorScheme: "light", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+    >
       <div className="mx-auto max-w-4xl">
+        <SquoraBrand className="mb-4" />
         <div className="mb-4 print:hidden">
           <h1 className="mb-0.5 text-lg font-semibold text-slate-900">Stundennachweis</h1>
           <p className="mb-4 text-sm text-slate-500">
@@ -209,12 +219,12 @@ export default function HoursReportPage() {
             <table className="mb-4 w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  <th className="border border-slate-400 px-2 py-1 text-left">Für Monat</th>
-                  <th className="border border-slate-400 px-2 py-1">Zahl der Stunden</th>
-                  <th className="border border-slate-400 px-2 py-1">Euro pro Stunde</th>
-                  <th className="border border-slate-400 px-2 py-1">Zusammen in Euro</th>
-                  <th className="border border-slate-400 px-2 py-1">Pauschalbetrag in Euro</th>
-                  <th className="border border-slate-400 px-2 py-1">Davon Fahrt-/Nebenkosten in Euro</th>
+                  <th className={`${thClass} text-left`}>Für Monat</th>
+                  <th className={thClass}>Zahl der Stunden</th>
+                  <th className={thClass}>Euro pro Stunde</th>
+                  <th className={thClass}>Zusammen in Euro</th>
+                  <th className={thClass}>Pauschalbetrag in Euro</th>
+                  <th className={thClass}>Davon Fahrt-/Nebenkosten in Euro</th>
                 </tr>
               </thead>
               <tbody>
@@ -266,10 +276,10 @@ export default function HoursReportPage() {
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr>
-                        <th className="border border-slate-400 px-1 py-1">Dat.</th>
-                        <th className="border border-slate-400 px-1 py-1">Uhrzeit von-bis</th>
-                        <th className="border border-slate-400 px-1 py-1">Zahl d. Std.</th>
-                        <th className="border border-slate-400 px-1 py-1">Einsatzort</th>
+                        <th className={thClassSm}>Dat.</th>
+                        <th className={thClassSm}>Uhrzeit von-bis</th>
+                        <th className={thClassSm}>Zahl d. Std.</th>
+                        <th className={thClassSm}>Einsatzort</th>
                       </tr>
                     </thead>
                     <tbody>

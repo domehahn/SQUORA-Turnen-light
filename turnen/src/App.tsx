@@ -24,7 +24,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
 
           <Route element={<RequireAuth />}>
-            <Route path="druck/:groupId" element={<AttendancePrint />} />
+            <Route path="druck/:groupId?" element={<AttendancePrint />} />
             <Route path="nachweis" element={<HoursReportPage />} />
 
             <Route element={<AppLayout />}>

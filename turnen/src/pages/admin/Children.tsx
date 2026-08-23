@@ -4,7 +4,6 @@ import type {
   AttendanceSummary,
   CapacityRequest,
   Child,
-  Family,
   Group,
   MoveChildResponse,
   MoveRequest,
@@ -32,16 +31,10 @@ const emptyForm = {
   emergencyContactName: "",
   emergencyContactPhone: "",
   healthNotes: "",
-  familyId: "",
-  newFamilyName: "",
-  newFamilyContactName: "",
-  newFamilyContactPhone: "",
-  newFamilyContactEmail: "",
 };
 
 const STALE_ATTENDANCE_WEEKS = 4;
 const WAITLIST_PREFIX = "waitlist:";
-const NEW_FAMILY_VALUE = "__new__";
 
 function isPendingCapacityApproval(value: unknown): value is PendingCapacityApproval {
   return (
@@ -115,9 +108,18 @@ export default function Children() {
   const [outgoingCapacityRequests, setOutgoingCapacityRequests] = useState<CapacityRequest[]>([]);
   const [myWaitlistEntries, setMyWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [attendanceSummary, setAttendanceSummary] = useState<Record<string, AttendanceSummary>>({});
-  const [families, setFamilies] = useState<Family[]>([]);
   const [search, setSearch] = useState("");
-  const [printGroupId, setPrintGroupId] = useState("");
+  const [printGroupIds, setPrintGroupIds] = useState<string[]>([]);
+
+  // Geschwister-Verknüpfung: statt einer separat zu benennenden "Familie"
+  // wählt man hier direkt die Geschwister aus der Kinder-Liste aus - das
+  // Familien-Konzept dahinter ist reines Verknüpfungs-Werkzeug und bleibt
+  // unsichtbar. `originalFamilyId` merkt sich beim Bearbeiten, in welcher
+  // Familie das Kind vorher steckte, damit beim Speichern erkannt wird,
+  // welche Geschwister entfernt wurden.
+  const [siblingIds, setSiblingIds] = useState<string[]>([]);
+  const [originalFamilyId, setOriginalFamilyId] = useState<string | null>(null);
+  const [addSiblingValue, setAddSiblingValue] = useState("");
 
   async function load() {
     setLoading(true);
@@ -182,21 +184,12 @@ export default function Children() {
     }
   }
 
-  async function loadFamilies() {
-    try {
-      setFamilies(await api.get<Family[]>("/api/families"));
-    } catch {
-      // Zusatzinfo - Ladefehler soll die Seite nicht blockieren.
-    }
-  }
-
   useEffect(() => {
     load();
     loadMoveRequests();
     loadCapacityRequests();
     loadWaitlist();
     loadAttendanceSummary();
-    loadFamilies();
   }, []);
 
   async function handleMove(childId: string, toGroupId: string) {
@@ -327,17 +320,65 @@ export default function Children() {
       emergencyContactName: child.emergencyContactName ?? "",
       emergencyContactPhone: child.emergencyContactPhone ?? "",
       healthNotes: child.healthNotes ?? "",
-      familyId: child.familyId ?? "",
-      newFamilyName: "",
-      newFamilyContactName: "",
-      newFamilyContactPhone: "",
-      newFamilyContactEmail: "",
     });
+    setOriginalFamilyId(child.familyId);
+    setSiblingIds(
+      child.familyId ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id).map((c) => c.id) : []
+    );
+    setAddSiblingValue("");
   }
 
   function resetForm() {
     setEditingId(null);
     setForm(emptyForm);
+    setOriginalFamilyId(null);
+    setSiblingIds([]);
+    setAddSiblingValue("");
+  }
+
+  // Geschwister direkt über die Kinder-Auswahl verknüpfen, statt vorher eine
+  // "Familie" benennen zu müssen: die passende Familie wird automatisch
+  // wiederverwendet (falls schon eine existiert) oder im Hintergrund neu
+  // angelegt. `childId` ist die ID des gerade gespeicherten Kindes.
+  async function syncSiblings(childId: string): Promise<void> {
+    const prevSiblingIds = originalFamilyId
+      ? children.filter((c) => c.familyId === originalFamilyId && c.id !== childId).map((c) => c.id)
+      : [];
+
+    if (siblingIds.length === 0) {
+      // Keine Geschwister (mehr) ausgewählt: dieses Kind aus seiner Familie
+      // lösen, falls es vorher in einer war.
+      if (originalFamilyId) await api.put(`/api/children/${childId}/family`, { familyId: null });
+      return;
+    }
+
+    // Vorhandene Familie eines ausgewählten Geschwisterkindes wiederverwenden
+    // (bevorzugt die des Kindes selbst), sonst neu anlegen.
+    let familyId =
+      originalFamilyId ?? siblingIds.map((id) => children.find((c) => c.id === id)?.familyId).find((f) => f) ?? null;
+    if (!familyId) {
+      const family = await api.post<{ id: string }>("/api/families", {
+        name: `Familie ${form.lastName || form.firstName}`.trim(),
+        contactName: null,
+        contactPhone: null,
+        contactEmail: null,
+      });
+      familyId = family.id;
+    }
+
+    await api.put(`/api/children/${childId}/family`, { familyId });
+    for (const siblingId of siblingIds) {
+      const sibling = children.find((c) => c.id === siblingId);
+      if (sibling?.familyId !== familyId) {
+        await api.put(`/api/children/${siblingId}/family`, { familyId });
+      }
+    }
+    // Geschwister, die aus der Auswahl entfernt wurden, aus der Familie lösen.
+    for (const removedId of prevSiblingIds) {
+      if (!siblingIds.includes(removedId)) {
+        await api.put(`/api/children/${removedId}/family`, { familyId: null });
+      }
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -345,18 +386,6 @@ export default function Children() {
     setError(null);
     setInfo(null);
     try {
-      let familyId = form.familyId;
-      if (familyId === NEW_FAMILY_VALUE) {
-        const family = await api.post<Family>("/api/families", {
-          name: form.newFamilyName,
-          contactName: form.newFamilyContactName || null,
-          contactPhone: form.newFamilyContactPhone || null,
-          contactEmail: form.newFamilyContactEmail || null,
-        });
-        familyId = family.id;
-        await loadFamilies();
-      }
-
       const result = await withCapacityConfirm((confirmOverCapacity) => {
         const payload = {
           firstName: form.firstName,
@@ -367,7 +396,6 @@ export default function Children() {
           emergencyContactName: form.emergencyContactName || null,
           emergencyContactPhone: form.emergencyContactPhone || null,
           healthNotes: form.healthNotes || null,
-          familyId: familyId || null,
           confirmOverCapacity,
         };
         return editingId
@@ -378,6 +406,8 @@ export default function Children() {
       if (isPendingCapacityApproval(result)) {
         setInfo(`Kapazität von „${result.groupName}“ ist ausgeschöpft – Anfrage an die Jugendleitung gesendet.`);
         await loadCapacityRequests();
+      } else {
+        await syncSiblings(result.id);
       }
       resetForm();
       load();
@@ -413,6 +443,29 @@ export default function Children() {
   // Kinder können nur in eigene (bearbeitbare) Gruppen einsortiert werden -
   // fremde, lediglich lesbare Vereinsgruppen fehlen bewusst in der Auswahl.
   const writableGroups = groups.filter((g) => g.canEdit);
+
+  // Kinder nach Gruppe gebündelt statt einer flachen Liste mit Gruppen-Spalte
+  // anzuzeigen - der Gruppenname steht dann nur einmal als Überschrift.
+  const groupedFilteredChildren = useMemo(() => {
+    const byGroup = new Map<string, Child[]>();
+    const ungrouped: Child[] = [];
+    for (const child of filteredChildren) {
+      if (child.groupId) {
+        const list = byGroup.get(child.groupId) ?? [];
+        list.push(child);
+        byGroup.set(child.groupId, list);
+      } else {
+        ungrouped.push(child);
+      }
+    }
+    const sections: { group: Group | null; children: Child[] }[] = [];
+    for (const g of groups) {
+      const list = byGroup.get(g.id);
+      if (list && list.length > 0) sections.push({ group: g, children: list });
+    }
+    if (ungrouped.length > 0) sections.push({ group: null, children: ungrouped });
+    return sections;
+  }, [filteredChildren, groups]);
 
   const upcomingByUrgency = useMemo(() => {
     const buckets: Record<SwitchUrgency, UpcomingSwitch[]> = {
@@ -743,56 +796,52 @@ export default function Children() {
             onChange={(e) => setForm({ ...form, healthNotes: e.target.value })}
           />
         </div>
-        <div className="w-52">
-          <FloatingSelect
-            label="Familie/Geschwister (optional)"
-            value={form.familyId}
-            onChange={(e) => setForm({ ...form, familyId: e.target.value })}
-          >
-            <option value="">Keine</option>
-            {families.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-            <option value={NEW_FAMILY_VALUE}>+ Neue Familie anlegen…</option>
-          </FloatingSelect>
+        <div className="w-full border-t border-slate-100 pt-3 dark:border-slate-800">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+            Geschwister (optional) – gleiche oder andere Gruppe, auch bei anderen Übungsleiter*innen im Verein
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {siblingIds.map((id) => {
+              const sibling = children.find((c) => c.id === id);
+              if (!sibling) return null;
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                >
+                  {sibling.firstName} {sibling.lastName}
+                  <button
+                    type="button"
+                    onClick={() => setSiblingIds((prev) => prev.filter((x) => x !== id))}
+                    aria-label={`${sibling.firstName} ${sibling.lastName} nicht mehr als Geschwister verknüpfen`}
+                    className="text-emerald-500 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-100"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            <select
+              value={addSiblingValue}
+              onChange={(e) => {
+                const id = e.target.value;
+                if (id) setSiblingIds((prev) => [...prev, id]);
+                setAddSiblingValue("");
+              }}
+              className="w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              <option value="">+ Geschwisterkind hinzufügen…</option>
+              {children
+                .filter((c) => c.id !== editingId && !siblingIds.includes(c.id))
+                .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName} ({groupName(c.groupId)})
+                  </option>
+                ))}
+            </select>
+          </div>
         </div>
-        {form.familyId === NEW_FAMILY_VALUE && (
-          <>
-            <div className="w-52">
-              <FloatingInput
-                label="Familienname"
-                required
-                value={form.newFamilyName}
-                onChange={(e) => setForm({ ...form, newFamilyName: e.target.value })}
-              />
-            </div>
-            <div className="w-52">
-              <FloatingInput
-                label="Kontakt: Name (optional)"
-                value={form.newFamilyContactName}
-                onChange={(e) => setForm({ ...form, newFamilyContactName: e.target.value })}
-              />
-            </div>
-            <div className="w-44">
-              <FloatingInput
-                label="Kontakt: Telefon (optional)"
-                type="tel"
-                value={form.newFamilyContactPhone}
-                onChange={(e) => setForm({ ...form, newFamilyContactPhone: e.target.value })}
-              />
-            </div>
-            <div className="w-52">
-              <FloatingInput
-                label="Kontakt: E-Mail (optional)"
-                type="email"
-                value={form.newFamilyContactEmail}
-                onChange={(e) => setForm({ ...form, newFamilyContactEmail: e.target.value })}
-              />
-            </div>
-          </>
-        )}
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}
         </button>
@@ -818,211 +867,225 @@ export default function Children() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="w-52">
-          <FloatingSelect label="Namensliste für Gruppe" value={printGroupId} onChange={(e) => setPrintGroupId(e.target.value)}>
-            <option value="">Gruppe wählen…</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Namensliste für Gruppe(n):</span>
+          {groups.map((g) => {
+            const selected = printGroupIds.includes(g.id);
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() =>
+                  setPrintGroupIds((prev) => (selected ? prev.filter((id) => id !== g.id) : [...prev, g.id]))
+                }
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                  selected
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
                 {g.name}
-              </option>
-            ))}
-          </FloatingSelect>
+              </button>
+            );
+          })}
         </div>
-        {printGroupId && (
+        {printGroupIds.length > 0 && (
           <a
-            href={`/druck/${printGroupId}?mode=namen`}
+            href={`/druck?mode=namen&groupIds=${printGroupIds.join(",")}`}
             target="_blank"
             rel="noreferrer"
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            Namensliste drucken
+            Namensliste drucken ({printGroupIds.length})
           </a>
         )}
       </div>
 
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
+      ) : groupedFilteredChildren.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
+          {children.length === 0 ? "Noch keine Kinder angelegt." : "Keine Treffer für diese Suche."}
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-          <table className="w-full min-w-[700px] text-left text-sm">
-            <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="hidden px-4 py-2 font-medium sm:table-cell">Geburtsdatum</th>
-                <th className="px-4 py-2 font-medium">Alter</th>
-                <th className="px-4 py-2 font-medium">Gruppe</th>
-                <th className="px-4 py-2 font-medium">Zuletzt da</th>
-                <th className="px-4 py-2 font-medium">Wechsel zur nächsten Gruppe</th>
-                <th className="px-4 py-2 font-medium">Verschieben</th>
-                <th className="px-4 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredChildren.map((child) => {
-                const age = calculateAgeYears(child.birthDate);
-                const currentGroup = groups.find((g) => g.id === child.groupId);
-                const matchingGroup = groupForAge(age, groups);
-                const mismatch = currentGroup ? age < currentGroup.minAge || age >= currentGroup.maxAge : false;
+        <div className="space-y-6">
+          {groupedFilteredChildren.map(({ group: sectionGroup, children: sectionChildren }) => (
+            <div key={sectionGroup?.id ?? "__none__"}>
+              <h3 className="mb-2 text-base font-semibold text-slate-900 dark:text-slate-100">
+                {sectionGroup ? sectionGroup.name : "Ohne Gruppe"}
+              </h3>
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <table className="w-full min-w-[700px] text-left text-sm">
+                  <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Name</th>
+                      <th className="hidden px-4 py-2 font-medium sm:table-cell">Geburtsdatum</th>
+                      <th className="px-4 py-2 font-medium">Alter</th>
+                      <th className="px-4 py-2 font-medium">Zuletzt da</th>
+                      <th className="px-4 py-2 font-medium">Wechsel zur nächsten Gruppe</th>
+                      <th className="px-4 py-2 font-medium">Verschieben</th>
+                      <th className="px-4 py-2 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sectionChildren.map((child) => {
+                      const age = calculateAgeYears(child.birthDate);
+                      const currentGroup = sectionGroup;
+                      const matchingGroup = groupForAge(age, groups);
+                      const mismatch = currentGroup ? age < currentGroup.minAge || age >= currentGroup.maxAge : false;
 
-                let switchLabel = "–";
-                if (currentGroup) {
-                  const switchDate = nextGroupSwitchDate(child.birthDate, currentGroup.maxAge);
-                  const target = nextGroup(currentGroup, groups);
-                  switchLabel = target
-                    ? `${target.name} ab ${formatMonthYear(switchDate)}`
-                    : `ab ${formatMonthYear(switchDate)}`;
-                }
+                      let switchLabel = "–";
+                      if (currentGroup) {
+                        const switchDate = nextGroupSwitchDate(child.birthDate, currentGroup.maxAge);
+                        const target = nextGroup(currentGroup, groups);
+                        switchLabel = target
+                          ? `${target.name} ab ${formatMonthYear(switchDate)}`
+                          : `ab ${formatMonthYear(switchDate)}`;
+                      }
 
-                const moveTargets = groups.filter((g) => g.id !== child.groupId);
-                const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
-                const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
-                const siblings = child.familyId
-                  ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id)
-                  : [];
+                      const moveTargets = groups.filter((g) => g.id !== child.groupId);
+                      const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
+                      const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
+                      const siblings = child.familyId
+                        ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id)
+                        : [];
 
-                const attendance = attendanceSummary[child.id];
-                let attendanceLabel = "–";
-                let attendanceStale = false;
-                if (child.groupId && attendance) {
-                  if (attendance.weeksSinceLastPresent === null) {
-                    attendanceLabel = "nie";
-                    attendanceStale = true;
-                  } else if (attendance.weeksSinceLastPresent === 0) {
-                    attendanceLabel = "diese Woche";
-                  } else {
-                    attendanceLabel = `vor ${attendance.weeksSinceLastPresent} Wo.`;
-                    attendanceStale = attendance.weeksSinceLastPresent >= STALE_ATTENDANCE_WEEKS;
-                  }
-                }
+                      const attendance = attendanceSummary[child.id];
+                      let attendanceLabel = "–";
+                      let attendanceStale = false;
+                      if (child.groupId && attendance) {
+                        if (attendance.weeksSinceLastPresent === null) {
+                          attendanceLabel = "nie";
+                          attendanceStale = true;
+                        } else if (attendance.weeksSinceLastPresent === 0) {
+                          attendanceLabel = "diese Woche";
+                        } else {
+                          attendanceLabel = `vor ${attendance.weeksSinceLastPresent} Wo.`;
+                          attendanceStale = attendance.weeksSinceLastPresent >= STALE_ATTENDANCE_WEEKS;
+                        }
+                      }
 
-                return (
-                  <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
-                    <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
-                      {child.firstName} {child.lastName}
-                      {hasHealthInfo && (
-                        <span
-                          className="ml-1.5 cursor-help"
-                          title={[
-                            child.emergencyContactName ? `Notfallkontakt: ${child.emergencyContactName}` : null,
-                            child.emergencyContactPhone ? `Tel: ${child.emergencyContactPhone}` : null,
-                            child.healthNotes ? `Gesundheit: ${child.healthNotes}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        >
-                          ⚕️
-                        </span>
-                      )}
-                      {siblings.length > 0 && (
-                        <span
-                          className="ml-1.5 cursor-help"
-                          title={`Geschwister: ${siblings.map((s) => `${s.firstName} ${s.lastName}`).join(", ")}`}
-                        >
-                          👨‍👩‍👧
-                        </span>
-                      )}
-                    </td>
-                    <td className="hidden px-4 py-2 text-slate-600 dark:text-slate-300 sm:table-cell">{child.birthDate}</td>
-                    <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{age} Jahre</td>
-                    <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
-                      {groupName(child.groupId)}
-                      {mismatch && (
-                        <span
-                          className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-                          title={matchingGroup ? `Alter passt eher zu ${matchingGroup.name}` : "Alter passt zu keiner bestehenden Gruppe mehr"}
-                        >
-                          Wechsel fällig
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {child.groupId ? (
-                        <span
-                          className={
-                            attendanceStale
-                              ? "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-                              : "text-slate-600 dark:text-slate-300"
-                          }
-                          title={attendanceStale ? "Möglicherweise abgemeldet, aber nicht ausgetragen" : undefined}
-                        >
-                          {attendanceLabel}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 dark:text-slate-500">–</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{switchLabel}</td>
-                    <td className="px-4 py-2">
-                      {!child.canEdit ? (
-                        <span className="text-xs text-slate-300 dark:text-slate-600">–</span>
-                      ) : hasOpenRequest ? (
-                        <span className="text-xs text-amber-600 dark:text-amber-400">wartet auf Freigabe</span>
-                      ) : (
-                        <select
-                          value={moveSelection[child.id] ?? ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setMoveSelection((prev) => ({ ...prev, [child.id]: value }));
-                            if (value.startsWith(WAITLIST_PREFIX)) {
-                              handleAddToWaitlist(child.id, value.slice(WAITLIST_PREFIX.length));
-                            } else {
-                              handleMove(child.id, value);
-                            }
-                          }}
-                          className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          <option value="">Verschieben nach…</option>
-                          {moveTargets.map((g) => {
-                            const fits = age >= g.minAge && age < g.maxAge;
-                            const full = g.maxChildren !== null && children.filter((c) => c.groupId === g.id).length >= g.maxChildren;
-                            if (full) {
-                              return (
-                                <option key={g.id} value={`${WAITLIST_PREFIX}${g.id}`}>
-                                  {g.name} (voll – auf Warteliste)
-                                </option>
-                              );
-                            }
-                            return (
-                              <option key={g.id} value={g.id}>
-                                {g.name}
-                                {fits ? "" : " (benötigt Freigabe)"}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      {child.canEdit ? (
-                        <>
-                          <button onClick={() => startEdit(child)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
-                            Bearbeiten
-                          </button>
-                          <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
-                            Löschen
-                          </button>
-                        </>
-                      ) : (
-                        <span
-                          className="text-sm text-slate-300 dark:text-slate-600"
-                          title="Nur lesbar – Kind einer fremden Vereinsgruppe"
-                        >
-                          nur lesbar
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredChildren.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
-                    {children.length === 0 ? "Noch keine Kinder angelegt." : "Keine Treffer für diese Suche."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      return (
+                        <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
+                          <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
+                            {child.firstName} {child.lastName}
+                            {hasHealthInfo && (
+                              <span
+                                className="ml-1.5 cursor-help"
+                                title={[
+                                  child.emergencyContactName ? `Notfallkontakt: ${child.emergencyContactName}` : null,
+                                  child.emergencyContactPhone ? `Tel: ${child.emergencyContactPhone}` : null,
+                                  child.healthNotes ? `Gesundheit: ${child.healthNotes}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              >
+                                ⚕️
+                              </span>
+                            )}
+                            {siblings.length > 0 && (
+                              <span
+                                className="ml-1.5 cursor-help"
+                                title={`Geschwister: ${siblings.map((s) => `${s.firstName} ${s.lastName}`).join(", ")}`}
+                              >
+                                👨‍👩‍👧
+                              </span>
+                            )}
+                            {mismatch && (
+                              <span
+                                className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                                title={matchingGroup ? `Alter passt eher zu ${matchingGroup.name}` : "Alter passt zu keiner bestehenden Gruppe mehr"}
+                              >
+                                Wechsel fällig
+                              </span>
+                            )}
+                          </td>
+                          <td className="hidden px-4 py-2 text-slate-600 dark:text-slate-300 sm:table-cell">{child.birthDate}</td>
+                          <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{age} Jahre</td>
+                          <td className="px-4 py-2">
+                            {child.groupId ? (
+                              <span
+                                className={
+                                  attendanceStale
+                                    ? "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                                    : "text-slate-600 dark:text-slate-300"
+                                }
+                                title={attendanceStale ? "Möglicherweise abgemeldet, aber nicht ausgetragen" : undefined}
+                              >
+                                {attendanceLabel}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-500">–</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{switchLabel}</td>
+                          <td className="px-4 py-2">
+                            {!child.canEdit ? (
+                              <span className="text-xs text-slate-300 dark:text-slate-600">–</span>
+                            ) : hasOpenRequest ? (
+                              <span className="text-xs text-amber-600 dark:text-amber-400">wartet auf Freigabe</span>
+                            ) : (
+                              <select
+                                value={moveSelection[child.id] ?? ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setMoveSelection((prev) => ({ ...prev, [child.id]: value }));
+                                  if (value.startsWith(WAITLIST_PREFIX)) {
+                                    handleAddToWaitlist(child.id, value.slice(WAITLIST_PREFIX.length));
+                                  } else {
+                                    handleMove(child.id, value);
+                                  }
+                                }}
+                                className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              >
+                                <option value="">Verschieben nach…</option>
+                                {moveTargets.map((g) => {
+                                  const fits = age >= g.minAge && age < g.maxAge;
+                                  const full = g.maxChildren !== null && children.filter((c) => c.groupId === g.id).length >= g.maxChildren;
+                                  if (full) {
+                                    return (
+                                      <option key={g.id} value={`${WAITLIST_PREFIX}${g.id}`}>
+                                        {g.name} (voll – auf Warteliste)
+                                      </option>
+                                    );
+                                  }
+                                  return (
+                                    <option key={g.id} value={g.id}>
+                                      {g.name}
+                                      {fits ? "" : " (benötigt Freigabe)"}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            {child.canEdit ? (
+                              <>
+                                <button onClick={() => startEdit(child)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
+                                  Bearbeiten
+                                </button>
+                                <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                                  Löschen
+                                </button>
+                              </>
+                            ) : (
+                              <span
+                                className="text-sm text-slate-300 dark:text-slate-600"
+                                title="Nur lesbar – Kind einer fremden Vereinsgruppe"
+                              >
+                                nur lesbar
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
