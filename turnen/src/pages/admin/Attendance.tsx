@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import type { AttendanceEntry, AttendanceSession, Child, ClubMember, Group } from "../../lib/types";
+import type { AttendanceEntry, AttendanceSession, Child, ClubMember, Group, SubstituteRequest } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
+
+const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
 // Bewusst NICHT toISOString() (rechnet nach UTC um - in Europe/Berlin kann
 // lokale Mitternacht dadurch auf den Vortag fallen), sondern die lokalen
@@ -16,9 +18,13 @@ function today(): string {
 
 export default function Attendance() {
   const { userId, clubId } = useAuth();
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [members, setMembers] = useState<ClubMember[]>([]);
+  // Termine, die der/die Nutzer:in aktuell als Vertretung übernommen hat -
+  // für diese ist die Gruppe auch ohne eigenes Besitzrecht auswählbar, aber
+  // nur genau an diesem einen Tag (siehe validDatesFor()).
+  const [myClaims, setMyClaims] = useState<SubstituteRequest[]>([]);
   const [groupId, setGroupId] = useState("");
   const [date, setDate] = useState(today());
   const [present, setPresent] = useState<Record<string, boolean>>({});
@@ -37,15 +43,15 @@ export default function Attendance() {
     async function loadBase() {
       setLoading(true);
       try {
-        const [groupList, childrenList] = await Promise.all([
+        const [groupList, childrenList, claims] = await Promise.all([
           api.get<Group[]>("/api/groups"),
           api.get<Child[]>("/api/children"),
+          api.get<SubstituteRequest[]>("/api/substitute-requests/mine"),
         ]);
-        // Anwesenheit lässt sich nur für eigene Gruppen erfassen - fremde,
-        // nur lesbare Vereinsgruppen tauchen hier bewusst nicht auf.
-        const writableGroups = groupList.filter((g) => g.canEdit);
-        setGroups(writableGroups);
+        setAllGroups(groupList);
         setChildren(childrenList);
+        setMyClaims(claims.filter((r) => r.status === "claimed" && r.claimedBy === userId));
+        const writableGroups = groupList.filter((g) => g.canEdit);
         if (writableGroups.length > 0) setGroupId(writableGroups[0].id);
         if (clubId) setMembers(await api.get<ClubMember[]>("/api/clubs/mine/members"));
       } catch (err) {
@@ -58,9 +64,36 @@ export default function Attendance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auswählbare Gruppen: die eigenen (beschreibbaren) plus die, für die
+  // aktuell eine Vertretung übernommen wurde - auch wenn die Gruppe sonst
+  // jemand anderem gehört.
+  const groups = useMemo(() => {
+    const writable = allGroups.filter((g) => g.canEdit);
+    const claimedGroupIds = new Set(myClaims.map((r) => r.groupId));
+    const extra = allGroups.filter((g) => !g.canEdit && claimedGroupIds.has(g.id));
+    return [...writable, ...extra];
+  }, [allGroups, myClaims]);
+
+  const currentGroup = groups.find((g) => g.id === groupId);
+
+  // An welchen Tagen darf für die gewählte Gruppe Anwesenheit erfasst
+  // werden? Normal nur der konfigurierte Trainingstag; zusätzlich jeder Tag,
+  // an dem gerade eine eigene Vertretung übernommen wurde (kann vom
+  // Wochentag abweichen bzw. eine fremde Gruppe betreffen).
+  const claimedDatesForGroup = useMemo(
+    () => new Set(myClaims.filter((r) => r.groupId === groupId).map((r) => r.sessionDate)),
+    [myClaims, groupId]
+  );
+  const isSubstituteDate = claimedDatesForGroup.has(date);
+  const dateValid =
+    !currentGroup ||
+    isSubstituteDate ||
+    currentGroup.weekday === null ||
+    new Date(`${date}T00:00:00`).getDay() === currentGroup.weekday;
+
   useEffect(() => {
     async function loadAttendance() {
-      if (!groupId || !date) return;
+      if (!groupId || !date || !dateValid) return;
       setError(null);
       setSavedMessage(null);
       try {
@@ -80,16 +113,17 @@ export default function Attendance() {
       }
     }
     loadAttendance();
-  }, [groupId, date, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, date, userId, dateValid]);
 
   const groupChildren = children.filter((c) => c.groupId === groupId);
-  const currentGroup = groups.find((g) => g.id === groupId);
 
   function toggle(childId: string) {
     setPresent((prev) => ({ ...prev, [childId]: !prev[childId] }));
   }
 
   async function handleSave() {
+    if (!dateValid) return;
     setSaving(true);
     setError(null);
     setSavedMessage(null);
@@ -136,6 +170,11 @@ export default function Attendance() {
         <div className="w-44">
           <FloatingInput label="Datum" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
+        {isSubstituteDate && (
+          <span className="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+            Vertretungstermin
+          </span>
+        )}
         {members.length > 0 && (
           <div className="w-56">
             <FloatingSelect label="Wer hat geleitet?" value={ledBy} onChange={(e) => setLedBy(e.target.value)}>
@@ -201,10 +240,17 @@ export default function Attendance() {
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {savedMessage && <p className="text-sm text-emerald-700 dark:text-emerald-400">{savedMessage}</p>}
+      {!loading && currentGroup && !dateValid && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          {currentGroup.weekday === null
+            ? "Für diese Gruppe ist kein Trainingstag hinterlegt."
+            : `„${currentGroup.name}“ trainiert nur ${WEEKDAY_NAMES[currentGroup.weekday]}s – wähle diesen Wochentag, oder einen Termin, den du als Vertretung übernommen hast.`}
+        </p>
+      )}
 
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
-      ) : (
+      ) : !dateValid ? null : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -248,7 +294,7 @@ export default function Attendance() {
 
       <button
         onClick={handleSave}
-        disabled={saving || groupChildren.length === 0}
+        disabled={saving || groupChildren.length === 0 || !dateValid}
         className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-emerald-500 dark:hover:bg-emerald-600"
       >
         {saving ? "Speichert…" : "Anwesenheit speichern"}

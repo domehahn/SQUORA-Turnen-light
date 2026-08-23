@@ -86,6 +86,25 @@ async function isChildWritable(dbEnv: D1Database, child: { group_id: string | nu
   return db.canWriteGroup(group, userId);
 }
 
+// Wer darf die Anwesenheit für genau diesen Termin lesen/erfassen? Normal
+// die Gruppenleitung (canWriteGroup) - sobald aber jemand eine
+// Vertretungs-Anfrage für exakt diesen Termin übernommen ("claimed") hat,
+// wandert das Recht ausschließlich zur vertretenden Person: die
+// ursprüngliche Leitung kann sich die Stunde dann nicht mehr selbst
+// anrechnen, bis sie per /return zurückgegeben wird.
+async function attendanceAccess(
+  dbEnv: D1Database,
+  group: { owner_id: string | null; club_id: string | null; id: string },
+  userId: string,
+  sessionDate: string
+): Promise<{ allowed: boolean; isSubstituteDate: boolean }> {
+  const claim = await db.getActiveClaimedSubstitute(dbEnv, group.id, sessionDate);
+  if (claim) {
+    return { allowed: claim.claimed_by === userId, isSubstituteDate: true };
+  }
+  return { allowed: db.canWriteGroup(group, userId), isSubstituteDate: false };
+}
+
 interface CapacityWarning {
   error: string;
   code: "capacity_exceeded";
@@ -881,6 +900,59 @@ app.post("/api/substitute-requests/:id/cancel", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// Eine bereits übernommene Vertretung wieder zurückgeben - entweder die
+// Vertretung selbst ("kann kurzfristig doch nicht mehr") oder die
+// ursprüngliche Gruppenleitung ("übernimmt die Stunde kurzfristig doch
+// wieder selbst"). Das Schreibrecht für den Termin wandert damit sofort
+// zurück zur Gruppenleitung.
+app.post("/api/substitute-requests/:id/return", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getSubstituteRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "claimed") return c.json({ error: "Anfrage ist aktuell nicht übernommen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+
+  const userId = c.get("userId");
+  const isSubstitute = request.claimed_by === userId;
+  const isOwner = db.canWriteGroup(group, userId);
+  if (!isSubstitute && !isOwner) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.returnSubstituteRequest(c.env.DB, id, request.group_id, request.session_date);
+
+  await db.logAudit(c.env.DB, {
+    clubId: group.club_id,
+    actorId: userId,
+    actorName: c.get("name"),
+    action: "substitute_request.returned",
+    targetLabel: `${group.name} am ${request.session_date}`,
+  });
+
+  // Die jeweils andere Seite benachrichtigen.
+  const notifyTargetId = isSubstitute ? group.owner_id : request.claimed_by;
+  if (notifyTargetId) {
+    const target = await db.getUserById(c.env.DB, notifyTargetId);
+    if (target) {
+      await notifyUser(c.env, {
+        userId: target.id,
+        userEmail: target.email,
+        userName: target.name,
+        type: "substitute_returned",
+        title: `Vertretung zurückgegeben für „${group.name}“`,
+        body: isSubstitute
+          ? `${c.get("name") ?? c.get("email")} kann den Termin am ${request.session_date} in „${group.name}“ doch nicht übernehmen - die Stunde liegt wieder bei dir.`
+          : `${c.get("name") ?? c.get("email")} übernimmt den Termin am ${request.session_date} in „${group.name}“ kurzfristig wieder selbst.`,
+        link: "/vertretungen",
+      });
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
 // Ein Kind in eine andere Gruppe verschieben. Erfüllt es die
 // Altersvoraussetzung der Zielgruppe (oder gehört die Zielgruppe dem
 // anfragenden Nutzer selbst bzw. ist herrenlos), wird sofort verschoben.
@@ -1456,7 +1528,8 @@ app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const access = await attendanceAccess(c.env.DB, group, c.get("userId"), date);
+  if (!access.allowed) return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
 
   return c.json(await db.getAttendance(c.env.DB, groupId, date));
 });
@@ -1470,7 +1543,27 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const access = await attendanceAccess(c.env.DB, group, c.get("userId"), date);
+  if (!access.allowed) {
+    return c.json(
+      {
+        error: access.isSubstituteDate
+          ? "Dieser Termin wurde an eine Vertretung übergeben - du kannst die Anwesenheit erst wieder erfassen, wenn sie dir zurückgegeben wurde."
+          : "Keine Berechtigung für diese Gruppe",
+      },
+      403
+    );
+  }
+
+  // Nur an konfigurierten Trainingstagen darf regulär Anwesenheit erfasst
+  // werden - Ausnahme: der Termin ist der eigene, aktuell übernommene
+  // Vertretungstermin (kann vom Wochentag der Gruppe abweichen).
+  if (group.weekday !== null && !access.isSubstituteDate) {
+    const weekday = new Date(`${date}T00:00:00`).getDay();
+    if (weekday !== group.weekday) {
+      return c.json({ error: "Dieser Tag ist für diese Gruppe kein Trainingstag" }, 400);
+    }
+  }
 
   const entries: { childId: string; present: boolean }[] = [];
   for (const raw of body.entries) {

@@ -1217,19 +1217,62 @@ export async function listAuditLogForClub(db: D1Database, clubId: string, limit 
 // Setzt die Leitung für einen Termin, ohne Anwesenheits-Einträge oder
 // Uhrzeit/Ort-Überschreibungen anzurühren - für die Übernahme einer
 // Vertretungs-Anfrage, bevor die eigentliche Anwesenheit erfasst wurde.
-export async function setSessionLeader(db: D1Database, groupId: string, sessionDate: string, ledBy: string): Promise<void> {
+export async function setSessionLeader(db: D1Database, groupId: string, sessionDate: string, ledBy: string | null): Promise<void> {
   const session = await db
     .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
     .bind(groupId, sessionDate)
     .first<{ id: string }>();
   if (session) {
     await db.prepare("UPDATE attendance_sessions SET led_by = ? WHERE id = ?").bind(ledBy, session.id).run();
-  } else {
+  } else if (ledBy !== null) {
+    // Kein leerer Datensatz nur zum Zurücksetzen einer Leitung, die es noch
+    // nie gab (z.B. beim Zurückgeben einer Vertretung ohne je erfasste
+    // Anwesenheit).
     await db
       .prepare("INSERT INTO attendance_sessions (id, group_id, session_date, led_by) VALUES (?, ?, ?, ?)")
       .bind(crypto.randomUUID(), groupId, sessionDate, ledBy)
       .run();
   }
+}
+
+// Aktive Übernahme einer Vertretung für genau diesen Termin, falls vorhanden
+// - bestimmt, wer aktuell schreiben darf: solange eine Anfrage "claimed"
+// ist, darf nur die vertretende Person die Anwesenheit erfassen, nicht mehr
+// die ursprüngliche Gruppenleitung (siehe attendanceAccess() in index.ts).
+export async function getActiveClaimedSubstitute(
+  db: D1Database,
+  groupId: string,
+  sessionDate: string
+): Promise<SubstituteRequestRow | null> {
+  return db
+    .prepare("SELECT * FROM substitute_requests WHERE group_id = ? AND session_date = ? AND status = 'claimed'")
+    .bind(groupId, sessionDate)
+    .first<SubstituteRequestRow>();
+}
+
+// Alle Termine, die eine Person aktuell als Vertretung übernommen hat - für
+// die Gruppen-Auswahl und die Datums-Einschränkung auf der Anwesenheit-Seite
+// (dort dürfen zusätzlich zum normalen Trainingstag genau diese Termine
+// gewählt werden, auch in fremden Gruppen).
+export async function listClaimedSubstituteDatesForUser(
+  db: D1Database,
+  userId: string
+): Promise<{ groupId: string; sessionDate: string }[]> {
+  const { results } = await db
+    .prepare("SELECT group_id, session_date FROM substitute_requests WHERE claimed_by = ? AND status = 'claimed'")
+    .bind(userId)
+    .all<{ group_id: string; session_date: string }>();
+  return results.map((r) => ({ groupId: r.group_id, sessionDate: r.session_date }));
+}
+
+// Eine übernommene Vertretung wieder zurückgeben - entweder durch die
+// Vertretung selbst oder durch die ursprüngliche Gruppenleitung, die die
+// Stunde kurzfristig doch wieder selbst übernehmen will. Setzt die Leitung
+// des Termins zurück auf "niemand explizit eingetragen" (fällt im
+// Stundennachweis automatisch wieder auf die Gruppenleitung zurück).
+export async function returnSubstituteRequest(db: D1Database, id: string, groupId: string, sessionDate: string): Promise<void> {
+  await db.prepare("UPDATE substitute_requests SET status = 'returned' WHERE id = ?").bind(id).run();
+  await setSessionLeader(db, groupId, sessionDate, null);
 }
 
 export async function createSubstituteRequest(

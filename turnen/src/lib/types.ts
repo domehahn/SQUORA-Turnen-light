@@ -193,7 +193,7 @@ export interface HoursReport {
   months: HoursReportMonth[];
 }
 
-export type SubstituteRequestStatus = "open" | "claimed" | "cancelled";
+export type SubstituteRequestStatus = "open" | "claimed" | "cancelled" | "returned";
 
 export interface SubstituteRequest {
   id: string;

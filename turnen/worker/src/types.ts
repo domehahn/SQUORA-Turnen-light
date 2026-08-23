@@ -287,7 +287,7 @@ export interface HourReportSession {
 
 // --- Vertretungsbörse ----------------------------------------------------------
 
-export type SubstituteRequestStatus = "open" | "claimed" | "cancelled";
+export type SubstituteRequestStatus = "open" | "claimed" | "cancelled" | "returned";
 
 export interface SubstituteRequestRow {
   id: string;

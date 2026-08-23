@@ -94,9 +94,30 @@ export default function Substitutes() {
     }
   }
 
+  async function handleReturn(id: string) {
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/substitute-requests/${id}/return`, {});
+      setInfo("Vertretung zurückgegeben – die Schreibrechte für den Termin liegen wieder bei der Gruppenleitung.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zurückgeben");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const openRequestsFromOthers = openRequests.filter((r) => r.requestedBy !== userId);
   const pendingMine = myRequests.filter((r) => r.status === "open" && r.requestedBy === userId);
-  const resolvedMine = myRequests.filter((r) => r.status !== "open" || r.requestedBy !== userId);
+  // Übernommen von mir (ich bin die Vertretung, habe also aktuell die
+  // Schreibrechte für den Termin) vs. von mir vergeben (jemand anderes
+  // vertritt mich gerade) - beide können den Termin per "return" wieder an
+  // die ursprüngliche Gruppenleitung zurückgeben.
+  const claimedByMe = myRequests.filter((r) => r.status === "claimed" && r.claimedBy === userId);
+  const claimedFromMe = myRequests.filter((r) => r.status === "claimed" && r.requestedBy === userId);
+  const resolvedMine = myRequests.filter((r) => r.status === "cancelled" || r.status === "returned");
 
   return (
     <div className="space-y-6">
@@ -200,6 +221,68 @@ export default function Substitutes() {
             </div>
           )}
 
+          {claimedByMe.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Von mir übernommene Vertretungen ({claimedByMe.length})
+              </h3>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                Du hast für diese Termine gerade die Schreibrechte – die ursprüngliche Gruppenleitung kann für diese
+                Tage keine Anwesenheit mehr erfassen, bis du zurückgibst.
+              </p>
+              <ul className="space-y-2">
+                {claimedByMe.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950/40"
+                  >
+                    <span className="text-emerald-900 dark:text-emerald-200">
+                      {formatDate(r.sessionDate)} · {r.groupName} · für {r.requestedByName ?? "jemanden"}
+                    </span>
+                    <button
+                      onClick={() => handleReturn(r.id)}
+                      disabled={busy}
+                      className="rounded-md border border-emerald-300 px-3 py-1.5 text-xs text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
+                    >
+                      Zurückgeben
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {claimedFromMe.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Meine vergebenen Vertretungen ({claimedFromMe.length})
+              </h3>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                Diese Termine werden aktuell von einer Vertretung geleitet und zählen in deren Stundennachweis. Bei
+                Bedarf kannst du die Stunde kurzfristig wieder selbst übernehmen.
+              </p>
+              <ul className="space-y-2">
+                {claimedFromMe.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900"
+                  >
+                    <span className="text-slate-700 dark:text-slate-300">
+                      {formatDate(r.sessionDate)} · {r.groupName} · übernommen von {r.claimedByName ?? "jemandem"}
+                    </span>
+                    <button
+                      onClick={() => handleReturn(r.id)}
+                      disabled={busy}
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      Kurzfristig zurückholen
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {resolvedMine.length > 0 && (
             <div>
               <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">Verlauf</h3>
@@ -207,10 +290,10 @@ export default function Substitutes() {
                 {resolvedMine.map((r) => (
                   <li key={r.id}>
                     {formatDate(r.sessionDate)} · {r.groupName} ·{" "}
-                    {r.status === "claimed"
+                    {r.status === "returned"
                       ? r.requestedBy === userId
-                        ? `übernommen von ${r.claimedByName ?? "jemandem"}`
-                        : `du hast übernommen von ${r.requestedByName ?? "jemandem"}`
+                        ? `Vertretung zurückgegeben von ${r.claimedByName ?? "jemandem"}`
+                        : `du hast die Vertretung zurückgegeben an ${r.requestedByName ?? "jemanden"}`
                       : "zurückgezogen"}
                   </li>
                 ))}
