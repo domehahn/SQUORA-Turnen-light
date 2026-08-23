@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
-import type { Child, Group } from "../lib/types";
+import type { AttendanceEntry, Child, Group } from "../lib/types";
 import { trainingDatesInRange, formatShortDate } from "../lib/schedule";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
@@ -40,6 +40,7 @@ export default function AttendancePrint() {
   const defaultRange = currentMonthRange();
   const [from, setFrom] = useState(searchParams.get("from") ?? defaultRange.from);
   const [to, setTo] = useState(searchParams.get("to") ?? defaultRange.to);
+  const [attendance, setAttendance] = useState<Record<string, AttendanceEntry[]>>({});
 
   useEffect(() => {
     async function load() {
@@ -59,6 +60,18 @@ export default function AttendancePrint() {
     }
     load();
   }, [groupId]);
+
+  // Bereits erfasste Anwesenheit für den gewählten Zeitraum laden, damit die
+  // Druckliste vergangene Termine nicht leer, sondern mit dem tatsächlichen
+  // Stand zeigt. Nur für eigene Gruppen abrufbar - bei fremden Gruppen
+  // (403) bleiben die Spalten dann leer zum Ausfüllen von Hand.
+  useEffect(() => {
+    if (mode !== "anwesenheit" || !groupId || !from || !to) return;
+    api
+      .get<Record<string, AttendanceEntry[]>>(`/api/attendance-range/${groupId}?from=${from}&to=${to}`)
+      .then(setAttendance)
+      .catch(() => setAttendance({}));
+  }, [mode, groupId, from, to]);
 
   function setMode(next: Mode) {
     const params = new URLSearchParams(searchParams);
@@ -165,9 +178,18 @@ export default function AttendancePrint() {
                     <td className="border border-slate-400 px-2 py-1.5">
                       {child.firstName} {child.lastName}
                     </td>
-                    {(dates.length > 0 ? dates : [""]).map((d, i) => (
-                      <td key={d || i} className="border border-slate-400 px-2 py-1.5" style={{ width: "3.5rem" }} />
-                    ))}
+                    {(dates.length > 0 ? dates : [""]).map((d, i) => {
+                      const entry = attendance[d]?.find((e) => e.childId === child.id);
+                      return (
+                        <td
+                          key={d || i}
+                          className="border border-slate-400 px-2 py-1.5 text-center"
+                          style={{ width: "3.5rem" }}
+                        >
+                          {entry ? (entry.present ? "✓" : "✕") : ""}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
                 {children.length === 0 && (

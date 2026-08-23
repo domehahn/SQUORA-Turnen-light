@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
+import SquoraBrand from "./SquoraBrand";
 
 const NAV_ITEMS = [
   { to: "/gruppen", label: "Gruppen" },
@@ -23,7 +24,7 @@ export function AppLayout() {
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
         <div className="mx-auto max-w-5xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-lg font-semibold text-slate-900 dark:text-slate-100">🤸 Turnen</span>
+            <SquoraBrand />
             <div className="flex items-center gap-2">
               <span className="hidden max-w-[14rem] truncate text-sm text-slate-500 dark:text-slate-400 sm:inline">
                 {userName ?? userEmail}
