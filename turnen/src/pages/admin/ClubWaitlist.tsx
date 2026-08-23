@@ -1,0 +1,287 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "../../lib/api";
+import type { Child, ClubWaitlistEntry, Group, PlacementRequest } from "../../lib/types";
+import { useAuth } from "../../context/useAuth";
+import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
+import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
+
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(new Date(iso));
+}
+
+export default function ClubWaitlist() {
+  const { userId, clubId, clubRole } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
+
+  const [entries, setEntries] = useState<ClubWaitlistEntry[]>([]);
+  const [incoming, setIncoming] = useState<PlacementRequest[]>([]);
+  const [children, setChildren] = useState<Child[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [childId, setChildId] = useState("");
+  const [note, setNote] = useState("");
+  const [proposalGroup, setProposalGroup] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [entryList, childList, groupList, incomingList] = await Promise.all([
+        api.get<ClubWaitlistEntry[]>("/api/club-waitlist"),
+        api.get<Child[]>("/api/children"),
+        api.get<Group[]>("/api/groups"),
+        api.get<PlacementRequest[]>("/api/placement-requests/incoming"),
+      ]);
+      setEntries(entryList);
+      setChildren(childList);
+      setGroups(groupList);
+      setIncoming(incomingList);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Laden");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Kinder ohne Gruppe sind die typischen Kandidaten für die Warteliste,
+  // aber ein Kind, das schon irgendwo trainiert, aber umziehen soll, wäre
+  // ein Fall für "Verschieben" bei den Kindern - hier daher nur ungruppierte.
+  const waitingChildIds = new Set(entries.map((e) => e.childId));
+  const candidateChildren = children.filter((c) => c.groupId === null && !waitingChildIds.has(c.id));
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault();
+    if (!childId) return;
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      await api.post("/api/club-waitlist", { childId, note: note || null });
+      setInfo("Kind zur Warteliste hinzugefügt.");
+      setChildId("");
+      setNote("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Hinzufügen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCancel(id: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/club-waitlist/${id}/cancel`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Entfernen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePropose(entryId: string) {
+    const groupId = proposalGroup[entryId];
+    if (!groupId) return;
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/club-waitlist/${entryId}/propose`, { groupId });
+      setInfo("Vorschlag an die Gruppenleitung geschickt – wartet auf Bestätigung.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Vorschlagen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirm(id: string) {
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      const result = await withCapacityConfirm((confirmOverCapacity) =>
+        api.post<{ ok: true }>(`/api/placement-requests/${id}/confirm`, { confirmOverCapacity })
+      );
+      if (result === CAPACITY_CANCELLED) return;
+      setInfo("Kind aufgenommen.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Bestätigen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDecline(id: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/placement-requests/${id}/decline`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Warteliste</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Vereinsweite Liste für Kinder ohne Gruppe.{" "}
+          {isJugendleiter
+            ? "Als Jugendleitung kannst du hier nach Rücksprache eine Gruppe vorschlagen – die Gruppenleitung muss den Vorschlag noch bestätigen."
+            : "Vorschläge der Jugendleitung für deine Gruppen musst du aktiv bestätigen oder ablehnen."}
+        </p>
+      </div>
+
+      {incoming.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+            Platzvorschläge für deine Gruppen ({incoming.length})
+          </h3>
+          <ul className="space-y-2">
+            {incoming.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-white p-3 text-sm dark:border-amber-800 dark:bg-slate-900"
+              >
+                <span className="text-slate-800 dark:text-slate-100">
+                  {r.childName} → {r.groupName}
+                  {r.proposedByName ? ` · vorgeschlagen von ${r.proposedByName}` : ""}
+                </span>
+                <span className="flex gap-2">
+                  <button
+                    onClick={() => handleConfirm(r.id)}
+                    disabled={busy}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Bestätigen
+                  </button>
+                  <button
+                    onClick={() => handleDecline(r.id)}
+                    disabled={busy}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                  >
+                    Ablehnen
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="w-56">
+          <FloatingSelect label="Kind ohne Gruppe" value={childId} onChange={(e) => setChildId(e.target.value)}>
+            <option value="">Kind wählen…</option>
+            {candidateChildren.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.firstName} {c.lastName}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <FloatingInput label="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <button
+          type="submit"
+          disabled={busy || !childId}
+          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+        >
+          Zur Warteliste hinzufügen
+        </button>
+        {candidateChildren.length === 0 && (
+          <p className="w-full text-xs text-slate-400 dark:text-slate-500">
+            Keine Kinder ohne Gruppe verfügbar, die noch nicht auf der Warteliste stehen.
+          </p>
+        )}
+      </form>
+
+      {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
+      {info && <p className="text-sm text-emerald-700 dark:text-emerald-400">{info}</p>}
+
+      {loading ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
+      ) : entries.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
+          Aktuell keine Kinder auf der Warteliste.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {entries.map((entry) => (
+            <li
+              key={entry.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div>
+                <span className="font-medium text-slate-800 dark:text-slate-100">{entry.childName}</span>
+                {entry.note && <span className="text-slate-500 dark:text-slate-400"> · „{entry.note}“</span>}
+                <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">seit {formatDate(entry.createdAt)}</span>
+                {entry.pendingProposal && (
+                  <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    Vorschlag: {entry.pendingProposal.groupName} · wartet auf Bestätigung der Gruppenleitung
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isJugendleiter && !entry.pendingProposal && (
+                  <>
+                    <select
+                      value={proposalGroup[entry.id] ?? ""}
+                      onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      <option value="">Gruppe vorschlagen…</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handlePropose(entry.id)}
+                      disabled={busy || !proposalGroup[entry.id]}
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      Vorschlagen
+                    </button>
+                  </>
+                )}
+                {(entry.addedBy === userId || isJugendleiter) && (
+                  <button
+                    onClick={() => handleCancel(entry.id)}
+                    disabled={busy}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Entfernen
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!clubId && (
+        <p className="text-xs text-slate-400 dark:text-slate-500">
+          Die Warteliste ist vereinsweit – ohne Vereinszuordnung siehst du hier nichts.
+        </p>
+      )}
+    </div>
+  );
+}

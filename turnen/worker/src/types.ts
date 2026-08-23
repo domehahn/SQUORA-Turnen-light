@@ -314,3 +314,60 @@ export interface SubstituteRequestDetail {
   claimedByName: string | null;
   createdAt: string;
 }
+
+// --- Vereinswarteliste / Platzvorschläge ----------------------------------------
+
+export type ClubWaitlistStatus = "waiting" | "placed" | "cancelled";
+export type PlacementRequestStatus = "pending" | "confirmed" | "declined" | "cancelled";
+
+export interface ClubWaitlistRow {
+  id: string;
+  club_id: string;
+  child_id: string;
+  note: string | null;
+  added_by: string | null;
+  status: ClubWaitlistStatus;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface PlacementRequestRow {
+  id: string;
+  waitlist_entry_id: string;
+  group_id: string;
+  proposed_by: string | null;
+  status: PlacementRequestStatus;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface ClubWaitlistEntryDetail {
+  id: string;
+  childId: string;
+  childName: string;
+  note: string | null;
+  addedBy: string | null;
+  addedByName: string | null;
+  status: ClubWaitlistStatus;
+  createdAt: string;
+  pendingProposal: {
+    id: string;
+    groupId: string;
+    groupName: string;
+    proposedByName: string | null;
+    createdAt: string;
+  } | null;
+}
+
+export interface PlacementRequestDetail {
+  id: string;
+  waitlistEntryId: string;
+  childId: string;
+  childName: string;
+  groupId: string;
+  groupName: string;
+  proposedBy: string | null;
+  proposedByName: string | null;
+  status: PlacementRequestStatus;
+  createdAt: string;
+}

@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/kinder", label: "Kinder" },
   { to: "/anwesenheit", label: "Anwesenheit" },
   { to: "/vertretungen", label: "Vertretungen" },
+  { to: "/warteliste", label: "Warteliste" },
   { to: "/uebersicht", label: "Übersicht" },
   { to: "/auslastung", label: "Auslastung" },
   { to: "/kalender", label: "Kalender" },

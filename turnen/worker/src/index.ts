@@ -1253,6 +1253,186 @@ app.delete("/api/waitlist/:id", requireAuth, async (c) => {
   return c.body(null, 204);
 });
 
+// --- Vereinswarteliste / Platzvorschläge ----------------------------------------
+
+// Getrennt von der Gruppen-Warteliste oben: Kinder ohne Gruppe landen hier,
+// vereinsweit sichtbar. Die Jugendleitung kann von hier aus eine Gruppe
+// vorschlagen; die Gruppenleitung muss das aktiv bestätigen (siehe unten).
+app.post("/api/club-waitlist", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein zugeordnet" }, 400);
+  const body = await c.req.json().catch(() => null);
+  const childId = validId(body?.childId);
+  const note = optionalText(body?.note, 200);
+  if (!childId) return c.json({ error: "Ungültiges Kind" }, 400);
+  if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
+
+  const child = await db.getChildRowById(c.env.DB, childId);
+  if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
+  const allowed = (await isChildWritable(c.env.DB, child, c.get("userId"))) || c.get("clubRole") === "jugendleiter";
+  if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+
+  const entry = await db.addToClubWaitlist(c.env.DB, { clubId, childId, note, addedBy: c.get("userId") });
+  return c.json(entry, 201);
+});
+
+app.get("/api/club-waitlist", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listClubWaitlist(c.env.DB, clubId));
+});
+
+app.post("/api/club-waitlist/:id/cancel", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const entry = await db.getClubWaitlistEntryById(c.env.DB, id);
+  if (!entry) return c.body(null, 204);
+  if (entry.status !== "waiting") return c.json({ error: "Eintrag ist nicht mehr aktiv" }, 409);
+  const allowed = entry.added_by === c.get("userId") || c.get("clubRole") === "jugendleiter";
+  if (!allowed) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.setClubWaitlistStatus(c.env.DB, id, "cancelled");
+  return c.body(null, 204);
+});
+
+// Die Jugendleitung schlägt für ein wartendes Kind eine konkrete Gruppe vor
+// ("nach Rücksprache mit dem Turntrainer") - verschiebt das Kind aber noch
+// nicht, das passiert erst mit der Bestätigung der Gruppenleitung.
+app.post("/api/club-waitlist/:id/propose", requireAuth, async (c) => {
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann eine Gruppe vorschlagen" }, 403);
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const groupId = validId(body?.groupId);
+  if (!id || !groupId) return c.json({ error: "Ungültige Anfrage" }, 400);
+
+  const entry = await db.getClubWaitlistEntryById(c.env.DB, id);
+  if (!entry) return c.json({ error: "Eintrag nicht gefunden" }, 404);
+  if (entry.status !== "waiting") return c.json({ error: "Eintrag ist nicht mehr aktiv" }, 409);
+  if (entry.club_id !== c.get("clubId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (group.club_id !== c.get("clubId")) return c.json({ error: "Gruppe gehört nicht zu deinem Verein" }, 403);
+
+  let request;
+  try {
+    request = await db.createPlacementRequest(c.env.DB, { waitlistEntryId: id, groupId, proposedBy: c.get("userId") });
+  } catch {
+    return c.json({ error: "Für dieses Kind läuft bereits ein Vorschlag" }, 409);
+  }
+
+  if (group.owner_id) {
+    const owner = await db.getUserById(c.env.DB, group.owner_id);
+    const child = await db.getChildRowById(c.env.DB, entry.child_id);
+    if (owner && child) {
+      await notifyUser(c.env, {
+        userId: owner.id,
+        userEmail: owner.email,
+        userName: owner.name,
+        type: "placement_proposed",
+        title: `Platzvorschlag für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} schlägt ${child.first_name} ${child.last_name} für deine Gruppe „${group.name}“ vor - bitte bestätige oder lehne ab.`,
+        link: "/warteliste",
+      });
+    }
+  }
+
+  return c.json(request, 201);
+});
+
+app.get("/api/placement-requests/incoming", requireAuth, async (c) => {
+  return c.json(await db.listPendingPlacementRequestsForOwner(c.env.DB, c.get("userId")));
+});
+
+// Die Gruppenleitung bestätigt den Vorschlag - erst jetzt wird das Kind
+// tatsächlich in die Gruppe verschoben. Bei Kapazitätsüberschreitung wie bei
+// den übrigen Kind-Aktionen: Selbstbestätigung per confirmOverCapacity.
+app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const body = await c.req.json().catch(() => null);
+
+  const request = await db.getPlacementRequestById(c.env.DB, id);
+  if (!request) return c.json({ error: "Vorschlag nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Vorschlag ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  const entry = await db.getClubWaitlistEntryById(c.env.DB, request.waitlist_entry_id);
+  if (!entry) return c.json({ error: "Warteliste-Eintrag nicht gefunden" }, 404);
+  const child = await db.getChildRowById(c.env.DB, entry.child_id);
+  if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
+
+  const warning = await capacityWarning(c.env.DB, group, undefined);
+  if (warning && body?.confirmOverCapacity !== true) return c.json(warning, 409);
+
+  await db.moveChildToGroup(c.env.DB, entry.child_id, request.group_id);
+  await db.setPlacementRequestStatus(c.env.DB, id, "confirmed");
+  await db.setClubWaitlistStatus(c.env.DB, entry.id, "placed");
+
+  await db.logAudit(c.env.DB, {
+    clubId: group.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "placement_request.confirmed",
+    targetLabel: `${child.first_name} ${child.last_name} → ${group.name}`,
+  });
+
+  if (request.proposed_by) {
+    const proposer = await db.getUserById(c.env.DB, request.proposed_by);
+    if (proposer) {
+      await notifyUser(c.env, {
+        userId: proposer.id,
+        userEmail: proposer.email,
+        userName: proposer.name,
+        type: "placement_confirmed",
+        title: `Platzvorschlag bestätigt für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} hat ${child.first_name} ${child.last_name} in „${group.name}“ aufgenommen.`,
+        link: "/warteliste",
+      });
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post("/api/placement-requests/:id/decline", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getPlacementRequestById(c.env.DB, id);
+  if (!request) return c.json({ error: "Vorschlag nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Vorschlag ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  await db.setPlacementRequestStatus(c.env.DB, id, "declined");
+
+  if (request.proposed_by) {
+    const proposer = await db.getUserById(c.env.DB, request.proposed_by);
+    const entry = await db.getClubWaitlistEntryById(c.env.DB, request.waitlist_entry_id);
+    const child = entry ? await db.getChildRowById(c.env.DB, entry.child_id) : null;
+    if (proposer && child) {
+      await notifyUser(c.env, {
+        userId: proposer.id,
+        userEmail: proposer.email,
+        userName: proposer.name,
+        type: "placement_declined",
+        title: `Platzvorschlag abgelehnt für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} kann ${child.first_name} ${child.last_name} aktuell nicht in „${group.name}“ aufnehmen.`,
+        link: "/warteliste",
+      });
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
 // --- Benachrichtigungen -------------------------------------------------------
 
 app.get("/api/notifications", requireAuth, async (c) => {

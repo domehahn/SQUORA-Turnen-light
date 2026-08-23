@@ -20,6 +20,12 @@ import type {
   MoveRequestStatus,
   Notification,
   NotificationRow,
+  ClubWaitlistEntryDetail,
+  ClubWaitlistRow,
+  ClubWaitlistStatus,
+  PlacementRequestDetail,
+  PlacementRequestRow,
+  PlacementRequestStatus,
   SubstituteRequestDetail,
   SubstituteRequestRow,
   SubstituteRequestStatus,
@@ -1363,4 +1369,162 @@ export async function listMySubstituteRequests(db: D1Database, userId: string): 
     .bind(userId)
     .all<SubstituteRequestJoinRow>();
   return results.map(rowToSubstituteRequestDetail);
+}
+
+// --- Vereinswarteliste / Platzvorschläge ----------------------------------------
+
+export async function addToClubWaitlist(
+  db: D1Database,
+  input: { clubId: string; childId: string; note: string | null; addedBy: string }
+): Promise<ClubWaitlistRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO club_waitlist_entries (id, club_id, child_id, note, added_by) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, input.clubId, input.childId, input.note, input.addedBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM club_waitlist_entries WHERE id = ?").bind(id).first<ClubWaitlistRow>();
+  return row as ClubWaitlistRow;
+}
+
+export async function getClubWaitlistEntryById(db: D1Database, id: string): Promise<ClubWaitlistRow | null> {
+  return db.prepare("SELECT * FROM club_waitlist_entries WHERE id = ?").bind(id).first<ClubWaitlistRow>();
+}
+
+export async function setClubWaitlistStatus(db: D1Database, id: string, status: ClubWaitlistStatus): Promise<void> {
+  await db
+    .prepare("UPDATE club_waitlist_entries SET status = ?, resolved_at = datetime('now') WHERE id = ?")
+    .bind(status, id)
+    .run();
+}
+
+type ClubWaitlistJoinRow = ClubWaitlistRow & {
+  child_first_name: string;
+  child_last_name: string;
+  added_by_name: string | null;
+  added_by_email: string | null;
+  proposal_id: string | null;
+  proposal_group_id: string | null;
+  proposal_group_name: string | null;
+  proposal_by_name: string | null;
+  proposal_by_email: string | null;
+  proposal_created_at: string | null;
+};
+
+const CLUB_WAITLIST_DETAIL_SELECT = `
+  SELECT w.*,
+         c.first_name as child_first_name, c.last_name as child_last_name,
+         au.name as added_by_name, au.email as added_by_email,
+         pr.id as proposal_id, pr.group_id as proposal_group_id, pg.name as proposal_group_name,
+         pu.name as proposal_by_name, pu.email as proposal_by_email, pr.created_at as proposal_created_at
+  FROM club_waitlist_entries w
+  JOIN children c ON c.id = w.child_id
+  LEFT JOIN users au ON au.id = w.added_by
+  LEFT JOIN placement_requests pr ON pr.waitlist_entry_id = w.id AND pr.status = 'pending'
+  LEFT JOIN groups pg ON pg.id = pr.group_id
+  LEFT JOIN users pu ON pu.id = pr.proposed_by
+`;
+
+function rowToClubWaitlistDetail(row: ClubWaitlistJoinRow): ClubWaitlistEntryDetail {
+  return {
+    id: row.id,
+    childId: row.child_id,
+    childName: `${row.child_first_name} ${row.child_last_name}`,
+    note: row.note,
+    addedBy: row.added_by,
+    addedByName: row.added_by_name ?? row.added_by_email ?? null,
+    status: row.status,
+    createdAt: row.created_at,
+    pendingProposal: row.proposal_id
+      ? {
+          id: row.proposal_id,
+          groupId: row.proposal_group_id as string,
+          groupName: row.proposal_group_name as string,
+          proposedByName: row.proposal_by_name ?? row.proposal_by_email ?? null,
+          createdAt: row.proposal_created_at as string,
+        }
+      : null,
+  };
+}
+
+// Wartende Kinder eines Vereins, jeweils mit offenem Platzvorschlag (falls
+// vorhanden) - älteste Einträge zuerst.
+export async function listClubWaitlist(db: D1Database, clubId: string): Promise<ClubWaitlistEntryDetail[]> {
+  const { results } = await db
+    .prepare(`${CLUB_WAITLIST_DETAIL_SELECT} WHERE w.club_id = ?1 AND w.status = 'waiting' ORDER BY w.created_at ASC`)
+    .bind(clubId)
+    .all<ClubWaitlistJoinRow>();
+  return results.map(rowToClubWaitlistDetail);
+}
+
+export async function createPlacementRequest(
+  db: D1Database,
+  input: { waitlistEntryId: string; groupId: string; proposedBy: string }
+): Promise<PlacementRequestRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO placement_requests (id, waitlist_entry_id, group_id, proposed_by) VALUES (?, ?, ?, ?)")
+    .bind(id, input.waitlistEntryId, input.groupId, input.proposedBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM placement_requests WHERE id = ?").bind(id).first<PlacementRequestRow>();
+  return row as PlacementRequestRow;
+}
+
+export async function getPlacementRequestById(db: D1Database, id: string): Promise<PlacementRequestRow | null> {
+  return db.prepare("SELECT * FROM placement_requests WHERE id = ?").bind(id).first<PlacementRequestRow>();
+}
+
+export async function setPlacementRequestStatus(db: D1Database, id: string, status: PlacementRequestStatus): Promise<void> {
+  await db
+    .prepare("UPDATE placement_requests SET status = ?, resolved_at = datetime('now') WHERE id = ?")
+    .bind(status, id)
+    .run();
+}
+
+type PlacementRequestJoinRow = PlacementRequestRow & {
+  child_id: string;
+  child_first_name: string;
+  child_last_name: string;
+  group_name: string;
+  proposed_by_name: string | null;
+  proposed_by_email: string | null;
+};
+
+const PLACEMENT_REQUEST_DETAIL_SELECT = `
+  SELECT pr.*,
+         w.child_id as child_id,
+         c.first_name as child_first_name, c.last_name as child_last_name,
+         g.name as group_name,
+         pu.name as proposed_by_name, pu.email as proposed_by_email
+  FROM placement_requests pr
+  JOIN club_waitlist_entries w ON w.id = pr.waitlist_entry_id
+  JOIN children c ON c.id = w.child_id
+  JOIN groups g ON g.id = pr.group_id
+  LEFT JOIN users pu ON pu.id = pr.proposed_by
+`;
+
+function rowToPlacementRequestDetail(row: PlacementRequestJoinRow): PlacementRequestDetail {
+  return {
+    id: row.id,
+    waitlistEntryId: row.waitlist_entry_id,
+    childId: row.child_id,
+    childName: `${row.child_first_name} ${row.child_last_name}`,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    proposedBy: row.proposed_by,
+    proposedByName: row.proposed_by_name ?? row.proposed_by_email ?? null,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+// Offene Platzvorschläge für Gruppen, die der Nutzer selbst leitet - das
+// muss die Gruppenleitung aktiv bestätigen oder ablehnen.
+export async function listPendingPlacementRequestsForOwner(db: D1Database, userId: string): Promise<PlacementRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${PLACEMENT_REQUEST_DETAIL_SELECT} WHERE pr.status = 'pending' AND g.owner_id = ?1 ORDER BY pr.created_at ASC`
+    )
+    .bind(userId)
+    .all<PlacementRequestJoinRow>();
+  return results.map(rowToPlacementRequestDetail);
 }

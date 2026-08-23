@@ -225,6 +225,40 @@ export interface HoursSummary {
   byYear: HoursSummaryYear[];
 }
 
+export type ClubWaitlistStatus = "waiting" | "placed" | "cancelled";
+export type PlacementRequestStatus = "pending" | "confirmed" | "declined" | "cancelled";
+
+export interface ClubWaitlistEntry {
+  id: string;
+  childId: string;
+  childName: string;
+  note: string | null;
+  addedBy: string | null;
+  addedByName: string | null;
+  status: ClubWaitlistStatus;
+  createdAt: string;
+  pendingProposal: {
+    id: string;
+    groupId: string;
+    groupName: string;
+    proposedByName: string | null;
+    createdAt: string;
+  } | null;
+}
+
+export interface PlacementRequest {
+  id: string;
+  waitlistEntryId: string;
+  childId: string;
+  childName: string;
+  groupId: string;
+  groupName: string;
+  proposedBy: string | null;
+  proposedByName: string | null;
+  status: PlacementRequestStatus;
+  createdAt: string;
+}
+
 export interface SessionLeader {
   ledBy: string | null;
   ledByName: string | null;
