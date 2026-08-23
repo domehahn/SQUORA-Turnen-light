@@ -1,13 +1,31 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Club, ClubMember } from "../../lib/types";
+import type { Club, ClubJoinRequest, ClubMember } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 
+interface PendingJoin {
+  status: "pending_club_join_approval";
+  requestId: string;
+  clubName: string;
+}
+
+function isPendingJoin(value: unknown): value is PendingJoin {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    (value as { status: unknown }).status === "pending_club_join_approval"
+  );
+}
+
 export default function ClubPage() {
   const { userId, clubId, clubName, clubRole, refreshClub } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
   const [clubs, setClubs] = useState<Club[]>([]);
   const [members, setMembers] = useState<ClubMember[]>([]);
+  const [myJoinRequest, setMyJoinRequest] = useState<ClubJoinRequest | null>(null);
+  const [incomingJoinRequests, setIncomingJoinRequests] = useState<ClubJoinRequest[]>([]);
   const [selectedClubId, setSelectedClubId] = useState("");
   const [newClubName, setNewClubName] = useState("");
   const [clubNumberInput, setClubNumberInput] = useState("");
@@ -15,18 +33,23 @@ export default function ClubPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const currentClub = clubs.find((c) => c.id === clubId);
 
   async function load() {
     setLoading(true);
     try {
-      const [clubList, memberList] = await Promise.all([
+      const [clubList, memberList, mine, incoming] = await Promise.all([
         api.get<Club[]>("/api/clubs"),
-        api.get<ClubMember[]>("/api/clubs/mine/members"),
+        clubId && isJugendleiter ? api.get<ClubMember[]>("/api/clubs/mine/members") : Promise.resolve([]),
+        api.get<ClubJoinRequest | null>("/api/club-join-requests/mine"),
+        isJugendleiter ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]),
       ]);
       setClubs(clubList);
       setMembers(memberList);
+      setMyJoinRequest(mine);
+      setIncomingJoinRequests(incoming);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
     } finally {
@@ -36,20 +59,65 @@ export default function ClubPage() {
 
   useEffect(() => {
     load();
-  }, [clubId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubId, clubRole]);
 
   async function handleJoin(e: FormEvent) {
     e.preventDefault();
     if (!selectedClubId) return;
     setError(null);
+    setInfo(null);
     setBusy(true);
     try {
-      await api.put("/api/me/club", { clubId: selectedClubId });
-      await refreshClub();
+      const result = await api.put<{ clubId: string | null } | PendingJoin>("/api/me/club", { clubId: selectedClubId });
+      if (isPendingJoin(result)) {
+        setInfo(`Beitrittsanfrage an die Jugendleitung von „${result.clubName}“ gesendet – wartet auf Freigabe.`);
+      } else {
+        await refreshClub();
+      }
       setSelectedClubId("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Beitreten");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCancelJoinRequest(id: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/club-join-requests/${id}/cancel`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zurückziehen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleApproveJoinRequest(id: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/club-join-requests/${id}/approve`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRejectJoinRequest(id: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/club-join-requests/${id}/reject`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
     } finally {
       setBusy(false);
     }
@@ -134,13 +202,48 @@ export default function ClubPage() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Verein</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Turnleiter im selben Verein sehen die Gruppen und Kinderlisten der anderen Mitglieder lesend – bearbeiten
-          kann jede*r nur die eigenen Gruppen. Die Jugendleitung kann zusätzlich herrenlose Gruppen dem Verein
-          zuordnen und weitere Jugendleitungen ernennen.
+          {isJugendleiter
+            ? "Turnleiter im selben Verein sehen die Gruppen und Kinderlisten der anderen Mitglieder lesend – bearbeiten kann jede*r nur die eigenen Gruppen. Als Jugendleitung verwaltest du hier Mitglieder, Beitrittsanfragen und die Vereinsnummer."
+            : "Beitritte müssen von der Jugendleitung freigegeben werden. Mitgliederverwaltung sieht nur die Jugendleitung."}
         </p>
       </div>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
+      {info && <p className="text-sm text-emerald-700 dark:text-emerald-400">{info}</p>}
+
+      {isJugendleiter && incomingJoinRequests.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+            Offene Beitrittsanfragen ({incomingJoinRequests.length})
+          </h3>
+          <ul className="space-y-2">
+            {incomingJoinRequests.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-white p-3 text-sm dark:border-amber-800 dark:bg-slate-900"
+              >
+                <span className="text-slate-800 dark:text-slate-100">{r.userName ?? "Unbekannt"}</span>
+                <span className="flex gap-2">
+                  <button
+                    onClick={() => handleApproveJoinRequest(r.id)}
+                    disabled={busy}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Freigeben
+                  </button>
+                  <button
+                    onClick={() => handleRejectJoinRequest(r.id)}
+                    disabled={busy}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                  >
+                    Ablehnen
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
@@ -194,46 +297,52 @@ export default function ClubPage() {
               </p>
             )}
           </div>
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Mitglieder ({members.length})
-            </p>
-            <ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
-              {members.map((m) => (
-                <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="flex items-center gap-2">
-                    {m.name ?? m.email}
-                    {m.role === "jugendleiter" && (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                        Jugendleitung
-                      </span>
-                    )}
-                  </span>
-                  {clubRole === "jugendleiter" && m.id !== userId && (
-                    <span>
-                      {m.role === "jugendleiter" ? (
-                        <button
-                          onClick={() => handleDemote(m.id)}
-                          disabled={busy}
-                          className="text-xs text-slate-500 hover:underline disabled:opacity-50 dark:text-slate-400"
-                        >
-                          Zurückstufen
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handlePromote(m.id)}
-                          disabled={busy}
-                          className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
-                        >
-                          Zur Jugendleitung ernennen
-                        </button>
+          {isJugendleiter ? (
+            <div>
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Mitglieder ({members.length})
+              </p>
+              <ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
+                {members.map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      {m.name ?? m.email}
+                      {m.role === "jugendleiter" && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                          Jugendleitung
+                        </span>
                       )}
                     </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
+                    {m.id !== userId && (
+                      <span>
+                        {m.role === "jugendleiter" ? (
+                          <button
+                            onClick={() => handleDemote(m.id)}
+                            disabled={busy}
+                            className="text-xs text-slate-500 hover:underline disabled:opacity-50 dark:text-slate-400"
+                          >
+                            Zurückstufen
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handlePromote(m.id)}
+                            disabled={busy}
+                            className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
+                          >
+                            Zur Jugendleitung ernennen
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Die Mitgliederliste sieht nur die Jugendleitung.
+            </p>
+          )}
           <button
             onClick={handleLeave}
             disabled={busy}
@@ -248,13 +357,31 @@ export default function ClubPage() {
         </p>
       )}
 
-      {!clubId && (
+      {!clubId && myJoinRequest && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+          <span className="text-amber-800 dark:text-amber-300">
+            Beitrittsanfrage für „{myJoinRequest.clubName}“ wartet auf Freigabe der Jugendleitung.
+          </span>
+          <button
+            onClick={() => handleCancelJoinRequest(myJoinRequest.id)}
+            disabled={busy}
+            className="rounded-md border border-amber-300 px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/50"
+          >
+            Zurückziehen
+          </button>
+        </div>
+      )}
+
+      {!clubId && !myJoinRequest && (
         <div className="grid gap-4 sm:grid-cols-2">
           <form
             onSubmit={handleJoin}
             className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
           >
             <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Bestehendem Verein beitreten</h3>
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Der Beitritt muss von der Jugendleitung des Vereins freigegeben werden.
+            </p>
             <FloatingSelect label="Verein" value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)}>
               <option value="">Verein wählen</option>
               {joinableClubs.map((c) => (
@@ -268,7 +395,7 @@ export default function ClubPage() {
               disabled={busy || !selectedClubId}
               className="w-full rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
             >
-              Beitreten
+              Beitrittsanfrage senden
             </button>
             {joinableClubs.length === 0 && (
               <p className="text-xs text-slate-400 dark:text-slate-500">Noch keine Vereine vorhanden.</p>

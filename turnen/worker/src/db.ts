@@ -20,6 +20,9 @@ import type {
   MoveRequestStatus,
   Notification,
   NotificationRow,
+  ClubJoinRequestDetail,
+  ClubJoinRequestRow,
+  ClubJoinRequestStatus,
   ClubWaitlistEntryDetail,
   ClubWaitlistRow,
   ClubWaitlistStatus,
@@ -1553,4 +1556,68 @@ export async function listPendingPlacementRequestsForOwner(db: D1Database, userI
     .bind(userId)
     .all<PlacementRequestJoinRow>();
   return results.map(rowToPlacementRequestDetail);
+}
+
+// --- Vereinsbeitritt -------------------------------------------------------------
+
+export async function createClubJoinRequest(db: D1Database, input: { clubId: string; userId: string }): Promise<ClubJoinRequestRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO club_join_requests (id, club_id, user_id) VALUES (?, ?, ?)")
+    .bind(id, input.clubId, input.userId)
+    .run();
+  const row = await db.prepare("SELECT * FROM club_join_requests WHERE id = ?").bind(id).first<ClubJoinRequestRow>();
+  return row as ClubJoinRequestRow;
+}
+
+export async function getClubJoinRequestById(db: D1Database, id: string): Promise<ClubJoinRequestRow | null> {
+  return db.prepare("SELECT * FROM club_join_requests WHERE id = ?").bind(id).first<ClubJoinRequestRow>();
+}
+
+export async function setClubJoinRequestStatus(db: D1Database, id: string, status: ClubJoinRequestStatus): Promise<void> {
+  await db
+    .prepare("UPDATE club_join_requests SET status = ?, resolved_at = datetime('now') WHERE id = ?")
+    .bind(status, id)
+    .run();
+}
+
+type ClubJoinRequestJoinRow = ClubJoinRequestRow & {
+  club_name: string;
+  user_name: string | null;
+  user_email: string;
+};
+
+const CLUB_JOIN_REQUEST_DETAIL_SELECT = `
+  SELECT r.*, c.name as club_name, u.name as user_name, u.email as user_email
+  FROM club_join_requests r
+  JOIN clubs c ON c.id = r.club_id
+  JOIN users u ON u.id = r.user_id
+`;
+
+function rowToClubJoinRequestDetail(row: ClubJoinRequestJoinRow): ClubJoinRequestDetail {
+  return {
+    id: row.id,
+    clubId: row.club_id,
+    clubName: row.club_name,
+    userId: row.user_id,
+    userName: row.user_name ?? row.user_email,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+export async function listPendingClubJoinRequestsForClub(db: D1Database, clubId: string): Promise<ClubJoinRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${CLUB_JOIN_REQUEST_DETAIL_SELECT} WHERE r.club_id = ?1 AND r.status = 'pending' ORDER BY r.created_at ASC`)
+    .bind(clubId)
+    .all<ClubJoinRequestJoinRow>();
+  return results.map(rowToClubJoinRequestDetail);
+}
+
+export async function getPendingClubJoinRequestForUser(db: D1Database, userId: string): Promise<ClubJoinRequestDetail | null> {
+  const row = await db
+    .prepare(`${CLUB_JOIN_REQUEST_DETAIL_SELECT} WHERE r.user_id = ?1 AND r.status = 'pending'`)
+    .bind(userId)
+    .first<ClubJoinRequestJoinRow>();
+  return row ? rowToClubJoinRequestDetail(row) : null;
 }

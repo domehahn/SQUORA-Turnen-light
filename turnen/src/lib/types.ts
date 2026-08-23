@@ -225,6 +225,18 @@ export interface HoursSummary {
   byYear: HoursSummaryYear[];
 }
 
+export type ClubJoinRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface ClubJoinRequest {
+  id: string;
+  clubId: string;
+  clubName: string;
+  userId: string;
+  userName: string | null;
+  status: ClubJoinRequestStatus;
+  createdAt: string;
+}
+
 export type ClubWaitlistStatus = "waiting" | "placed" | "cancelled";
 export type PlacementRequestStatus = "pending" | "confirmed" | "declined" | "cancelled";
 

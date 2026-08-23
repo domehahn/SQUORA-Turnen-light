@@ -372,3 +372,26 @@ export interface PlacementRequestDetail {
   status: PlacementRequestStatus;
   createdAt: string;
 }
+
+// --- Vereinsbeitritt -------------------------------------------------------------
+
+export type ClubJoinRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface ClubJoinRequestRow {
+  id: string;
+  club_id: string;
+  user_id: string;
+  status: ClubJoinRequestStatus;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface ClubJoinRequestDetail {
+  id: string;
+  clubId: string;
+  clubName: string;
+  userId: string;
+  userName: string | null;
+  status: ClubJoinRequestStatus;
+  createdAt: string;
+}

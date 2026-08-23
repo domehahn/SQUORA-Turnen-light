@@ -322,6 +322,35 @@ app.put("/api/me/club", requireAuth, async (c) => {
   if (clubId !== null) {
     const club = await db.getClubById(c.env.DB, clubId);
     if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
+
+    // Hat der Verein schon eine Jugendleitung, braucht der Beitritt deren
+    // Freigabe - sonst könnte sich jede*r ungeprüft eintragen. Ohne
+    // Jugendleitung (z.B. ganz neuer/verwaister Verein) bleibt der direkte
+    // Beitritt möglich, sonst könnte niemand mehr beitreten.
+    const hasLeadership = (await db.countClubLeaders(c.env.DB, clubId)) > 0;
+    if (hasLeadership) {
+      let request;
+      try {
+        request = await db.createClubJoinRequest(c.env.DB, { clubId, userId: c.get("userId") });
+      } catch {
+        return c.json({ error: "Es läuft bereits eine Beitrittsanfrage" }, 409);
+      }
+
+      const leaders = (await db.listClubMembers(c.env.DB, clubId)).filter((m) => m.role === "jugendleiter");
+      for (const leader of leaders) {
+        await notifyUser(c.env, {
+          userId: leader.id,
+          userEmail: leader.email,
+          userName: leader.name,
+          type: "club_join_requested",
+          title: `Beitrittsanfrage für „${club.name}“`,
+          body: `${c.get("name") ?? c.get("email")} möchte „${club.name}“ beitreten - bitte freigeben oder ablehnen.`,
+          link: "/verein",
+        });
+      }
+
+      return c.json({ status: "pending_club_join_approval", requestId: request.id, clubName: club.name }, 202);
+    }
   }
 
   // Wer den Verein verlässt und die einzige Jugendleitung ist, muss zuerst
@@ -348,6 +377,98 @@ app.get("/api/clubs/mine/members", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   return c.json(await db.listClubMembers(c.env.DB, clubId));
+});
+
+// Offene Beitrittsanfragen für den eigenen Verein - nur für die
+// Jugendleitung, die sie freigeben oder ablehnen muss.
+app.get("/api/club-join-requests/incoming", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  return c.json(await db.listPendingClubJoinRequestsForClub(c.env.DB, clubId));
+});
+
+// Die eigene offene Beitrittsanfrage (falls vorhanden) - für die Anzeige
+// "wartet auf Freigabe" auf der Verein-Seite.
+app.get("/api/club-join-requests/mine", requireAuth, async (c) => {
+  return c.json(await db.getPendingClubJoinRequestForUser(c.env.DB, c.get("userId")));
+});
+
+app.post("/api/club-join-requests/:id/cancel", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const request = await db.getClubJoinRequestById(c.env.DB, id);
+  if (!request) return c.body(null, 204);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.user_id !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.setClubJoinRequestStatus(c.env.DB, id, "cancelled");
+  return c.body(null, 204);
+});
+
+app.post("/api/club-join-requests/:id/approve", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const request = await db.getClubJoinRequestById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+
+  await db.setUserClub(c.env.DB, request.user_id, request.club_id, "member");
+  await db.setClubJoinRequestStatus(c.env.DB, id, "approved");
+
+  const club = await db.getClubById(c.env.DB, request.club_id);
+  const applicant = await db.getUserById(c.env.DB, request.user_id);
+  await db.logAudit(c.env.DB, {
+    clubId: request.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "club_join_request.approved",
+    targetLabel: applicant?.name ?? applicant?.email ?? request.user_id,
+  });
+  if (applicant && club) {
+    await notifyUser(c.env, {
+      userId: applicant.id,
+      userEmail: applicant.email,
+      userName: applicant.name,
+      type: "club_join_approved",
+      title: `Beitritt zu „${club.name}“ freigegeben`,
+      body: `${c.get("name") ?? c.get("email")} hat deine Beitrittsanfrage für „${club.name}“ freigegeben.`,
+      link: "/verein",
+    });
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post("/api/club-join-requests/:id/reject", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const request = await db.getClubJoinRequestById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+
+  await db.setClubJoinRequestStatus(c.env.DB, id, "rejected");
+
+  const club = await db.getClubById(c.env.DB, request.club_id);
+  const applicant = await db.getUserById(c.env.DB, request.user_id);
+  if (applicant && club) {
+    await notifyUser(c.env, {
+      userId: applicant.id,
+      userEmail: applicant.email,
+      userName: applicant.name,
+      type: "club_join_rejected",
+      title: `Beitritt zu „${club.name}“ abgelehnt`,
+      body: `${c.get("name") ?? c.get("email")} hat deine Beitrittsanfrage für „${club.name}“ abgelehnt.`,
+      link: "/verein",
+    });
+  }
+
+  return c.json({ ok: true });
 });
 
 // Ein anderes Vereinsmitglied zur Jugendleitung befördern - nur für
