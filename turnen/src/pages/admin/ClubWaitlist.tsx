@@ -226,8 +226,8 @@ export default function ClubWaitlist() {
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Vereinsweite Liste für Kinder ohne Gruppe.{" "}
           {isJugendleiter
-            ? "Als Jugendleitung kannst du hier nach Rücksprache eine Gruppe vorschlagen – die Gruppenleitung muss den Vorschlag noch bestätigen."
-            : "Vorschläge der Jugendleitung für deine Gruppen musst du aktiv bestätigen oder ablehnen."}
+            ? "Als Jugendleitung siehst du hier die vereinsweite Liste und kannst nach Rücksprache eine Gruppe vorschlagen – die Gruppenleitung muss den Vorschlag noch bestätigen."
+            : "Melde hier ein Kind an, das noch keine Gruppe hat – die Jugendleitung wird automatisch benachrichtigt und verteilt von dort aus. Die Gesamtliste sieht nur die Jugendleitung; Vorschläge für deine eigenen Gruppen musst du hier aktiv bestätigen oder ablehnen."}
         </p>
       </div>
 
@@ -322,7 +322,12 @@ export default function ClubWaitlist() {
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-emerald-700 dark:text-emerald-400">{info}</p>}
 
-      {loading ? (
+      {!isJugendleiter ? (
+        <p className="rounded-lg border border-slate-200 bg-white p-4 text-xs text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
+          Die vereinsweite Warteliste sieht nur die Jugendleitung – deine Anmeldung wurde ihr per Benachrichtigung
+          gemeldet.
+        </p>
+      ) : loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : entries.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">

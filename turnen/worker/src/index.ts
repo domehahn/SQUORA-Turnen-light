@@ -1272,13 +1272,43 @@ app.post("/api/club-waitlist", requireAuth, async (c) => {
   const allowed = (await isChildWritable(c.env.DB, child, c.get("userId"))) || c.get("clubRole") === "jugendleiter";
   if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
-  const entry = await db.addToClubWaitlist(c.env.DB, { clubId, childId, note, addedBy: c.get("userId") });
+  let entry;
+  try {
+    entry = await db.addToClubWaitlist(c.env.DB, { clubId, childId, note, addedBy: c.get("userId") });
+  } catch {
+    // Unique-Index verhindert doppelte "waiting"-Einträge - z.B. wenn ein
+    // Turnleiter ohne Sicht auf die Gesamtliste (s.u.) versehentlich ein
+    // schon angemeldetes Kind erneut einträgt.
+    return c.json({ error: "Kind steht bereits auf der Warteliste" }, 409);
+  }
+
+  // Die Jugendleitung hat die konsolidierte Sicht auf die Warteliste -
+  // deshalb sofort per E-Mail/In-App informieren, sobald jemand ein Kind
+  // anmeldet, statt dass sie es erst beim nächsten Blick in die App merkt.
+  const leaders = (await db.listClubMembers(c.env.DB, clubId)).filter(
+    (m) => m.role === "jugendleiter" && m.id !== c.get("userId")
+  );
+  for (const leader of leaders) {
+    await notifyUser(c.env, {
+      userId: leader.id,
+      userEmail: leader.email,
+      userName: leader.name,
+      type: "club_waitlist_added",
+      title: "Neue Anfrage auf der Warteliste",
+      body: `${c.get("name") ?? c.get("email")} hat ${child.first_name} ${child.last_name} zur Warteliste hinzugefügt.${note ? ` (${note})` : ""}`,
+      link: "/warteliste",
+    });
+  }
+
   return c.json(entry, 201);
 });
 
+// Konsolidierte Sicht auf die Warteliste - bewusst nur für die
+// Jugendleitung, die von hier aus verteilt. Einzelne Turnleiter*innen
+// können zwar Kinder anmelden (s.o.), sehen die Gesamtliste aber nicht.
 app.get("/api/club-waitlist", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId) return c.json([]);
+  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
   return c.json(await db.listClubWaitlist(c.env.DB, clubId));
 });
 
