@@ -9,7 +9,9 @@ const NAV_ITEMS = [
   { to: "/anwesenheit", label: "Anwesenheit" },
   { to: "/uebersicht", label: "Übersicht" },
   { to: "/auslastung", label: "Auslastung" },
+  { to: "/kalender", label: "Kalender" },
   { to: "/export", label: "Export" },
+  { to: "/verlauf", label: "Verlauf" },
   { to: "/verein", label: "Verein" },
 ];
 

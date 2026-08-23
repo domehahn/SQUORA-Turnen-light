@@ -51,6 +51,7 @@ export interface Group {
   weekday: number | null;
   startTime: string | null;
   endTime: string | null;
+  location: string | null;
   ownerId: string | null;
   ownerName: string | null;
   clubId: string | null;
@@ -68,6 +69,7 @@ export interface GroupRow {
   weekday: number | null;
   start_time: string | null;
   end_time: string | null;
+  location: string | null;
   owner_id: string | null;
   club_id: string | null;
   created_at: string;
@@ -83,6 +85,7 @@ export interface Child {
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   healthNotes: string | null;
+  familyId: string | null;
   canEdit: boolean;
   createdAt: string;
 }
@@ -97,6 +100,7 @@ export interface ChildRow {
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   health_notes: string | null;
+  family_id: string | null;
   created_at: string;
 }
 
@@ -224,4 +228,45 @@ export interface AttendanceSummary {
   childId: string;
   lastPresentDate: string | null;
   weeksSinceLastPresent: number | null;
+}
+
+// --- Familien / Geschwister --------------------------------------------------
+
+export interface FamilyRow {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface Family {
+  id: string;
+  name: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  createdAt: string;
+}
+
+// --- Audit-Log ---------------------------------------------------------------
+
+export interface AuditLogRow {
+  id: string;
+  club_id: string | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  action: string;
+  target_label: string;
+  created_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorName: string | null;
+  action: string;
+  targetLabel: string;
+  createdAt: string;
 }

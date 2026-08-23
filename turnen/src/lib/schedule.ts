@@ -34,3 +34,22 @@ export function formatShortDate(dateIso: string): string {
   const [, month, day] = dateIso.split("-");
   return `${day}.${month}.`;
 }
+
+/**
+ * Die nächsten `count` Trainingstermine ab (inkl.) `from` für einen
+ * gegebenen Wochentag (0=So ... 6=Sa), außerhalb der RLP-Schulferien.
+ * Generische Variante von `trainingDatesInMonth` für Gruppen mit
+ * individuellem Trainingstag statt dem fest codierten Donnerstag.
+ */
+export function nextTrainingDates(weekday: number, count: number, from: Date = new Date()): string[] {
+  const dates: string[] = [];
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const offset = (weekday - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + offset);
+  while (dates.length < count) {
+    const iso = toIso(date);
+    if (!isSchoolHoliday(iso)) dates.push(iso);
+    date.setDate(date.getDate() + 7);
+  }
+  return dates;
+}

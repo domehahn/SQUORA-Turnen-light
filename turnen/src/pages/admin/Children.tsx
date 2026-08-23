@@ -4,6 +4,7 @@ import type {
   AttendanceSummary,
   CapacityRequest,
   Child,
+  Family,
   Group,
   MoveChildResponse,
   MoveRequest,
@@ -31,10 +32,16 @@ const emptyForm = {
   emergencyContactName: "",
   emergencyContactPhone: "",
   healthNotes: "",
+  familyId: "",
+  newFamilyName: "",
+  newFamilyContactName: "",
+  newFamilyContactPhone: "",
+  newFamilyContactEmail: "",
 };
 
 const STALE_ATTENDANCE_WEEKS = 4;
 const WAITLIST_PREFIX = "waitlist:";
+const NEW_FAMILY_VALUE = "__new__";
 
 function isPendingCapacityApproval(value: unknown): value is PendingCapacityApproval {
   return (
@@ -108,6 +115,7 @@ export default function Children() {
   const [outgoingCapacityRequests, setOutgoingCapacityRequests] = useState<CapacityRequest[]>([]);
   const [myWaitlistEntries, setMyWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [attendanceSummary, setAttendanceSummary] = useState<Record<string, AttendanceSummary>>({});
+  const [families, setFamilies] = useState<Family[]>([]);
   const [search, setSearch] = useState("");
 
   async function load() {
@@ -173,12 +181,21 @@ export default function Children() {
     }
   }
 
+  async function loadFamilies() {
+    try {
+      setFamilies(await api.get<Family[]>("/api/families"));
+    } catch {
+      // Zusatzinfo - Ladefehler soll die Seite nicht blockieren.
+    }
+  }
+
   useEffect(() => {
     load();
     loadMoveRequests();
     loadCapacityRequests();
     loadWaitlist();
     loadAttendanceSummary();
+    loadFamilies();
   }, []);
 
   async function handleMove(childId: string, toGroupId: string) {
@@ -309,6 +326,11 @@ export default function Children() {
       emergencyContactName: child.emergencyContactName ?? "",
       emergencyContactPhone: child.emergencyContactPhone ?? "",
       healthNotes: child.healthNotes ?? "",
+      familyId: child.familyId ?? "",
+      newFamilyName: "",
+      newFamilyContactName: "",
+      newFamilyContactPhone: "",
+      newFamilyContactEmail: "",
     });
   }
 
@@ -322,6 +344,18 @@ export default function Children() {
     setError(null);
     setInfo(null);
     try {
+      let familyId = form.familyId;
+      if (familyId === NEW_FAMILY_VALUE) {
+        const family = await api.post<Family>("/api/families", {
+          name: form.newFamilyName,
+          contactName: form.newFamilyContactName || null,
+          contactPhone: form.newFamilyContactPhone || null,
+          contactEmail: form.newFamilyContactEmail || null,
+        });
+        familyId = family.id;
+        await loadFamilies();
+      }
+
       const result = await withCapacityConfirm((confirmOverCapacity) => {
         const payload = {
           firstName: form.firstName,
@@ -332,6 +366,7 @@ export default function Children() {
           emergencyContactName: form.emergencyContactName || null,
           emergencyContactPhone: form.emergencyContactPhone || null,
           healthNotes: form.healthNotes || null,
+          familyId: familyId || null,
           confirmOverCapacity,
         };
         return editingId
@@ -707,6 +742,56 @@ export default function Children() {
             onChange={(e) => setForm({ ...form, healthNotes: e.target.value })}
           />
         </div>
+        <div className="w-52">
+          <FloatingSelect
+            label="Familie/Geschwister (optional)"
+            value={form.familyId}
+            onChange={(e) => setForm({ ...form, familyId: e.target.value })}
+          >
+            <option value="">Keine</option>
+            {families.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+            <option value={NEW_FAMILY_VALUE}>+ Neue Familie anlegen…</option>
+          </FloatingSelect>
+        </div>
+        {form.familyId === NEW_FAMILY_VALUE && (
+          <>
+            <div className="w-52">
+              <FloatingInput
+                label="Familienname"
+                required
+                value={form.newFamilyName}
+                onChange={(e) => setForm({ ...form, newFamilyName: e.target.value })}
+              />
+            </div>
+            <div className="w-52">
+              <FloatingInput
+                label="Kontakt: Name (optional)"
+                value={form.newFamilyContactName}
+                onChange={(e) => setForm({ ...form, newFamilyContactName: e.target.value })}
+              />
+            </div>
+            <div className="w-44">
+              <FloatingInput
+                label="Kontakt: Telefon (optional)"
+                type="tel"
+                value={form.newFamilyContactPhone}
+                onChange={(e) => setForm({ ...form, newFamilyContactPhone: e.target.value })}
+              />
+            </div>
+            <div className="w-52">
+              <FloatingInput
+                label="Kontakt: E-Mail (optional)"
+                type="email"
+                value={form.newFamilyContactEmail}
+                onChange={(e) => setForm({ ...form, newFamilyContactEmail: e.target.value })}
+              />
+            </div>
+          </>
+        )}
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}
         </button>
@@ -768,6 +853,9 @@ export default function Children() {
                 const moveTargets = groups.filter((g) => g.id !== child.groupId);
                 const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
                 const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
+                const siblings = child.familyId
+                  ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id)
+                  : [];
 
                 const attendance = attendanceSummary[child.id];
                 let attendanceLabel = "–";
@@ -800,6 +888,14 @@ export default function Children() {
                             .join(" · ")}
                         >
                           ⚕️
+                        </span>
+                      )}
+                      {siblings.length > 0 && (
+                        <span
+                          className="ml-1.5 cursor-help"
+                          title={`Geschwister: ${siblings.map((s) => `${s.firstName} ${s.lastName}`).join(", ")}`}
+                        >
+                          👨‍👩‍👧
                         </span>
                       )}
                     </td>

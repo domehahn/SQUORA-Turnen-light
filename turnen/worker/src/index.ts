@@ -326,8 +326,16 @@ app.post("/api/clubs/mine/members/:userId/promote", requireAuth, async (c) => {
   const targetUserId = validId(c.req.param("userId"));
   if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
 
+  const target = await db.getUserById(c.env.DB, targetUserId);
   const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "jugendleiter");
   if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "member.promoted",
+    targetLabel: target?.name ?? target?.email ?? targetUserId,
+  });
   return c.json({ ok: true });
 });
 
@@ -346,8 +354,16 @@ app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
     return c.json({ error: "Es muss mindestens eine Jugendleitung im Verein bleiben" }, 409);
   }
 
+  const target = await db.getUserById(c.env.DB, targetUserId);
   const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "member");
   if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "member.demoted",
+    targetLabel: target?.name ?? target?.email ?? targetUserId,
+  });
   return c.json({ ok: true });
 });
 
@@ -366,12 +382,14 @@ app.post("/api/groups", requireAuth, async (c) => {
   const weekday = validWeekday(body?.weekday);
   const startTime = validTime(body?.startTime);
   const endTime = validTime(body?.endTime);
+  const location = optionalText(body?.location, 100);
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
   if (sortOrder === undefined) return c.json({ error: "Sortierung ist ungültig" }, 400);
   if (maxChildren === undefined) return c.json({ error: "Max. Kinderzahl ist ungültig" }, 400);
   if (weekday === undefined) return c.json({ error: "Wochentag ist ungültig" }, 400);
   if (startTime === undefined || endTime === undefined) return c.json({ error: "Uhrzeit ist ungültig (Format HH:MM)" }, 400);
+  if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
 
   const group = await db.createGroup(c.env.DB, {
     name,
@@ -381,9 +399,17 @@ app.post("/api/groups", requireAuth, async (c) => {
     weekday,
     startTime,
     endTime,
+    location,
     ownerId: c.get("userId"),
     ownerName: c.get("name"),
     clubId: c.get("clubId"),
+  });
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "group.created",
+    targetLabel: group.name,
   });
   return c.json(group, 201);
 });
@@ -398,6 +424,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   const weekday = validWeekday(body?.weekday);
   const startTime = validTime(body?.startTime);
   const endTime = validTime(body?.endTime);
+  const location = optionalText(body?.location, 100);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
@@ -405,6 +432,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   if (maxChildren === undefined) return c.json({ error: "Max. Kinderzahl ist ungültig" }, 400);
   if (weekday === undefined) return c.json({ error: "Wochentag ist ungültig" }, 400);
   if (startTime === undefined || endTime === undefined) return c.json({ error: "Uhrzeit ist ungültig (Format HH:MM)" }, 400);
+  if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
@@ -413,10 +441,17 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   const group = await db.updateGroup(
     c.env.DB,
     id,
-    { name, ...ageRange, sortOrder, maxChildren, weekday, startTime, endTime },
+    { name, ...ageRange, sortOrder, maxChildren, weekday, startTime, endTime, location },
     { userId: c.get("userId"), ownerName: c.get("name") }
   );
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "group.updated",
+    targetLabel: group.name,
+  });
 
   // Wurde die Kapazität erhöht, können jetzt Wartelisten-Einträge nachrücken.
   await promoteWaitlistIfPossible(c, id);
@@ -444,6 +479,13 @@ app.post("/api/groups/:id/claim", requireAuth, async (c) => {
 
   const group = await db.claimGroup(c.env.DB, id, { ownerId: c.get("userId"), ownerName: c.get("name"), clubId });
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "group.claimed",
+    targetLabel: group.name,
+  });
   return c.json(group);
 });
 
@@ -456,6 +498,13 @@ app.delete("/api/groups/:id", requireAuth, async (c) => {
   if (!db.canWriteGroup(existing, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   await db.deleteGroup(c.env.DB, id);
+  await db.logAudit(c.env.DB, {
+    clubId: existing.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "group.deleted",
+    targetLabel: existing.name,
+  });
   return c.body(null, 204);
 });
 
@@ -497,6 +546,7 @@ app.post("/api/children", requireAuth, async (c) => {
   const emergencyContactName = optionalText(body?.emergencyContactName, 100);
   const emergencyContactPhone = optionalText(body?.emergencyContactPhone, 40);
   const healthNotes = optionalText(body?.healthNotes, 1000);
+  const familyId = optionalId(body?.familyId);
   if (!firstName) return c.json({ error: "Vorname fehlt oder ist ungültig" }, 400);
   if (!lastName) return c.json({ error: "Nachname fehlt oder ist ungültig" }, 400);
   if (!birthDate) return c.json({ error: "Geburtsdatum ist ungültig (Format JJJJ-MM-TT)" }, 400);
@@ -505,8 +555,9 @@ app.post("/api/children", requireAuth, async (c) => {
   if (emergencyContactName === undefined) return c.json({ error: "Notfallkontakt (Name) ist zu lang" }, 400);
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
   if (healthNotes === undefined) return c.json({ error: "Gesundheitshinweise sind zu lang" }, 400);
+  if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
-  const childInput = { firstName, lastName, birthDate, groupId, notes, emergencyContactName, emergencyContactPhone, healthNotes };
+  const childInput = { firstName, lastName, birthDate, groupId, notes, emergencyContactName, emergencyContactPhone, healthNotes, familyId };
 
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
@@ -548,6 +599,7 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   const emergencyContactName = optionalText(body?.emergencyContactName, 100);
   const emergencyContactPhone = optionalText(body?.emergencyContactPhone, 40);
   const healthNotes = optionalText(body?.healthNotes, 1000);
+  const familyId = optionalId(body?.familyId);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!firstName) return c.json({ error: "Vorname fehlt oder ist ungültig" }, 400);
   if (!lastName) return c.json({ error: "Nachname fehlt oder ist ungültig" }, 400);
@@ -557,13 +609,14 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (emergencyContactName === undefined) return c.json({ error: "Notfallkontakt (Name) ist zu lang" }, 400);
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
   if (healthNotes === undefined) return c.json({ error: "Gesundheitshinweise sind zu lang" }, 400);
+  if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
   const existing = await db.getChildRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
   if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
-  const childInput = { firstName, lastName, birthDate, groupId, notes, emergencyContactName, emergencyContactPhone, healthNotes };
+  const childInput = { firstName, lastName, birthDate, groupId, notes, emergencyContactName, emergencyContactPhone, healthNotes, familyId };
 
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
@@ -615,6 +668,57 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
   await db.deleteChild(c.env.DB, id);
   if (existing.group_id) await promoteWaitlistIfPossible(c, existing.group_id);
   return c.body(null, 204);
+});
+
+// --- Familien / Geschwister --------------------------------------------------
+
+app.get("/api/families", requireAuth, async (c) => {
+  return c.json(await db.listFamiliesForUser(c.env.DB, c.get("userId")));
+});
+
+app.post("/api/families", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const name = requiredText(body?.name, 100);
+  const contactName = optionalText(body?.contactName, 100);
+  const contactPhone = optionalText(body?.contactPhone, 40);
+  const contactEmail = optionalText(body?.contactEmail, 254);
+  if (!name) return c.json({ error: "Name der Familie fehlt oder ist ungültig" }, 400);
+  if (contactName === undefined) return c.json({ error: "Kontaktname ist zu lang" }, 400);
+  if (contactPhone === undefined) return c.json({ error: "Telefonnummer ist zu lang" }, 400);
+  if (contactEmail === undefined) return c.json({ error: "E-Mail ist zu lang" }, 400);
+
+  const family = await db.createFamily(c.env.DB, { name, contactName, contactPhone, contactEmail }, c.get("userId"));
+  return c.json(family, 201);
+});
+
+app.put("/api/families/:id", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const name = requiredText(body?.name, 100);
+  const contactName = optionalText(body?.contactName, 100);
+  const contactPhone = optionalText(body?.contactPhone, 40);
+  const contactEmail = optionalText(body?.contactEmail, 254);
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (!name) return c.json({ error: "Name der Familie fehlt oder ist ungültig" }, 400);
+  if (contactName === undefined) return c.json({ error: "Kontaktname ist zu lang" }, 400);
+  if (contactPhone === undefined) return c.json({ error: "Telefonnummer ist zu lang" }, 400);
+  if (contactEmail === undefined) return c.json({ error: "E-Mail ist zu lang" }, 400);
+
+  const existing = await db.getFamilyRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Familie nicht gefunden" }, 404);
+  if (existing.created_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung für diese Familie" }, 403);
+
+  const family = await db.updateFamily(c.env.DB, id, { name, contactName, contactPhone, contactEmail });
+  if (!family) return c.json({ error: "Familie nicht gefunden" }, 404);
+  return c.json(family);
+});
+
+// --- Audit-Log -----------------------------------------------------------------
+
+app.get("/api/audit-log", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listAuditLogForClub(c.env.DB, clubId));
 });
 
 // Ein Kind in eine andere Gruppe verschieben. Erfüllt es die
@@ -742,6 +846,14 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
   await db.moveChildToGroup(c.env.DB, request.child_id, request.to_group_id);
   await db.setMoveRequestStatus(c.env.DB, id, "approved", c.get("userId"));
   if (request.from_group_id) await promoteWaitlistIfPossible(c, request.from_group_id);
+  const movedChild = await db.getChildRowById(c.env.DB, request.child_id);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "move_request.approved",
+    targetLabel: movedChild ? `${movedChild.first_name} ${movedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
+  });
   return c.json({ ok: true });
 });
 
@@ -758,6 +870,14 @@ app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
     return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   await db.setMoveRequestStatus(c.env.DB, id, "rejected", c.get("userId"));
+  const rejectedChild = await db.getChildRowById(c.env.DB, request.child_id);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "move_request.rejected",
+    targetLabel: rejectedChild ? `${rejectedChild.first_name} ${rejectedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
+  });
   return c.json({ ok: true });
 });
 
@@ -806,6 +926,13 @@ app.post("/api/capacity-requests/:id/approve", requireAuth, async (c) => {
   await applyCapacityRequest(c.env.DB, request, c.get("userId"));
   await db.setCapacityRequestStatus(c.env.DB, id, "approved", c.get("userId"));
   if (previousGroupId && previousGroupId !== request.group_id) await promoteWaitlistIfPossible(c, previousGroupId);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "capacity_request.approved",
+    targetLabel: `${group.name} (${request.action})`,
+  });
   return c.json({ ok: true });
 });
 
@@ -823,6 +950,13 @@ app.post("/api/capacity-requests/:id/reject", requireAuth, async (c) => {
   }
 
   await db.setCapacityRequestStatus(c.env.DB, id, "rejected", c.get("userId"));
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "capacity_request.rejected",
+    targetLabel: `${group.name} (${request.action})`,
+  });
   return c.json({ ok: true });
 });
 

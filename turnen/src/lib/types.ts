@@ -8,6 +8,7 @@ export interface Group {
   weekday: number | null; // 0 = Sonntag ... 6 = Samstag
   startTime: string | null; // "HH:MM"
   endTime: string | null; // "HH:MM"
+  location: string | null;
   ownerId: string | null;
   ownerName: string | null;
   clubId: string | null;
@@ -25,6 +26,7 @@ export interface Child {
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   healthNotes: string | null;
+  familyId: string | null;
   canEdit: boolean;
   createdAt: string;
 }
@@ -142,4 +144,21 @@ export interface AttendanceSession {
   entries: AttendanceEntry[];
   ledBy: string | null;
   ledByName: string | null;
+}
+
+export interface Family {
+  id: string;
+  name: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorName: string | null;
+  action: string;
+  targetLabel: string;
+  createdAt: string;
 }

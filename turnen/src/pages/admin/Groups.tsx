@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { CapacityRequest, Child, Group, MoveRequest, WaitlistEntry } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
@@ -32,6 +32,31 @@ function scheduleLabel(g: Group): string | null {
   return [day, time].filter(Boolean).join(" ");
 }
 
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Zwei Gruppen kollidieren, wenn sie denselben Ort, denselben Wochentag und
+// eine überlappende Uhrzeit haben.
+function findScheduleConflicts(groups: Group[]): { a: Group; b: Group }[] {
+  const withSchedule = groups.filter((g) => g.location && g.weekday !== null && g.startTime && g.endTime);
+  const conflicts: { a: Group; b: Group }[] = [];
+  for (let i = 0; i < withSchedule.length; i++) {
+    for (let j = i + 1; j < withSchedule.length; j++) {
+      const a = withSchedule[i];
+      const b = withSchedule[j];
+      if (a.location !== b.location || a.weekday !== b.weekday) continue;
+      const aStart = timeToMinutes(a.startTime as string);
+      const aEnd = timeToMinutes(a.endTime as string);
+      const bStart = timeToMinutes(b.startTime as string);
+      const bEnd = timeToMinutes(b.endTime as string);
+      if (aStart < bEnd && bStart < aEnd) conflicts.push({ a, b });
+    }
+  }
+  return conflicts;
+}
+
 export default function Groups() {
   const { clubId, clubName, clubRole } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
@@ -46,6 +71,7 @@ export default function Groups() {
   const [weekday, setWeekday] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [location, setLocation] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -104,6 +130,7 @@ export default function Groups() {
     setWeekday(g.weekday != null ? String(g.weekday) : "");
     setStartTime(g.startTime ?? "");
     setEndTime(g.endTime ?? "");
+    setLocation(g.location ?? "");
   }
 
   function resetForm() {
@@ -115,6 +142,7 @@ export default function Groups() {
     setWeekday("");
     setStartTime("");
     setEndTime("");
+    setLocation("");
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -130,6 +158,7 @@ export default function Groups() {
         weekday: weekday === "" ? null : Number(weekday),
         startTime: startTime || null,
         endTime: endTime || null,
+        location: location || null,
       };
       if (editingId) await api.put(`/api/groups/${editingId}`, payload);
       else await api.post("/api/groups", payload);
@@ -213,6 +242,8 @@ export default function Groups() {
     }
   }
 
+  const scheduleConflicts = useMemo(() => findScheduleConflicts(groups), [groups]);
+
   function capacityActionLabel(action: CapacityRequest["action"]): string {
     switch (action) {
       case "create_child":
@@ -285,6 +316,13 @@ export default function Groups() {
         <div className="w-28">
           <FloatingInput label="Bis" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
         </div>
+        <div className="w-40">
+          <FloatingInput
+            label="Ort/Halle (optional)"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+        </div>
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}
         </button>
@@ -300,6 +338,22 @@ export default function Groups() {
       </form>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
+
+      {scheduleConflicts.length > 0 && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/50">
+          <h3 className="mb-1 text-sm font-semibold text-red-800 dark:text-red-300">
+            Hallenbelegungs-Konflikt ({scheduleConflicts.length})
+          </h3>
+          <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
+            {scheduleConflicts.map(({ a, b }, i) => (
+              <li key={i}>
+                „{a.name}“ und „{b.name}“ überschneiden sich am {WEEKDAY_NAMES[a.weekday as number]} in {a.location}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : (
@@ -331,7 +385,10 @@ export default function Groups() {
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.minAge}–{g.maxAge} Jahre
                   </td>
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{schedule ?? "–"}</td>
+                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
+                    {schedule ?? "–"}
+                    {g.location && <span className="block text-xs text-slate-400 dark:text-slate-500">{g.location}</span>}
+                  </td>
                   <td className="px-4 py-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}>
                       {label}
@@ -379,6 +436,16 @@ export default function Groups() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-right">
+                    {g.canEdit && (
+                      <a
+                        href={`/druck/${g.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mr-3 text-sm text-slate-600 hover:underline dark:text-slate-300"
+                      >
+                        Drucken
+                      </a>
+                    )}
                     {g.canEdit ? (
                       <>
                         {g.ownerId === null && (

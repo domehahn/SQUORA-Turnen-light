@@ -1,6 +1,8 @@
 import type {
   AttendanceEntry,
   AttendanceEntryRow,
+  AuditLogEntry,
+  AuditLogRow,
   CapacityRequestAction,
   CapacityRequestDetail,
   CapacityRequestRow,
@@ -9,6 +11,8 @@ import type {
   Club,
   ClubRole,
   ClubRow,
+  Family,
+  FamilyRow,
   Group,
   GroupRow,
   MoveRequestDetail,
@@ -60,6 +64,7 @@ function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | nu
     weekday: row.weekday,
     startTime: row.start_time,
     endTime: row.end_time,
+    location: row.location,
     ownerId: row.owner_id,
     ownerName: ctx.ownerName,
     clubId: row.club_id,
@@ -79,6 +84,7 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
     emergencyContactName: row.emergency_contact_name,
     emergencyContactPhone: row.emergency_contact_phone,
     healthNotes: row.health_notes,
+    familyId: row.family_id,
     canEdit,
     createdAt: row.created_at,
   };
@@ -241,6 +247,7 @@ export async function createGroup(
     weekday: number | null;
     startTime: string | null;
     endTime: string | null;
+    location: string | null;
     ownerId: string;
     ownerName: string | null;
     clubId: string | null;
@@ -249,8 +256,8 @@ export async function createGroup(
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO groups (id, name, min_age, max_age, sort_order, max_children, weekday, start_time, end_time, owner_id, club_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO groups (id, name, min_age, max_age, sort_order, max_children, weekday, start_time, end_time, location, owner_id, club_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -262,6 +269,7 @@ export async function createGroup(
       input.weekday,
       input.startTime,
       input.endTime,
+      input.location,
       input.ownerId,
       input.clubId
     )
@@ -282,13 +290,14 @@ export async function updateGroup(
     weekday: number | null;
     startTime: string | null;
     endTime: string | null;
+    location: string | null;
   },
   ctx: { userId: string; ownerName: string | null }
 ): Promise<Group | null> {
   await db
     .prepare(
       `UPDATE groups SET name = ?, min_age = ?, max_age = ?, sort_order = ?, max_children = ?,
-              weekday = ?, start_time = ?, end_time = ? WHERE id = ?`
+              weekday = ?, start_time = ?, end_time = ?, location = ? WHERE id = ?`
     )
     .bind(
       input.name,
@@ -299,6 +308,7 @@ export async function updateGroup(
       input.weekday,
       input.startTime,
       input.endTime,
+      input.location,
       id
     )
     .run();
@@ -377,6 +387,7 @@ export interface ChildInput {
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   healthNotes: string | null;
+  familyId: string | null;
 }
 
 export async function createChild(db: D1Database, input: ChildInput): Promise<Child> {
@@ -384,8 +395,8 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
   await db
     .prepare(
       `INSERT INTO children
-         (id, first_name, last_name, birth_date, group_id, notes, emergency_contact_name, emergency_contact_phone, health_notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (id, first_name, last_name, birth_date, group_id, notes, emergency_contact_name, emergency_contact_phone, health_notes, family_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -396,7 +407,8 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
       input.notes,
       input.emergencyContactName,
       input.emergencyContactPhone,
-      input.healthNotes
+      input.healthNotes,
+      input.familyId
     )
     .run();
   const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
@@ -407,7 +419,7 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
   await db
     .prepare(
       `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, notes = ?,
-              emergency_contact_name = ?, emergency_contact_phone = ?, health_notes = ? WHERE id = ?`
+              emergency_contact_name = ?, emergency_contact_phone = ?, health_notes = ?, family_id = ? WHERE id = ?`
     )
     .bind(
       input.firstName,
@@ -418,6 +430,7 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
       input.emergencyContactName,
       input.emergencyContactPhone,
       input.healthNotes,
+      input.familyId,
       id
     )
     .run();
@@ -938,4 +951,86 @@ export async function getLastPresentDates(db: D1Database, childIds: string[]): P
   const map: Record<string, string> = {};
   for (const row of results) map[row.child_id] = row.last_date;
   return map;
+}
+
+// --- Familien / Geschwister --------------------------------------------------
+
+function rowToFamily(row: FamilyRow): Family {
+  return {
+    id: row.id,
+    name: row.name,
+    contactName: row.contact_name,
+    contactPhone: row.contact_phone,
+    contactEmail: row.contact_email,
+    createdAt: row.created_at,
+  };
+}
+
+export interface FamilyInput {
+  name: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+}
+
+export async function createFamily(db: D1Database, input: FamilyInput, createdBy: string): Promise<Family> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO families (id, name, contact_name, contact_phone, contact_email, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(id, input.name, input.contactName, input.contactPhone, input.contactEmail, createdBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM families WHERE id = ?").bind(id).first<FamilyRow>();
+  return rowToFamily(row as FamilyRow);
+}
+
+export async function getFamilyRowById(db: D1Database, id: string): Promise<FamilyRow | null> {
+  return db.prepare("SELECT * FROM families WHERE id = ?").bind(id).first<FamilyRow>();
+}
+
+// Familien, die der Nutzer selbst angelegt hat - für die Auswahl "vorhandene
+// Familie/Geschwister zuordnen" im Kind-Formular.
+export async function listFamiliesForUser(db: D1Database, userId: string): Promise<Family[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM families WHERE created_by = ? ORDER BY name ASC")
+    .bind(userId)
+    .all<FamilyRow>();
+  return results.map(rowToFamily);
+}
+
+export async function updateFamily(db: D1Database, id: string, input: FamilyInput): Promise<Family | null> {
+  await db
+    .prepare("UPDATE families SET name = ?, contact_name = ?, contact_phone = ?, contact_email = ? WHERE id = ?")
+    .bind(input.name, input.contactName, input.contactPhone, input.contactEmail, id)
+    .run();
+  const row = await db.prepare("SELECT * FROM families WHERE id = ?").bind(id).first<FamilyRow>();
+  return row ? rowToFamily(row) : null;
+}
+
+// --- Audit-Log -----------------------------------------------------------------
+
+export async function logAudit(
+  db: D1Database,
+  input: { clubId: string | null; actorId: string; actorName: string | null; action: string; targetLabel: string }
+): Promise<void> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO audit_log (id, club_id, actor_id, actor_name, action, target_label) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(id, input.clubId, input.actorId, input.actorName, input.action, input.targetLabel)
+    .run();
+}
+
+export async function listAuditLogForClub(db: D1Database, clubId: string, limit = 100): Promise<AuditLogEntry[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM audit_log WHERE club_id = ? ORDER BY created_at DESC LIMIT ?")
+    .bind(clubId, limit)
+    .all<AuditLogRow>();
+  return results.map((row) => ({
+    id: row.id,
+    actorName: row.actor_name,
+    action: row.action,
+    targetLabel: row.target_label,
+    createdAt: row.created_at,
+  }));
 }

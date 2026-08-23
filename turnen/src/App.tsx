@@ -10,6 +10,9 @@ import Overview from "./pages/admin/Overview";
 import ClubPage from "./pages/admin/Club";
 import Utilization from "./pages/admin/Utilization";
 import Export from "./pages/admin/Export";
+import Calendar from "./pages/admin/Calendar";
+import AuditLog from "./pages/admin/AuditLog";
+import AttendancePrint from "./pages/AttendancePrint";
 
 export default function App() {
   return (
@@ -19,6 +22,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
 
           <Route element={<RequireAuth />}>
+            <Route path="druck/:groupId" element={<AttendancePrint />} />
+
             <Route element={<AppLayout />}>
               <Route index element={<Navigate to="/gruppen" replace />} />
               <Route path="gruppen" element={<Groups />} />
@@ -26,7 +31,9 @@ export default function App() {
               <Route path="anwesenheit" element={<Attendance />} />
               <Route path="uebersicht" element={<Overview />} />
               <Route path="auslastung" element={<Utilization />} />
+              <Route path="kalender" element={<Calendar />} />
               <Route path="export" element={<Export />} />
+              <Route path="verlauf" element={<AuditLog />} />
               <Route path="verein" element={<ClubPage />} />
             </Route>
           </Route>
