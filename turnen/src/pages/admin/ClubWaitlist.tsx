@@ -10,6 +10,8 @@ function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(new Date(iso));
 }
 
+const NEW_CHILD_VALUE = "__new__";
+
 interface GroupFit {
   group: Group;
   count: number;
@@ -27,6 +29,9 @@ export default function ClubWaitlist() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [childId, setChildId] = useState("");
   const [note, setNote] = useState("");
+  const [newFirstName, setNewFirstName] = useState("");
+  const [newLastName, setNewLastName] = useState("");
+  const [newBirthDate, setNewBirthDate] = useState("");
   const [proposalGroup, setProposalGroup] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -119,15 +124,32 @@ export default function ClubWaitlist() {
 
   async function handleAdd(e: FormEvent) {
     e.preventDefault();
-    if (!childId) return;
+    const isNewChild = childId === NEW_CHILD_VALUE;
+    if (!childId || (isNewChild && (!newFirstName || !newLastName || !newBirthDate))) return;
     setError(null);
     setInfo(null);
     setBusy(true);
     try {
-      await api.post("/api/club-waitlist", { childId, note: note || null });
+      let targetChildId = childId;
+      if (isNewChild) {
+        // Neuanmeldung ohne Gruppe - Kind wird bewusst gruppenlos angelegt
+        // und direkt auf die Warteliste gesetzt, ohne den Umweg über die
+        // Kinder-Seite.
+        const child = await api.post<Child>("/api/children", {
+          firstName: newFirstName,
+          lastName: newLastName,
+          birthDate: newBirthDate,
+          groupId: null,
+        });
+        targetChildId = child.id;
+      }
+      await api.post("/api/club-waitlist", { childId: targetChildId, note: note || null });
       setInfo("Kind zur Warteliste hinzugefügt.");
       setChildId("");
       setNote("");
+      setNewFirstName("");
+      setNewLastName("");
+      setNewBirthDate("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Hinzufügen");
@@ -248,28 +270,51 @@ export default function ClubWaitlist() {
 
       <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="w-56">
-          <FloatingSelect label="Kind ohne Gruppe" value={childId} onChange={(e) => setChildId(e.target.value)}>
+          <FloatingSelect label="Kind" value={childId} onChange={(e) => setChildId(e.target.value)}>
             <option value="">Kind wählen…</option>
             {candidateChildren.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.firstName} {c.lastName}
               </option>
             ))}
+            <option value={NEW_CHILD_VALUE}>+ Neuanmeldung ohne Gruppe…</option>
           </FloatingSelect>
         </div>
+        {childId === NEW_CHILD_VALUE && (
+          <>
+            <div className="w-40">
+              <FloatingInput label="Vorname" required value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} />
+            </div>
+            <div className="w-40">
+              <FloatingInput label="Nachname" required value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
+            </div>
+            <div className="w-40">
+              <FloatingInput
+                label="Geburtsdatum"
+                type="date"
+                required
+                value={newBirthDate}
+                onChange={(e) => setNewBirthDate(e.target.value)}
+              />
+            </div>
+          </>
+        )}
         <div className="flex-1 min-w-[200px]">
           <FloatingInput label="Notiz (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
         <button
           type="submit"
-          disabled={busy || !childId}
+          disabled={
+            busy || !childId || (childId === NEW_CHILD_VALUE && (!newFirstName || !newLastName || !newBirthDate))
+          }
           className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
         >
           Zur Warteliste hinzufügen
         </button>
         {candidateChildren.length === 0 && (
           <p className="w-full text-xs text-slate-400 dark:text-slate-500">
-            Keine Kinder ohne Gruppe verfügbar, die noch nicht auf der Warteliste stehen.
+            Aktuell hat jedes bestehende Kind schon eine Gruppe – für eine Neuanmeldung „+ Neuanmeldung ohne
+            Gruppe…“ wählen.
           </p>
         )}
       </form>
