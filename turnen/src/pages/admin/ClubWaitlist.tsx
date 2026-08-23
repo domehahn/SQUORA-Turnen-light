@@ -1,12 +1,20 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Child, ClubWaitlistEntry, Group, PlacementRequest } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
+import { calculateAgeYears } from "../../lib/age";
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "short" }).format(new Date(iso));
+}
+
+interface GroupFit {
+  group: Group;
+  count: number;
+  utilization: number; // 0..1, Gruppen ohne Limit zählen als 0 (am attraktivsten)
+  ageFits: boolean;
 }
 
 export default function ClubWaitlist() {
@@ -50,11 +58,64 @@ export default function ClubWaitlist() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Vorschlag vorbelegen: die Gruppe, die vom Alter her passt und aktuell
+  // am wenigsten ausgelastet ist - Jugendleitung kann das im Dropdown noch
+  // überschreiben.
+  useEffect(() => {
+    if (groups.length === 0 || children.length === 0) return;
+    setProposalGroup((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const entry of entries) {
+        if (entry.pendingProposal || next[entry.id]) continue;
+        const best = recommendGroup(entry.childId)[0];
+        if (best) {
+          next[entry.id] = best.group.id;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, groups, children]);
+
   // Kinder ohne Gruppe sind die typischen Kandidaten für die Warteliste,
   // aber ein Kind, das schon irgendwo trainiert, aber umziehen soll, wäre
   // ein Fall für "Verschieben" bei den Kindern - hier daher nur ungruppierte.
   const waitingChildIds = new Set(entries.map((e) => e.childId));
   const candidateChildren = children.filter((c) => c.groupId === null && !waitingChildIds.has(c.id));
+
+  // Für jede Gruppe die aktuelle Auslastung (Kinder / Kapazität) - Basis für
+  // den automatischen Vorschlag "passt vom Alter und ist am wenigsten voll".
+  const groupFits: GroupFit[] = useMemo(
+    () =>
+      groups.map((group) => {
+        const count = children.filter((c) => c.groupId === group.id).length;
+        return {
+          group,
+          count,
+          utilization: group.maxChildren ? count / group.maxChildren : 0,
+          ageFits: false,
+        };
+      }),
+    [groups, children]
+  );
+
+  // Beste passende Gruppe für ein Kind: erst nach Altersgruppe filtern, dann
+  // nach geringster Auslastung sortieren (bei Gleichstand nach absoluter
+  // Kinderzahl, damit sich die Empfehlung nicht willkürlich anfühlt).
+  function recommendGroup(childId: string): GroupFit[] {
+    const child = children.find((c) => c.id === childId);
+    if (!child) return [];
+    const age = calculateAgeYears(child.birthDate);
+    return groupFits
+      .map((fit) => ({ ...fit, ageFits: age >= fit.group.minAge && age < fit.group.maxAge }))
+      .sort((a, b) => {
+        if (a.ageFits !== b.ageFits) return a.ageFits ? -1 : 1;
+        if (a.utilization !== b.utilization) return a.utilization - b.utilization;
+        return a.count - b.count;
+      });
+  }
 
   async function handleAdd(e: FormEvent) {
     e.preventDefault();
@@ -239,28 +300,45 @@ export default function ClubWaitlist() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col items-end gap-1">
                 {isJugendleiter && !entry.pendingProposal && (
                   <>
-                    <select
-                      value={proposalGroup[entry.id] ?? ""}
-                      onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      <option value="">Gruppe vorschlagen…</option>
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => handlePropose(entry.id)}
-                      disabled={busy || !proposalGroup[entry.id]}
-                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      Vorschlagen
-                    </button>
+                    {(() => {
+                      const ranked = recommendGroup(entry.childId);
+                      const best = ranked[0];
+                      return (
+                        <>
+                          {best?.ageFits && (
+                            <span className="text-xs text-emerald-700 dark:text-emerald-400">
+                              Empfehlung: {best.group.name} ({best.count}/{best.group.maxChildren ?? "∞"} Plätze, passt vom
+                              Alter)
+                            </span>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={proposalGroup[entry.id] ?? ""}
+                              onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            >
+                              <option value="">Gruppe vorschlagen…</option>
+                              {ranked.map((fit) => (
+                                <option key={fit.group.id} value={fit.group.id}>
+                                  {fit.group.name} ({fit.count}/{fit.group.maxChildren ?? "∞"})
+                                  {fit.ageFits ? "" : " – Alter passt nicht"}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handlePropose(entry.id)}
+                              disabled={busy || !proposalGroup[entry.id]}
+                              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              Vorschlagen
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </>
                 )}
                 {(entry.addedBy === userId || isJugendleiter) && (
