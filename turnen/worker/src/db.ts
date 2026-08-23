@@ -20,6 +20,9 @@ import type {
   MoveRequestStatus,
   Notification,
   NotificationRow,
+  SubstituteRequestDetail,
+  SubstituteRequestRow,
+  SubstituteRequestStatus,
   User,
   UserRow,
   WaitlistEntryDetail,
@@ -527,6 +530,43 @@ export async function getAttendanceRange(
   const map: Record<string, AttendanceEntry[]> = {};
   for (const row of results) {
     (map[row.session_date] ??= []).push({ childId: row.child_id, present: row.present === 1 });
+  }
+  return map;
+}
+
+export interface SessionLeader {
+  ledBy: string | null;
+  ledByName: string | null;
+  isSubstitute: boolean;
+}
+
+// Wer hat welchen Termin geleitet, für die "Vertretung"-Anzeige auf der
+// Übersicht-Seite. `isSubstitute` = die leitende Person ist nicht die
+// Gruppen-Inhaberin (also eine eingetragene Vertretung).
+export async function getSessionLeaders(
+  db: D1Database,
+  groupId: string,
+  from: string,
+  to: string
+): Promise<Record<string, SessionLeader>> {
+  const { results } = await db
+    .prepare(
+      `SELECT s.session_date as session_date, s.led_by as led_by, u.name as led_by_name, u.email as led_by_email, g.owner_id as owner_id
+       FROM attendance_sessions s
+       JOIN groups g ON g.id = s.group_id
+       LEFT JOIN users u ON u.id = s.led_by
+       WHERE s.group_id = ? AND s.session_date BETWEEN ? AND ? AND s.led_by IS NOT NULL`
+    )
+    .bind(groupId, from, to)
+    .all<{ session_date: string; led_by: string; led_by_name: string | null; led_by_email: string | null; owner_id: string | null }>();
+
+  const map: Record<string, SessionLeader> = {};
+  for (const row of results) {
+    map[row.session_date] = {
+      ledBy: row.led_by,
+      ledByName: row.led_by_name ?? row.led_by_email,
+      isSubstitute: row.led_by !== row.owner_id,
+    };
   }
   return map;
 }
@@ -1111,4 +1151,114 @@ export async function listAuditLogForClub(db: D1Database, clubId: string, limit 
     targetLabel: row.target_label,
     createdAt: row.created_at,
   }));
+}
+
+// --- Vertretungsbörse ----------------------------------------------------------
+
+// Setzt die Leitung für einen Termin, ohne Anwesenheits-Einträge oder
+// Uhrzeit/Ort-Überschreibungen anzurühren - für die Übernahme einer
+// Vertretungs-Anfrage, bevor die eigentliche Anwesenheit erfasst wurde.
+export async function setSessionLeader(db: D1Database, groupId: string, sessionDate: string, ledBy: string): Promise<void> {
+  const session = await db
+    .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
+    .bind(groupId, sessionDate)
+    .first<{ id: string }>();
+  if (session) {
+    await db.prepare("UPDATE attendance_sessions SET led_by = ? WHERE id = ?").bind(ledBy, session.id).run();
+  } else {
+    await db
+      .prepare("INSERT INTO attendance_sessions (id, group_id, session_date, led_by) VALUES (?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), groupId, sessionDate, ledBy)
+      .run();
+  }
+}
+
+export async function createSubstituteRequest(
+  db: D1Database,
+  input: { groupId: string; sessionDate: string; note: string | null; requestedBy: string }
+): Promise<SubstituteRequestRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO substitute_requests (id, group_id, session_date, note, requested_by) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, input.groupId, input.sessionDate, input.note, input.requestedBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM substitute_requests WHERE id = ?").bind(id).first<SubstituteRequestRow>();
+  return row as SubstituteRequestRow;
+}
+
+export async function getSubstituteRequestRowById(db: D1Database, id: string): Promise<SubstituteRequestRow | null> {
+  return db.prepare("SELECT * FROM substitute_requests WHERE id = ?").bind(id).first<SubstituteRequestRow>();
+}
+
+export async function claimSubstituteRequest(db: D1Database, id: string, claimedBy: string): Promise<boolean> {
+  const result = await db
+    .prepare(
+      "UPDATE substitute_requests SET status = 'claimed', claimed_by = ?, claimed_at = datetime('now') WHERE id = ? AND status = 'open'"
+    )
+    .bind(claimedBy, id)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+export async function setSubstituteRequestStatus(
+  db: D1Database,
+  id: string,
+  status: SubstituteRequestStatus
+): Promise<void> {
+  await db.prepare("UPDATE substitute_requests SET status = ? WHERE id = ?").bind(status, id).run();
+}
+
+type SubstituteRequestJoinRow = SubstituteRequestRow & {
+  group_name: string;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+  claimed_by_name: string | null;
+  claimed_by_email: string | null;
+};
+
+function rowToSubstituteRequestDetail(row: SubstituteRequestJoinRow): SubstituteRequestDetail {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    sessionDate: row.session_date,
+    requestedBy: row.requested_by,
+    requestedByName: row.requested_by_name ?? row.requested_by_email ?? null,
+    note: row.note,
+    status: row.status,
+    claimedBy: row.claimed_by,
+    claimedByName: row.claimed_by_name ?? row.claimed_by_email ?? null,
+    createdAt: row.created_at,
+  };
+}
+
+const SUBSTITUTE_REQUEST_DETAIL_SELECT = `
+  SELECT sr.*,
+         g.name as group_name,
+         ru.name as requested_by_name, ru.email as requested_by_email,
+         cu.name as claimed_by_name, cu.email as claimed_by_email
+  FROM substitute_requests sr
+  JOIN groups g ON g.id = sr.group_id
+  LEFT JOIN users ru ON ru.id = sr.requested_by
+  LEFT JOIN users cu ON cu.id = sr.claimed_by
+`;
+
+// Offene Anfragen für Gruppen im übergebenen Verein - der "Marktplatz".
+export async function listOpenSubstituteRequestsForClub(db: D1Database, clubId: string): Promise<SubstituteRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status = 'open' AND g.club_id = ?1 ORDER BY sr.session_date ASC`)
+    .bind(clubId)
+    .all<SubstituteRequestJoinRow>();
+  return results.map(rowToSubstituteRequestDetail);
+}
+
+// Eigene Anfragen (gestellt oder übernommen), neueste zuerst.
+export async function listMySubstituteRequests(db: D1Database, userId: string): Promise<SubstituteRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.requested_by = ?1 OR sr.claimed_by = ?1 ORDER BY sr.created_at DESC LIMIT 50`
+    )
+    .bind(userId)
+    .all<SubstituteRequestJoinRow>();
+  return results.map(rowToSubstituteRequestDetail);
 }

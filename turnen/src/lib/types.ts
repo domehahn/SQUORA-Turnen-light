@@ -192,3 +192,25 @@ export interface HoursReport {
   userName: string | null;
   months: HoursReportMonth[];
 }
+
+export type SubstituteRequestStatus = "open" | "claimed" | "cancelled";
+
+export interface SubstituteRequest {
+  id: string;
+  groupId: string;
+  groupName: string;
+  sessionDate: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  note: string | null;
+  status: SubstituteRequestStatus;
+  claimedBy: string | null;
+  claimedByName: string | null;
+  createdAt: string;
+}
+
+export interface SessionLeader {
+  ledBy: string | null;
+  ledByName: string | null;
+  isSubstitute: boolean;
+}

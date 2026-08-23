@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import type { AttendanceEntry, Child, Group } from "../../lib/types";
+import type { AttendanceEntry, Child, Group, SessionLeader } from "../../lib/types";
 import { FloatingSelect } from "../../components/FloatingField";
 import { formatShortDate, trainingDatesInMonth } from "../../lib/schedule";
 import { holidayFor } from "../../lib/holidays";
@@ -24,6 +24,7 @@ export default function Overview() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [attendance, setAttendance] = useState<Record<string, AttendanceEntry[]>>({});
+  const [leaders, setLeaders] = useState<Record<string, SessionLeader>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,18 +58,21 @@ export default function Overview() {
     async function loadAttendance() {
       if (!groupId || trainingDates.length === 0) {
         setAttendance({});
+        setLeaders({});
         return;
       }
       setError(null);
+      const from = trainingDates[0];
+      const to = trainingDates[trainingDates.length - 1];
       try {
-        const from = trainingDates[0];
-        const to = trainingDates[trainingDates.length - 1];
-        const data = await api.get<Record<string, AttendanceEntry[]>>(
-          `/api/attendance-range/${groupId}?from=${from}&to=${to}`
-        );
-        setAttendance(data);
+        setAttendance(await api.get<Record<string, AttendanceEntry[]>>(`/api/attendance-range/${groupId}?from=${from}&to=${to}`));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden der Anwesenheit");
+      }
+      try {
+        setLeaders(await api.get<Record<string, SessionLeader>>(`/api/attendance-leaders/${groupId}?from=${from}&to=${to}`));
+      } catch {
+        setLeaders({});
       }
     }
     loadAttendance();
@@ -102,6 +106,10 @@ export default function Overview() {
     setMonth(m);
     setYear(y);
   }
+
+  const substituteDates = trainingDates
+    .map((d) => ({ date: d, leader: leaders[d] }))
+    .filter((x): x is { date: string; leader: SessionLeader } => Boolean(x.leader?.isSubstitute));
 
   const dateStats = trainingDates.map((d) => {
     const entries = attendance[d] ?? [];
@@ -194,6 +202,18 @@ export default function Overview() {
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
 
+      {substituteDates.length > 0 && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-900 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-200">
+          <span className="font-semibold">Vertretungen in {MONTH_NAMES[month - 1]}: </span>
+          {substituteDates.map(({ date, leader }, i) => (
+            <span key={date}>
+              {i > 0 && ", "}
+              {formatShortDate(date)} ({leader.ledByName})
+            </span>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : trainingDates.length === 0 ? (
@@ -209,15 +229,17 @@ export default function Overview() {
                 {trainingDates.map((d) => {
                   const holiday = holidayFor(d);
                   const isToday = d === todayIso;
+                  const leader = leaders[d];
                   return (
                     <th
                       key={d}
-                      title={holiday?.label}
+                      title={holiday?.label ?? (leader?.isSubstitute ? `Vertretung: ${leader.ledByName}` : undefined)}
                       className={`min-w-[64px] px-2 py-2 text-center font-medium ${
                         isToday ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : ""
                       }`}
                     >
                       {formatShortDate(d)}
+                      {leader?.isSubstitute && <span className="ml-0.5 text-purple-500 dark:text-purple-400">↺</span>}
                     </th>
                   );
                 })}

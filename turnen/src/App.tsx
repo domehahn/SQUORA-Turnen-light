@@ -14,6 +14,7 @@ import Calendar from "./pages/admin/Calendar";
 import AuditLog from "./pages/admin/AuditLog";
 import AttendancePrint from "./pages/AttendancePrint";
 import HoursReportPage from "./pages/HoursReport";
+import Substitutes from "./pages/admin/Substitutes";
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="kalender" element={<Calendar />} />
               <Route path="export" element={<Export />} />
               <Route path="verlauf" element={<AuditLog />} />
+              <Route path="vertretungen" element={<Substitutes />} />
               <Route path="verein" element={<ClubPage />} />
             </Route>
           </Route>

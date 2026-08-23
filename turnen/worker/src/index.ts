@@ -736,6 +736,118 @@ app.get("/api/audit-log", requireAuth, async (c) => {
   return c.json(await db.listAuditLogForClub(c.env.DB, clubId));
 });
 
+// --- Vertretungsbörse ---------------------------------------------------------
+
+// Für einen Termin eine Vertretung suchen - andere Vereinsmitglieder sehen
+// die Anfrage im Marktplatz und können sie übernehmen.
+app.post("/api/substitute-requests", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const groupId = validId(body?.groupId);
+  const sessionDate = validDate(body?.date);
+  const note = optionalText(body?.note, 200);
+  if (!groupId || !sessionDate) return c.json({ error: "Ungültige Gruppe oder Datum" }, 400);
+  if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  const request = await db.createSubstituteRequest(c.env.DB, {
+    groupId,
+    sessionDate,
+    note,
+    requestedBy: c.get("userId"),
+  });
+
+  if (group.club_id) {
+    const members = await db.listClubMembers(c.env.DB, group.club_id);
+    for (const member of members.filter((m) => m.id !== c.get("userId"))) {
+      await notifyUser(c.env, {
+        userId: member.id,
+        userEmail: member.email,
+        userName: member.name,
+        type: "substitute_request",
+        title: `Vertretung gesucht für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} sucht für den Termin am ${sessionDate} in „${group.name}“ eine Vertretung.${note ? ` (${note})` : ""}`,
+        link: "/vertretungen",
+      });
+    }
+  }
+
+  return c.json(request, 201);
+});
+
+app.get("/api/substitute-requests/open", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listOpenSubstituteRequestsForClub(c.env.DB, clubId));
+});
+
+app.get("/api/substitute-requests/mine", requireAuth, async (c) => {
+  return c.json(await db.listMySubstituteRequests(c.env.DB, c.get("userId")));
+});
+
+// Eine offene Vertretungs-Anfrage übernehmen - setzt die Leitung für den
+// Termin direkt, damit die Stunde automatisch im eigenen Stundennachweis
+// landet, sobald die Anwesenheit erfasst wird.
+app.post("/api/substitute-requests/:id/claim", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getSubstituteRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "open") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group || !group.club_id || group.club_id !== c.get("clubId")) {
+    return c.json({ error: "Nur Mitglieder desselben Vereins können diese Anfrage übernehmen" }, 403);
+  }
+  if (request.requested_by === c.get("userId")) return c.json({ error: "Eigene Anfrage kann nicht übernommen werden" }, 400);
+
+  const claimed = await db.claimSubstituteRequest(c.env.DB, id, c.get("userId"));
+  if (!claimed) return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  await db.setSessionLeader(c.env.DB, request.group_id, request.session_date, c.get("userId"));
+
+  await db.logAudit(c.env.DB, {
+    clubId: group.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "substitute_request.claimed",
+    targetLabel: `${group.name} am ${request.session_date}`,
+  });
+
+  if (request.requested_by) {
+    const requester = await db.getUserById(c.env.DB, request.requested_by);
+    if (requester) {
+      await notifyUser(c.env, {
+        userId: requester.id,
+        userEmail: requester.email,
+        userName: requester.name,
+        type: "substitute_claimed",
+        title: `Vertretung übernommen für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} übernimmt den Termin am ${request.session_date} in „${group.name}“.`,
+        link: "/vertretungen",
+      });
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post("/api/substitute-requests/:id/cancel", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const request = await db.getSubstituteRequestRowById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "open") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.requested_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.setSubstituteRequestStatus(c.env.DB, id, "cancelled");
+  return c.json({ ok: true });
+});
+
 // Ein Kind in eine andere Gruppe verschieben. Erfüllt es die
 // Altersvoraussetzung der Zielgruppe (oder gehört die Zielgruppe dem
 // anfragenden Nutzer selbst bzw. ist herrenlos), wird sofort verschoben.
@@ -1170,7 +1282,12 @@ app.get("/api/hours-report", requireAuth, async (c) => {
 
   const clubId = c.get("clubId");
   const allGroups = await db.listGroupsForUser(c.env.DB, c.get("userId"), clubId);
-  const groupIds = allGroups.filter((g) => g.ownerId === c.get("userId")).map((g) => g.id);
+  // Alle sichtbaren Gruppen durchsuchen, nicht nur die eigenen: eine
+  // Vertretung in einer fremden Gruppe (led_by = ich, aber die Gruppe
+  // gehört jemand anderem) muss trotzdem im eigenen Stundennachweis
+  // auftauchen. Die led_by-Filterung in listSessionsForExport sorgt dafür,
+  // dass nur tatsächlich selbst geleitete Termine gezählt werden.
+  const groupIds = allGroups.map((g) => g.id);
   const rows = await db.listSessionsForExport(c.env.DB, groupIds, from, to, c.get("userId"));
 
   const months = [startMonth, startMonth + 1, startMonth + 2].map((month) => {
@@ -1222,6 +1339,19 @@ app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
   return c.json(await db.getAttendanceRange(c.env.DB, groupId, from, to));
 });
 
+app.get("/api/attendance-leaders/:groupId", requireAuth, async (c) => {
+  const groupId = validId(c.req.param("groupId"));
+  const from = validDate(c.req.query("from"));
+  const to = validDate(c.req.query("to"));
+  if (!groupId || !from || !to) return c.json({ error: "Ungültige Gruppe oder Zeitraum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  return c.json(await db.getSessionLeaders(c.env.DB, groupId, from, to));
+});
+
 app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   const groupId = validId(c.req.param("groupId"));
   const date = validDate(c.req.param("date"));
@@ -1267,6 +1397,33 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
 
   await db.saveAttendance(c.env.DB, groupId, date, entries, ledBy, { startTime, endTime, location, note });
+
+  // Wurde jemand anderes als die eintragende Person als Leitung erfasst,
+  // ist das eine Vertretung: sie zählt ab jetzt in deren Stundennachweis
+  // statt in dem der eintragenden Person - das per Benachrichtigung und
+  // Verlaufseintrag transparent machen.
+  if (ledBy && ledBy !== c.get("userId")) {
+    const substitute = await db.getUserById(c.env.DB, ledBy);
+    if (substitute) {
+      await notifyUser(c.env, {
+        userId: substitute.id,
+        userEmail: substitute.email,
+        userName: substitute.name,
+        type: "substitute_assigned",
+        title: `Vertretung eingetragen für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} hat dich für den Termin am ${date} in „${group.name}“ als Leitung eingetragen - die Stunde zählt in deinem Stundennachweis.`,
+        link: "/nachweis",
+      });
+    }
+    await db.logAudit(c.env.DB, {
+      clubId: c.get("clubId"),
+      actorId: c.get("userId"),
+      actorName: c.get("name"),
+      action: "attendance.substitute_assigned",
+      targetLabel: `${group.name} am ${date} → ${substitute?.name ?? substitute?.email ?? ledBy}`,
+    });
+  }
+
   return c.json({ ok: true });
 });
 

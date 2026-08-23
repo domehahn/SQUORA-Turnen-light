@@ -284,3 +284,33 @@ export interface HourReportSession {
   note: string | null;
   hours: number | null; // null, falls Uhrzeit fehlt und keine Dauer berechenbar ist
 }
+
+// --- Vertretungsbörse ----------------------------------------------------------
+
+export type SubstituteRequestStatus = "open" | "claimed" | "cancelled";
+
+export interface SubstituteRequestRow {
+  id: string;
+  group_id: string;
+  session_date: string;
+  requested_by: string | null;
+  note: string | null;
+  status: SubstituteRequestStatus;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  created_at: string;
+}
+
+export interface SubstituteRequestDetail {
+  id: string;
+  groupId: string;
+  groupName: string;
+  sessionDate: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  note: string | null;
+  status: SubstituteRequestStatus;
+  claimedBy: string | null;
+  claimedByName: string | null;
+  createdAt: string;
+}
