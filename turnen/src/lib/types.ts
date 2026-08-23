@@ -39,6 +39,7 @@ export interface AttendanceEntry {
 export interface Club {
   id: string;
   name: string;
+  clubNumber: string | null;
   memberCount: number;
   createdAt: string;
 }
@@ -144,6 +145,10 @@ export interface AttendanceSession {
   entries: AttendanceEntry[];
   ledBy: string | null;
   ledByName: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  note: string | null;
 }
 
 export interface Family {
@@ -161,4 +166,29 @@ export interface AuditLogEntry {
   action: string;
   targetLabel: string;
   createdAt: string;
+}
+
+export interface HoursReportSession {
+  day: number;
+  date: string;
+  startTime: string | null;
+  endTime: string | null;
+  hours: number | null;
+  location: string;
+}
+
+export interface HoursReportMonth {
+  month: number;
+  monthName: string;
+  sessions: HoursReportSession[];
+  totalHours: number;
+}
+
+export interface HoursReport {
+  year: number;
+  quarter: number;
+  clubName: string | null;
+  clubNumber: string | null;
+  userName: string | null;
+  months: HoursReportMonth[];
 }

@@ -90,6 +90,22 @@ export default function Export() {
         Kinder anwesend waren. Trainingszeiten und Übungsleiter*in werden auf der Seite „Gruppen" bzw. „Anwesenheit"
         hinterlegt.
       </p>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Amtlicher Stundennachweis</h3>
+        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+          Vorausgefüllte Vorlage im Format des Landessportbund-Formulars, für ein Quartal, zum Ausdrucken und
+          Unterschreiben.
+        </p>
+        <a
+          href="/nachweis"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          Stundennachweis öffnen
+        </a>
+      </div>
     </div>
   );
 }

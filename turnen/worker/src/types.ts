@@ -31,6 +31,7 @@ export interface UserRow {
 export interface Club {
   id: string;
   name: string;
+  clubNumber: string | null;
   memberCount: number;
   createdAt: string;
 }
@@ -38,6 +39,7 @@ export interface Club {
 export interface ClubRow {
   id: string;
   name: string;
+  club_number: string | null;
   created_at: string;
 }
 
@@ -269,4 +271,16 @@ export interface AuditLogEntry {
   action: string;
   targetLabel: string;
   createdAt: string;
+}
+
+// --- Stundennachweis ---------------------------------------------------------
+
+export interface HourReportSession {
+  date: string; // ISO
+  groupName: string;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  note: string | null;
+  hours: number | null; // null, falls Uhrzeit fehlt und keine Dauer berechenbar ist
 }

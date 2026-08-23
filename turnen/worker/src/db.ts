@@ -102,7 +102,13 @@ function rowToUser(row: UserRow): User {
 }
 
 function rowToClub(row: ClubRow & { member_count: number | null }): Club {
-  return { id: row.id, name: row.name, memberCount: row.member_count ?? 0, createdAt: row.created_at };
+  return {
+    id: row.id,
+    name: row.name,
+    clubNumber: row.club_number,
+    memberCount: row.member_count ?? 0,
+    createdAt: row.created_at,
+  };
 }
 
 export async function getUserByEmail(db: D1Database, email: string): Promise<UserRow | null> {
@@ -149,9 +155,13 @@ export async function getClubByName(db: D1Database, name: string): Promise<ClubR
 
 export async function createClub(db: D1Database, name: string): Promise<ClubRow> {
   const id = crypto.randomUUID();
-  const row = { id, name, created_at: new Date().toISOString() };
+  const row: ClubRow = { id, name, club_number: null, created_at: new Date().toISOString() };
   await db.prepare("INSERT INTO clubs (id, name) VALUES (?, ?)").bind(id, name).run();
   return row;
+}
+
+export async function setClubNumber(db: D1Database, clubId: string, clubNumber: string | null): Promise<void> {
+  await db.prepare("UPDATE clubs SET club_number = ? WHERE id = ?").bind(clubNumber, clubId).run();
 }
 
 export async function setUserClub(
@@ -446,19 +456,43 @@ export interface AttendanceSession {
   entries: AttendanceEntry[];
   ledBy: string | null;
   ledByName: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  note: string | null;
 }
+
+const EMPTY_ATTENDANCE_SESSION: AttendanceSession = {
+  entries: [],
+  ledBy: null,
+  ledByName: null,
+  startTime: null,
+  endTime: null,
+  location: null,
+  note: null,
+};
 
 export async function getAttendance(db: D1Database, groupId: string, sessionDate: string): Promise<AttendanceSession> {
   const session = await db
     .prepare(
-      `SELECT s.id as id, s.led_by as led_by, u.name as led_by_name, u.email as led_by_email
+      `SELECT s.id as id, s.led_by as led_by, u.name as led_by_name, u.email as led_by_email,
+              s.start_time as start_time, s.end_time as end_time, s.location as location, s.note as note
        FROM attendance_sessions s
        LEFT JOIN users u ON u.id = s.led_by
        WHERE s.group_id = ? AND s.session_date = ?`
     )
     .bind(groupId, sessionDate)
-    .first<{ id: string; led_by: string | null; led_by_name: string | null; led_by_email: string | null }>();
-  if (!session) return { entries: [], ledBy: null, ledByName: null };
+    .first<{
+      id: string;
+      led_by: string | null;
+      led_by_name: string | null;
+      led_by_email: string | null;
+      start_time: string | null;
+      end_time: string | null;
+      location: string | null;
+      note: string | null;
+    }>();
+  if (!session) return EMPTY_ATTENDANCE_SESSION;
   const { results } = await db
     .prepare("SELECT child_id, present FROM attendance_entries WHERE session_id = ?")
     .bind(session.id)
@@ -467,6 +501,10 @@ export async function getAttendance(db: D1Database, groupId: string, sessionDate
     entries: results.map((row) => ({ childId: row.child_id, present: row.present === 1 })),
     ledBy: session.led_by,
     ledByName: session.led_by_name ?? session.led_by_email,
+    startTime: session.start_time,
+    endTime: session.end_time,
+    location: session.location,
+    note: session.note,
   };
 }
 
@@ -493,12 +531,20 @@ export async function getAttendanceRange(
   return map;
 }
 
+export interface SessionOverrides {
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  note: string | null;
+}
+
 export async function saveAttendance(
   db: D1Database,
   groupId: string,
   sessionDate: string,
   entries: AttendanceEntry[],
-  ledBy: string | null
+  ledBy: string | null,
+  overrides: SessionOverrides
 ): Promise<void> {
   let session = await db
     .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
@@ -511,12 +557,22 @@ export async function saveAttendance(
   if (!session) {
     statements.push(
       db
-        .prepare("INSERT INTO attendance_sessions (id, group_id, session_date, led_by) VALUES (?, ?, ?, ?)")
-        .bind(sessionId, groupId, sessionDate, ledBy)
+        .prepare(
+          "INSERT INTO attendance_sessions (id, group_id, session_date, led_by, start_time, end_time, location, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(sessionId, groupId, sessionDate, ledBy, overrides.startTime, overrides.endTime, overrides.location, overrides.note)
     );
-  } else if (ledBy !== null) {
-    // Nachträglich korrigierbar, z.B. wenn eine Vertretung geleitet hat.
-    statements.push(db.prepare("UPDATE attendance_sessions SET led_by = ? WHERE id = ?").bind(ledBy, sessionId));
+  } else {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE attendance_sessions SET
+             led_by = COALESCE(?, led_by),
+             start_time = ?, end_time = ?, location = ?, note = ?
+           WHERE id = ?`
+        )
+        .bind(ledBy, overrides.startTime, overrides.endTime, overrides.location, overrides.note, sessionId)
+    );
   }
   statements.push(db.prepare("DELETE FROM attendance_entries WHERE session_id = ?").bind(sessionId));
   for (const entry of entries) {
@@ -535,43 +591,62 @@ export interface HourExportRow {
   weekday: number | null;
   startTime: string | null;
   endTime: string | null;
+  location: string | null;
+  note: string | null;
   ledByName: string | null;
+  ledBy: string | null;
   presentCount: number;
 }
 
 // Geleistete Turnstunden im Zeitraum für die übergebenen Gruppen - Basis für
-// den CSV-Export (Übungsleiterpauschale/Zuschussnachweis).
+// den CSV-Export (Übungsleiterpauschale/Zuschussnachweis) und den amtlichen
+// Stundennachweis. Uhrzeit/Ort können pro Termin von der Gruppen-Vorgabe
+// abweichen (Sondertermine wie Turniere) - `s.*` hat Vorrang vor `g.*`.
+// `ledByUserId` filtert optional auf eine bestimmte Person (für den
+// persönlichen Stundennachweis); Termine ohne eingetragene Leitung werden
+// dabei der/dem Gruppenbesitzer:in zugerechnet (Bestandsschutz für Termine
+// aus der Zeit vor der Leitungs-Erfassung).
 export async function listSessionsForExport(
   db: D1Database,
   groupIds: string[],
   from: string,
-  to: string
+  to: string,
+  ledByUserId?: string
 ): Promise<HourExportRow[]> {
   if (groupIds.length === 0) return [];
   const placeholders = groupIds.map((_, i) => `?${i + 1}`).join(", ");
   const fromIdx = groupIds.length + 1;
   const toIdx = groupIds.length + 2;
+  const ledByIdx = groupIds.length + 3;
+  const ledByFilter = ledByUserId ? `AND (s.led_by = ?${ledByIdx} OR (s.led_by IS NULL AND g.owner_id = ?${ledByIdx}))` : "";
   const { results } = await db
     .prepare(
       `SELECT s.session_date as session_date,
-              g.name as group_name, g.weekday as weekday, g.start_time as start_time, g.end_time as end_time,
-              u.name as led_by_name, u.email as led_by_email,
+              g.name as group_name, g.weekday as weekday,
+              COALESCE(s.start_time, g.start_time) as start_time,
+              COALESCE(s.end_time, g.end_time) as end_time,
+              COALESCE(s.location, g.location) as location,
+              s.note as note,
+              u.name as led_by_name, u.email as led_by_email, s.led_by as led_by,
               (SELECT COUNT(*) FROM attendance_entries e WHERE e.session_id = s.id AND e.present = 1) as present_count
        FROM attendance_sessions s
        JOIN groups g ON g.id = s.group_id
        LEFT JOIN users u ON u.id = s.led_by
-       WHERE s.group_id IN (${placeholders}) AND s.session_date BETWEEN ?${fromIdx} AND ?${toIdx}
+       WHERE s.group_id IN (${placeholders}) AND s.session_date BETWEEN ?${fromIdx} AND ?${toIdx} ${ledByFilter}
        ORDER BY s.session_date ASC, g.name ASC`
     )
-    .bind(...groupIds, from, to)
+    .bind(...groupIds, from, to, ...(ledByUserId ? [ledByUserId] : []))
     .all<{
       session_date: string;
       group_name: string;
       weekday: number | null;
       start_time: string | null;
       end_time: string | null;
+      location: string | null;
+      note: string | null;
       led_by_name: string | null;
       led_by_email: string | null;
+      led_by: string | null;
       present_count: number;
     }>();
   return results.map((row) => ({
@@ -579,6 +654,9 @@ export async function listSessionsForExport(
     groupName: row.group_name,
     weekday: row.weekday,
     startTime: row.start_time,
+    location: row.location,
+    note: row.note,
+    ledBy: row.led_by,
     endTime: row.end_time,
     ledByName: row.led_by_name ?? row.led_by_email,
     presentCount: row.present_count,

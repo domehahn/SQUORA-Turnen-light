@@ -274,7 +274,22 @@ app.post("/api/clubs", requireAuth, async (c) => {
 
   const club = await db.createClub(c.env.DB, name);
   await db.setUserClub(c.env.DB, c.get("userId"), club.id, "jugendleiter");
-  return c.json({ id: club.id, name: club.name, memberCount: 1, createdAt: club.created_at }, 201);
+  return c.json({ id: club.id, name: club.name, clubNumber: null, memberCount: 1, createdAt: club.created_at }, 201);
+});
+
+// Vereinsnummer (Landessportbund) - nur die Jugendleitung darf sie pflegen,
+// wird für den Stundennachweis benötigt.
+app.put("/api/clubs/mine/number", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const body = await c.req.json().catch(() => null);
+  const clubNumber = optionalText(body?.clubNumber, 30);
+  if (clubNumber === undefined) return c.json({ error: "Vereinsnummer ist zu lang" }, 400);
+
+  await db.setClubNumber(c.env.DB, clubId, clubNumber);
+  return c.json({ ok: true });
 });
 
 app.put("/api/me/club", requireAuth, async (c) => {
@@ -1123,6 +1138,72 @@ app.get("/api/export/hours", requireAuth, async (c) => {
   });
 });
 
+const MONTH_NAMES = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
+
+function hoursBetween(startTime: string | null, endTime: string | null): number | null {
+  if (!startTime || !endTime) return null;
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const minutes = eh * 60 + em - (sh * 60 + sm);
+  if (minutes <= 0) return null;
+  return Math.round((minutes / 60) * 100) / 100;
+}
+
+// Daten für den amtlichen Stundennachweis (Vorlage: Landessportbund) eines
+// Quartals - nur die eigenen Gruppen und nur Termine, die die anfragende
+// Person selbst geleitet hat (Termine ohne eingetragene Leitung werden ihr
+// zugerechnet, wenn sie die Gruppe besitzt).
+app.get("/api/hours-report", requireAuth, async (c) => {
+  const year = Number(c.req.query("year"));
+  const quarter = Number(c.req.query("quarter"));
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return c.json({ error: "Ungültiges Jahr" }, 400);
+  if (!Number.isInteger(quarter) || quarter < 1 || quarter > 4) return c.json({ error: "Ungültiges Quartal" }, 400);
+
+  const startMonth = (quarter - 1) * 3 + 1;
+  const from = `${year}-${String(startMonth).padStart(2, "0")}-01`;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(year, endMonth, 0).getDate();
+  const to = `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+  const clubId = c.get("clubId");
+  const allGroups = await db.listGroupsForUser(c.env.DB, c.get("userId"), clubId);
+  const groupIds = allGroups.filter((g) => g.ownerId === c.get("userId")).map((g) => g.id);
+  const rows = await db.listSessionsForExport(c.env.DB, groupIds, from, to, c.get("userId"));
+
+  const months = [startMonth, startMonth + 1, startMonth + 2].map((month) => {
+    const monthStr = String(month).padStart(2, "0");
+    const sessions = rows
+      .filter((r) => r.sessionDate.slice(5, 7) === monthStr)
+      .map((r) => {
+        const einsatzort = r.note ?? (r.location ? `Training ${r.location}` : "Training");
+        return {
+          day: Number(r.sessionDate.slice(8, 10)),
+          date: r.sessionDate,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          hours: hoursBetween(r.startTime, r.endTime),
+          location: einsatzort,
+        };
+      });
+    const totalHours = Math.round(sessions.reduce((sum, s) => sum + (s.hours ?? 0), 0) * 100) / 100;
+    return { month, monthName: MONTH_NAMES[month - 1], sessions, totalHours };
+  });
+
+  const club = clubId ? await db.getClubById(c.env.DB, clubId) : null;
+
+  return c.json({
+    year,
+    quarter,
+    clubName: club?.name ?? null,
+    clubNumber: club?.clubNumber ?? null,
+    userName: c.get("name"),
+    months,
+  });
+});
+
 // --- Anwesenheit -----------------------------------------------------------
 
 // Anwesenheit ist – anders als Gruppen/Kinder – nicht vereinsweit lesbar:
@@ -1175,7 +1256,17 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   const ledBy = body?.ledBy === undefined ? c.get("userId") : optionalId(body.ledBy);
   if (ledBy === undefined) return c.json({ error: "Ungültige Übungsleiter-ID" }, 400);
 
-  await db.saveAttendance(c.env.DB, groupId, date, entries, ledBy);
+  // Termin-spezifische Abweichungen von den Gruppen-Vorgaben, z.B. für
+  // Turniere - leer/null bedeutet "wie in der Gruppe hinterlegt".
+  const startTime = validTime(body?.startTime);
+  const endTime = validTime(body?.endTime);
+  const location = optionalText(body?.location, 100);
+  const note = optionalText(body?.note, 200);
+  if (startTime === undefined || endTime === undefined) return c.json({ error: "Uhrzeit ist ungültig (Format HH:MM)" }, 400);
+  if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
+  if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
+
+  await db.saveAttendance(c.env.DB, groupId, date, entries, ledBy, { startTime, endTime, location, note });
   return c.json({ ok: true });
 });
 

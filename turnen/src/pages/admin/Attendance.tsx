@@ -23,6 +23,11 @@ export default function Attendance() {
   const [date, setDate] = useState(today());
   const [present, setPresent] = useState<Record<string, boolean>>({});
   const [ledBy, setLedBy] = useState<string>(userId ?? "");
+  const [isSpecial, setIsSpecial] = useState(false);
+  const [overrideStartTime, setOverrideStartTime] = useState("");
+  const [overrideEndTime, setOverrideEndTime] = useState("");
+  const [overrideLocation, setOverrideLocation] = useState("");
+  const [overrideNote, setOverrideNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +69,12 @@ export default function Attendance() {
         for (const entry of session.entries) map[entry.childId] = entry.present;
         setPresent(map);
         setLedBy(session.ledBy ?? userId ?? "");
+        const hasOverride = Boolean(session.startTime || session.endTime || session.location || session.note);
+        setIsSpecial(hasOverride);
+        setOverrideStartTime(session.startTime ?? "");
+        setOverrideEndTime(session.endTime ?? "");
+        setOverrideLocation(session.location ?? "");
+        setOverrideNote(session.note ?? "");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden der Anwesenheit");
       }
@@ -72,6 +83,7 @@ export default function Attendance() {
   }, [groupId, date, userId]);
 
   const groupChildren = children.filter((c) => c.groupId === groupId);
+  const currentGroup = groups.find((g) => g.id === groupId);
 
   function toggle(childId: string) {
     setPresent((prev) => ({ ...prev, [childId]: !prev[childId] }));
@@ -86,7 +98,14 @@ export default function Attendance() {
         childId: c.id,
         present: present[c.id] ?? false,
       }));
-      await api.put(`/api/attendance/${groupId}/${date}`, { entries, ledBy: ledBy || null });
+      await api.put(`/api/attendance/${groupId}/${date}`, {
+        entries,
+        ledBy: ledBy || null,
+        startTime: isSpecial ? overrideStartTime || null : null,
+        endTime: isSpecial ? overrideEndTime || null : null,
+        location: isSpecial ? overrideLocation || null : null,
+        note: isSpecial ? overrideNote || null : null,
+      });
       setSavedMessage("Anwesenheit gespeichert.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Speichern");
@@ -131,6 +150,53 @@ export default function Attendance() {
         <div className="ml-auto text-sm text-slate-500 dark:text-slate-400">
           {presentCount} von {groupChildren.length} anwesend
         </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input
+            type="checkbox"
+            checked={isSpecial}
+            onChange={(e) => setIsSpecial(e.target.checked)}
+            className="h-4 w-4 cursor-pointer accent-emerald-600"
+          />
+          Abweichender Termin (z.B. Turnier) – andere Uhrzeit/Ort als sonst
+        </label>
+        {isSpecial && (
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <div className="w-28">
+              <FloatingInput
+                label="Von"
+                type="time"
+                value={overrideStartTime}
+                onChange={(e) => setOverrideStartTime(e.target.value)}
+              />
+            </div>
+            <div className="w-28">
+              <FloatingInput
+                label="Bis"
+                type="time"
+                value={overrideEndTime}
+                onChange={(e) => setOverrideEndTime(e.target.value)}
+              />
+            </div>
+            <div className="w-44">
+              <FloatingInput
+                label="Ort (optional)"
+                value={overrideLocation}
+                onChange={(e) => setOverrideLocation(e.target.value)}
+                placeholder={currentGroup?.location ?? ""}
+              />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <FloatingInput
+                label="Bezeichnung, z.B. „Turnier in Simmern“"
+                value={overrideNote}
+                onChange={(e) => setOverrideNote(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}

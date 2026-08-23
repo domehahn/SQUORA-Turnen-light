@@ -10,9 +10,13 @@ export default function ClubPage() {
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [selectedClubId, setSelectedClubId] = useState("");
   const [newClubName, setNewClubName] = useState("");
+  const [clubNumberInput, setClubNumberInput] = useState("");
+  const [editingNumber, setEditingNumber] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const currentClub = clubs.find((c) => c.id === clubId);
 
   async function load() {
     setLoading(true);
@@ -94,6 +98,20 @@ export default function ClubPage() {
     }
   }
 
+  async function handleSaveClubNumber() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.put("/api/clubs/mine/number", { clubNumber: clubNumberInput || null });
+      setEditingNumber(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Speichern");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleLeave() {
     if (!confirm("Verein wirklich verlassen? Deine eigenen Gruppen bleiben erhalten, sind aber für andere Vereinsmitglieder nicht mehr sichtbar.")) return;
     setError(null);
@@ -131,6 +149,50 @@ export default function ClubPage() {
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Aktueller Verein</p>
             <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{clubName}</p>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Vereinsnummer (für den Stundennachweis)
+            </p>
+            {editingNumber ? (
+              <div className="flex items-end gap-2">
+                <div className="w-40">
+                  <FloatingInput
+                    label="Vereinsnummer"
+                    value={clubNumberInput}
+                    onChange={(e) => setClubNumberInput(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={handleSaveClubNumber}
+                  disabled={busy}
+                  className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  Speichern
+                </button>
+                <button
+                  onClick={() => setEditingNumber(false)}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            ) : (
+              <p className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                {currentClub?.clubNumber ?? "–"}
+                {clubRole === "jugendleiter" && (
+                  <button
+                    onClick={() => {
+                      setClubNumberInput(currentClub?.clubNumber ?? "");
+                      setEditingNumber(true);
+                    }}
+                    className="text-xs text-emerald-700 hover:underline dark:text-emerald-400"
+                  >
+                    Bearbeiten
+                  </button>
+                )}
+              </p>
+            )}
           </div>
           <div>
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
