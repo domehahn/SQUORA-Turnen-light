@@ -4,11 +4,14 @@ export interface Env {
   FRONTEND_URL: string;
 }
 
+export type ClubRole = "member" | "jugendleiter";
+
 export interface User {
   id: string;
   email: string;
   name: string | null;
   clubId: string | null;
+  clubRole: ClubRole;
   createdAt: string;
 }
 
@@ -19,6 +22,7 @@ export interface UserRow {
   password_hash: string;
   password_salt: string;
   club_id: string | null;
+  club_role: ClubRole;
   created_at: string;
 }
 

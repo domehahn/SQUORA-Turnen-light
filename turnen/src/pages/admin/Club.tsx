@@ -5,7 +5,7 @@ import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 
 export default function ClubPage() {
-  const { clubId, clubName, refreshClub } = useAuth();
+  const { userId, clubId, clubName, clubRole, refreshClub } = useAuth();
   const [clubs, setClubs] = useState<Club[]>([]);
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [selectedClubId, setSelectedClubId] = useState("");
@@ -68,6 +68,32 @@ export default function ClubPage() {
     }
   }
 
+  async function handlePromote(userId: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/clubs/mine/members/${userId}/promote`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Befördern");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDemote(userId: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/clubs/mine/members/${userId}/demote`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zurückstufen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleLeave() {
     if (!confirm("Verein wirklich verlassen? Deine eigenen Gruppen bleiben erhalten, sind aber für andere Vereinsmitglieder nicht mehr sichtbar.")) return;
     setError(null);
@@ -91,7 +117,8 @@ export default function ClubPage() {
         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Verein</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Turnleiter im selben Verein sehen die Gruppen und Kinderlisten der anderen Mitglieder lesend – bearbeiten
-          kann jede*r nur die eigenen Gruppen.
+          kann jede*r nur die eigenen Gruppen. Die Jugendleitung kann zusätzlich herrenlose Gruppen dem Verein
+          zuordnen und weitere Jugendleitungen ernennen.
         </p>
       </div>
 
@@ -109,9 +136,39 @@ export default function ClubPage() {
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Mitglieder ({members.length})
             </p>
-            <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+            <ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
               {members.map((m) => (
-                <li key={m.id}>{m.name ?? m.email}</li>
+                <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    {m.name ?? m.email}
+                    {m.role === "jugendleiter" && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                        Jugendleitung
+                      </span>
+                    )}
+                  </span>
+                  {clubRole === "jugendleiter" && m.id !== userId && (
+                    <span>
+                      {m.role === "jugendleiter" ? (
+                        <button
+                          onClick={() => handleDemote(m.id)}
+                          disabled={busy}
+                          className="text-xs text-slate-500 hover:underline disabled:opacity-50 dark:text-slate-400"
+                        >
+                          Zurückstufen
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handlePromote(m.id)}
+                          disabled={busy}
+                          className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
+                        >
+                          Zur Jugendleitung ernennen
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </li>
               ))}
             </ul>
           </div>

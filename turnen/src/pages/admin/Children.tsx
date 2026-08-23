@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Child, Group, MoveChildResponse, MoveRequest } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
+import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
 import {
   calculateAgeYears,
   formatMonthYear,
@@ -100,7 +101,10 @@ export default function Children() {
     setError(null);
     setInfo(null);
     try {
-      const res = await api.post<MoveChildResponse>(`/api/children/${childId}/move`, { toGroupId });
+      const res = await withCapacityConfirm((confirmOverCapacity) =>
+        api.post<MoveChildResponse>(`/api/children/${childId}/move`, { toGroupId, confirmOverCapacity })
+      );
+      if (res === CAPACITY_CANCELLED) return;
       if (res.status === "pending") {
         const targetName = groups.find((g) => g.id === toGroupId)?.name ?? "die Zielgruppe";
         setInfo(`Kind erfüllt die Altersvoraussetzung nicht – Anfrage an den Turnleiter von „${targetName}“ gesendet.`);
@@ -116,7 +120,10 @@ export default function Children() {
   async function handleApprove(id: string) {
     setError(null);
     try {
-      await api.post(`/api/move-requests/${id}/approve`, {});
+      const result = await withCapacityConfirm((confirmOverCapacity) =>
+        api.post(`/api/move-requests/${id}/approve`, { confirmOverCapacity })
+      );
+      if (result === CAPACITY_CANCELLED) return;
       await Promise.all([load(), loadMoveRequests()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
@@ -163,15 +170,18 @@ export default function Children() {
     e.preventDefault();
     setError(null);
     try {
-      const payload = {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        birthDate: form.birthDate,
-        groupId: form.groupId || null,
-        notes: form.notes || null,
-      };
-      if (editingId) await api.put(`/api/children/${editingId}`, payload);
-      else await api.post("/api/children", payload);
+      const result = await withCapacityConfirm((confirmOverCapacity) => {
+        const payload = {
+          firstName: form.firstName,
+          lastName: form.lastName,
+          birthDate: form.birthDate,
+          groupId: form.groupId || null,
+          notes: form.notes || null,
+          confirmOverCapacity,
+        };
+        return editingId ? api.put(`/api/children/${editingId}`, payload) : api.post("/api/children", payload);
+      });
+      if (result === CAPACITY_CANCELLED) return;
       resetForm();
       load();
     } catch (err) {

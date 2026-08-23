@@ -16,13 +16,14 @@ import {
   validPassword,
   validSortOrder,
 } from "./validation";
-import type { Env } from "./types";
+import type { ClubRole, Env } from "./types";
 
 type Variables = {
   userId: string;
   email: string;
   name: string | null;
   clubId: string | null;
+  clubRole: ClubRole;
 };
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -63,6 +64,7 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("email", user.email);
     c.set("name", user.name);
     c.set("clubId", user.clubId);
+    c.set("clubRole", user.clubRole);
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
   }
@@ -77,6 +79,34 @@ async function isChildWritable(dbEnv: D1Database, child: { group_id: string | nu
   const group = await db.getGroupRowById(dbEnv, child.group_id);
   if (!group) return true;
   return db.canWriteGroup(group, userId);
+}
+
+interface CapacityWarning {
+  error: string;
+  code: "capacity_exceeded";
+  groupName: string;
+  currentCount: number;
+  maxChildren: number;
+}
+
+// Prüft, ob das Hinzufügen eines weiteren Kindes die maximale Gruppengröße
+// überschreiten würde. Blockiert das Anlegen NICHT - die Route entscheidet
+// anhand von `confirmOverCapacity`, ob trotzdem gespeichert wird.
+async function capacityWarning(
+  dbEnv: D1Database,
+  group: { id: string; name: string; max_children: number | null },
+  excludeChildId: string | undefined
+): Promise<CapacityWarning | null> {
+  if (group.max_children === null) return null;
+  const count = await db.countChildrenInGroup(dbEnv, group.id, excludeChildId);
+  if (count < group.max_children) return null;
+  return {
+    error: `Kapazität von „${group.name}“ würde überschritten (${count + 1} / ${group.max_children} Kinder).`,
+    code: "capacity_exceeded",
+    groupName: group.name,
+    currentCount: count,
+    maxChildren: group.max_children,
+  };
 }
 
 app.post("/api/login", async (c) => {
@@ -107,6 +137,7 @@ app.get("/api/me", requireAuth, async (c) => {
     name: c.get("name"),
     clubId,
     clubName: club?.name ?? null,
+    clubRole: c.get("clubRole"),
   });
 });
 
@@ -116,6 +147,8 @@ app.get("/api/clubs", requireAuth, async (c) => {
   return c.json(await db.listClubs(c.env.DB));
 });
 
+// Wer einen Verein anlegt, wird automatisch dessen erste Jugendleitung -
+// bleibt aber ganz normales Mitglied mit eigenen Gruppen.
 app.post("/api/clubs", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   const name = requiredText(body?.name, 100);
@@ -125,7 +158,7 @@ app.post("/api/clubs", requireAuth, async (c) => {
   if (existing) return c.json({ error: "Ein Verein mit diesem Namen existiert bereits" }, 409);
 
   const club = await db.createClub(c.env.DB, name);
-  await db.setUserClub(c.env.DB, c.get("userId"), club.id);
+  await db.setUserClub(c.env.DB, c.get("userId"), club.id, "jugendleiter");
   return c.json({ id: club.id, name: club.name, memberCount: 1, createdAt: club.created_at }, 201);
 });
 
@@ -134,18 +167,73 @@ app.put("/api/me/club", requireAuth, async (c) => {
   const clubId = optionalId(body?.clubId);
   if (clubId === undefined) return c.json({ error: "Ungültige Vereins-ID" }, 400);
 
+  const currentClubId = c.get("clubId");
+  const currentRole = c.get("clubRole");
+
   if (clubId !== null) {
     const club = await db.getClubById(c.env.DB, clubId);
     if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
   }
-  await db.setUserClub(c.env.DB, c.get("userId"), clubId);
-  return c.json({ clubId });
+
+  // Wer den Verein verlässt und die einzige Jugendleitung ist, muss zuerst
+  // jemand anderen befördern - sonst bleibt der Verein ohne Leitung zurück.
+  if (clubId === null && currentClubId && currentRole === "jugendleiter") {
+    const members = await db.listClubMembers(c.env.DB, currentClubId);
+    const otherMembers = members.filter((m) => m.id !== c.get("userId"));
+    const otherLeaders = otherMembers.filter((m) => m.role === "jugendleiter");
+    if (otherMembers.length > 0 && otherLeaders.length === 0) {
+      return c.json(
+        { error: "Du bist die einzige Jugendleitung. Bitte zuerst jemanden befördern, bevor du den Verein verlässt." },
+        409
+      );
+    }
+  }
+
+  // Neuer Verein (oder gar keiner) - Rolle wird immer auf "member"
+  // zurückgesetzt, Jugendleitung gilt nur im jeweiligen Verein.
+  await db.setUserClub(c.env.DB, c.get("userId"), clubId, "member");
+  return c.json({ clubId, clubRole: "member" });
 });
 
 app.get("/api/clubs/mine/members", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   return c.json(await db.listClubMembers(c.env.DB, clubId));
+});
+
+// Ein anderes Vereinsmitglied zur Jugendleitung befördern - nur für
+// bestehende Jugendleitungen desselben Vereins.
+app.post("/api/clubs/mine/members/:userId/promote", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const targetUserId = validId(c.req.param("userId"));
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+
+  const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "jugendleiter");
+  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  return c.json({ ok: true });
+});
+
+// Eine Jugendleitung zurückstufen - nur möglich, wenn danach mindestens eine
+// weitere Jugendleitung im Verein übrig bleibt.
+app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const targetUserId = validId(c.req.param("userId"));
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+
+  const otherLeaders = await db.countClubLeaders(c.env.DB, clubId, targetUserId);
+  if (otherLeaders === 0) {
+    return c.json({ error: "Es muss mindestens eine Jugendleitung im Verein bleiben" }, 409);
+  }
+
+  const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "member");
+  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  return c.json({ ok: true });
 });
 
 // --- Gruppen -----------------------------------------------------------
@@ -206,13 +294,16 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
 
 // Eine herrenlose Alt-Gruppe (aus der Zeit vor Vereinen) dem eigenen Verein
 // zuordnen. Danach gehört sie dem aufrufenden Nutzer und ist für andere
-// Vereinsmitglieder lesend sichtbar.
+// Vereinsmitglieder lesend sichtbar. Nur die Jugendleitung darf das, damit
+// nicht jedes Mitglied beliebig Gruppen in den Verein ziehen kann.
 app.post("/api/groups/:id/claim", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
 
   const clubId = c.get("clubId");
   if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter")
+    return c.json({ error: "Nur die Jugendleitung kann Gruppen dem Verein zuordnen" }, 403);
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
@@ -260,6 +351,11 @@ app.post("/api/children", requireAuth, async (c) => {
     const group = await db.getGroupRowById(c.env.DB, groupId);
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
     if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+    if (body?.confirmOverCapacity !== true) {
+      const warning = await capacityWarning(c.env.DB, group, undefined);
+      if (warning) return c.json(warning, 409);
+    }
   }
 
   const child = await db.createChild(c.env.DB, { firstName, lastName, birthDate, groupId, notes });
@@ -290,6 +386,11 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     const group = await db.getGroupRowById(c.env.DB, groupId);
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
     if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+    if (groupId !== existing.group_id && body?.confirmOverCapacity !== true) {
+      const warning = await capacityWarning(c.env.DB, group, id);
+      if (warning) return c.json(warning, 409);
+    }
   }
 
   const child = await db.updateChild(c.env.DB, id, { firstName, lastName, birthDate, groupId, notes });
@@ -338,6 +439,10 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
   const targetUnclaimed = targetGroup.owner_id === null;
 
   if (fits || targetOwnedByRequester || targetUnclaimed) {
+    if (body?.confirmOverCapacity !== true) {
+      const warning = await capacityWarning(c.env.DB, targetGroup, id);
+      if (warning) return c.json(warning, 409);
+    }
     await db.moveChildToGroup(c.env.DB, id, toGroupId);
     return c.json({ status: "moved", groupId: toGroupId });
   }
@@ -364,6 +469,7 @@ app.get("/api/move-requests/outgoing", requireAuth, async (c) => {
 app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const body = await c.req.json().catch(() => null);
 
   const request = await db.getMoveRequestRowById(c.env.DB, id);
   if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
@@ -372,6 +478,11 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
   const targetGroup = await db.getGroupRowById(c.env.DB, request.to_group_id);
   if (!targetGroup || targetGroup.owner_id !== c.get("userId"))
     return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  if (body?.confirmOverCapacity !== true) {
+    const warning = await capacityWarning(c.env.DB, targetGroup, request.child_id);
+    if (warning) return c.json(warning, 409);
+  }
 
   await db.moveChildToGroup(c.env.DB, request.child_id, request.to_group_id);
   await db.setMoveRequestStatus(c.env.DB, id, "approved", c.get("userId"));

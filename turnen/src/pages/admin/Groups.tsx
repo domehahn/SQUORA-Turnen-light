@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Child, Group } from "../../lib/types";
+import type { Child, Group, MoveRequest } from "../../lib/types";
 import { FloatingInput } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
+import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
 
 type CapacityLevel = "unset" | "ok" | "warn" | "over";
 
@@ -22,9 +23,10 @@ function capacityLevel(count: number, max: number | null): CapacityLevel {
 }
 
 export default function Groups() {
-  const { clubId, clubName } = useAuth();
+  const { clubId, clubName, clubRole } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<MoveRequest[]>([]);
   const [name, setName] = useState("");
   const [minAge, setMinAge] = useState("3");
   const [maxAge, setMaxAge] = useState("6");
@@ -46,8 +48,18 @@ export default function Groups() {
     }
   }
 
+  async function loadMoveRequests() {
+    try {
+      setIncomingRequests(await api.get<MoveRequest[]>("/api/move-requests/incoming"));
+    } catch {
+      // Anfragen sind ein Zusatzfeature - ein Ladefehler soll die restliche
+      // Seite nicht blockieren.
+    }
+  }
+
   useEffect(() => {
     load();
+    loadMoveRequests();
   }, []);
 
   function startEdit(g: Group) {
@@ -103,6 +115,29 @@ export default function Groups() {
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Zuordnen");
+    }
+  }
+
+  async function handleApproveRequest(id: string) {
+    setError(null);
+    try {
+      const result = await withCapacityConfirm((confirmOverCapacity) =>
+        api.post(`/api/move-requests/${id}/approve`, { confirmOverCapacity })
+      );
+      if (result === CAPACITY_CANCELLED) return;
+      await Promise.all([load(), loadMoveRequests()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Freigeben");
+    }
+  }
+
+  async function handleRejectRequest(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/move-requests/${id}/reject`, {});
+      await loadMoveRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
     }
   }
 
@@ -182,8 +217,10 @@ export default function Groups() {
                 const count = children.filter((c) => c.groupId === g.id).length;
                 const level = capacityLevel(count, g.maxChildren);
                 const label = g.maxChildren != null ? `${count} / ${g.maxChildren}` : `${count}`;
+                const requestsForGroup = incomingRequests.filter((r) => r.toGroupId === g.id);
                 return (
-                <tr key={g.id} className="border-t border-slate-100 dark:border-slate-800">
+                <Fragment key={g.id}>
+                <tr className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{g.name}</td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.minAge}–{g.maxAge} Jahre
@@ -235,8 +272,14 @@ export default function Groups() {
                         {g.ownerId === null && (
                           <button
                             onClick={() => handleClaim(g.id)}
-                            disabled={!clubId}
-                            title={clubId ? `Dieser Gruppe deinen Verein (${clubName}) zuordnen` : "Erst einem Verein beitreten, um Gruppen zuzuordnen"}
+                            disabled={!clubId || clubRole !== "jugendleiter"}
+                            title={
+                              !clubId
+                                ? "Erst einem Verein beitreten, um Gruppen zuzuordnen"
+                                : clubRole !== "jugendleiter"
+                                  ? "Nur die Jugendleitung kann Gruppen dem Verein zuordnen"
+                                  : `Dieser Gruppe deinen Verein (${clubName}) zuordnen`
+                            }
                             className="mr-3 text-sm text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline dark:text-emerald-400 dark:disabled:text-slate-600"
                           >
                             Verein zuordnen
@@ -254,6 +297,40 @@ export default function Groups() {
                     )}
                   </td>
                 </tr>
+                {requestsForGroup.length > 0 && (
+                  <tr className="border-t border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
+                    <td colSpan={5} className="px-4 py-2">
+                      <p className="mb-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                        Offene Verschiebe-Anfragen für „{g.name}“ ({requestsForGroup.length})
+                      </p>
+                      <ul className="space-y-1 text-sm text-amber-900 dark:text-amber-200">
+                        {requestsForGroup.map((r) => (
+                          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              {r.childName} – von {r.fromGroupName ?? "keine Gruppe"}
+                              {r.requestedByName ? ` (angefragt von ${r.requestedByName})` : ""}
+                            </span>
+                            <span className="flex gap-2">
+                              <button
+                                onClick={() => handleApproveRequest(r.id)}
+                                className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                              >
+                                Freigeben
+                              </button>
+                              <button
+                                onClick={() => handleRejectRequest(r.id)}
+                                className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                              >
+                                Ablehnen
+                              </button>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
                 );
               })}
               {groups.length === 0 && (

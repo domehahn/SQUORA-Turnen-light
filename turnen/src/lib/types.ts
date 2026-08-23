@@ -35,10 +35,13 @@ export interface Club {
   createdAt: string;
 }
 
+export type ClubRole = "member" | "jugendleiter";
+
 export interface ClubMember {
   id: string;
   name: string | null;
   email: string;
+  role: ClubRole;
 }
 
 export type MoveRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -63,4 +66,12 @@ export interface MoveChildResponse {
   status: "moved" | "pending";
   groupId?: string;
   requestId?: string;
+}
+
+export interface CapacityWarning {
+  error: string;
+  code: "capacity_exceeded";
+  groupName: string;
+  currentCount: number;
+  maxChildren: number;
 }

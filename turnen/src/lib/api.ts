@@ -12,6 +12,20 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// Trägt bei Fehlern zusätzlich zur Nachricht den vollständigen JSON-Body der
+// API-Antwort mit (z.B. `code` und Detailfelder), damit UI-Code strukturiert
+// darauf reagieren kann statt nur die Textnachricht zu parsen.
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = getToken();
   const res = await fetch(path, {
@@ -24,7 +38,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   });
   if (!res.ok) {
     const data = await res.json().catch(() => null);
-    throw new Error((data as { error?: string } | null)?.error ?? `Fehler ${res.status}`);
+    throw new ApiError((data as { error?: string } | null)?.error ?? `Fehler ${res.status}`, res.status, data);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

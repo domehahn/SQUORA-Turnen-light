@@ -4,6 +4,7 @@ import type {
   Child,
   ChildRow,
   Club,
+  ClubRole,
   ClubRow,
   Group,
   GroupRow,
@@ -70,7 +71,14 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
 }
 
 function rowToUser(row: UserRow): User {
-  return { id: row.id, email: row.email, name: row.name, clubId: row.club_id, createdAt: row.created_at };
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    clubId: row.club_id,
+    clubRole: row.club_role,
+    createdAt: row.created_at,
+  };
 }
 
 function rowToClub(row: ClubRow & { member_count: number | null }): Club {
@@ -126,19 +134,59 @@ export async function createClub(db: D1Database, name: string): Promise<ClubRow>
   return row;
 }
 
-export async function setUserClub(db: D1Database, userId: string, clubId: string | null): Promise<void> {
-  await db.prepare("UPDATE users SET club_id = ? WHERE id = ?").bind(clubId, userId).run();
+export async function setUserClub(
+  db: D1Database,
+  userId: string,
+  clubId: string | null,
+  role: ClubRole
+): Promise<void> {
+  await db.prepare("UPDATE users SET club_id = ?, club_role = ? WHERE id = ?").bind(clubId, role, userId).run();
 }
 
-export async function listClubMembers(
-  db: D1Database,
-  clubId: string
-): Promise<{ id: string; name: string | null; email: string }[]> {
+export interface ClubMember {
+  id: string;
+  name: string | null;
+  email: string;
+  role: ClubRole;
+}
+
+export async function listClubMembers(db: D1Database, clubId: string): Promise<ClubMember[]> {
   const { results } = await db
-    .prepare("SELECT id, name, email FROM users WHERE club_id = ? ORDER BY name ASC, email ASC")
+    .prepare(
+      `SELECT id, name, email, club_role as role FROM users WHERE club_id = ?
+       ORDER BY CASE club_role WHEN 'jugendleiter' THEN 0 ELSE 1 END, name ASC, email ASC`
+    )
     .bind(clubId)
-    .all<{ id: string; name: string | null; email: string }>();
+    .all<ClubMember>();
   return results;
+}
+
+// Anzahl der Jugendleitungen im Verein, optional einen Nutzer ausschließend
+// (z.B. um zu prüfen, ob nach einem Rollenwechsel noch jemand übrig bleibt).
+export async function countClubLeaders(db: D1Database, clubId: string, excludeUserId?: string): Promise<number> {
+  const row = excludeUserId
+    ? await db
+        .prepare("SELECT COUNT(*) as n FROM users WHERE club_id = ? AND club_role = 'jugendleiter' AND id != ?")
+        .bind(clubId, excludeUserId)
+        .first<{ n: number }>()
+    : await db
+        .prepare("SELECT COUNT(*) as n FROM users WHERE club_id = ? AND club_role = 'jugendleiter'")
+        .bind(clubId)
+        .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+export async function setClubRole(
+  db: D1Database,
+  userId: string,
+  clubId: string,
+  role: ClubRole
+): Promise<boolean> {
+  const result = await db
+    .prepare("UPDATE users SET club_role = ? WHERE id = ? AND club_id = ?")
+    .bind(role, userId, clubId)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 // --- Gruppen -----------------------------------------------------------
@@ -255,6 +303,19 @@ export async function listChildrenForUser(db: D1Database, userId: string, clubId
 
 export async function getChildRowById(db: D1Database, id: string): Promise<ChildRow | null> {
   return db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
+}
+
+// Anzahl der Kinder, die aktuell in einer Gruppe stehen - für die
+// Kapazitätsprüfung beim Zuweisen. `excludeChildId` blendet ein Kind aus
+// (z.B. das gerade bearbeitete, das ohnehin schon in der Gruppe steht).
+export async function countChildrenInGroup(db: D1Database, groupId: string, excludeChildId?: string): Promise<number> {
+  const row = excludeChildId
+    ? await db
+        .prepare("SELECT COUNT(*) as n FROM children WHERE group_id = ? AND id != ?")
+        .bind(groupId, excludeChildId)
+        .first<{ n: number }>()
+    : await db.prepare("SELECT COUNT(*) as n FROM children WHERE group_id = ?").bind(groupId).first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 export async function createChild(

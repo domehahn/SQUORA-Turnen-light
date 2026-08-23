@@ -1,4 +1,5 @@
 import { createContext } from "react";
+import type { ClubRole } from "../lib/types";
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -7,6 +8,7 @@ export interface AuthState {
   userName: string | null;
   clubId: string | null;
   clubName: string | null;
+  clubRole: ClubRole | null;
 }
 
 export interface AuthContextValue extends AuthState {

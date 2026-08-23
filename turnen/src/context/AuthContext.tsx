@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { decodeJwt } from "jose";
 import { api, clearToken, getToken, setToken } from "../lib/api";
 import { AuthContext, type AuthState } from "./auth-context";
+import type { ClubRole } from "../lib/types";
 
 interface TokenPayload {
   sub: string;
@@ -16,6 +17,7 @@ interface MeResponse {
   name: string | null;
   clubId: string | null;
   clubName: string | null;
+  clubRole: ClubRole;
 }
 
 const EMPTY_STATE: AuthState = {
@@ -25,6 +27,7 @@ const EMPTY_STATE: AuthState = {
   userName: null,
   clubId: null,
   clubName: null,
+  clubRole: null,
 };
 
 function readState(token: string | null): AuthState {
@@ -39,6 +42,7 @@ function readState(token: string | null): AuthState {
       userName: payload.name,
       clubId: null,
       clubName: null,
+      clubRole: null,
     };
   } catch {
     return EMPTY_STATE;
@@ -52,7 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!getToken()) return;
     try {
       const me = await api.get<MeResponse>("/api/me");
-      setState((prev) => (prev.isAuthenticated ? { ...prev, clubId: me.clubId, clubName: me.clubName } : prev));
+      setState((prev) =>
+        prev.isAuthenticated ? { ...prev, clubId: me.clubId, clubName: me.clubName, clubRole: me.clubRole } : prev
+      );
     } catch {
       // Netzwerk-/Auth-Fehler beim Nachladen ignorieren wir hier bewusst -
       // die Kernanmeldung basiert allein auf dem JWT im Local Storage.
