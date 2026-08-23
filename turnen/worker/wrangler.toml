@@ -13,9 +13,19 @@ migrations_dir = "migrations"
 
 [vars]
 FRONTEND_URL = "https://turnen-web.squora.workers.dev"
+# Absenderadresse für Benachrichtigungs-E-Mails. Erfordert, dass squora.de
+# einmalig im Dashboard (Compute & AI > Email Service > Email Sending) für
+# Email Sending freigeschaltet wird - bis dahin läuft alles best effort nur
+# über das In-App-Postfach (worker/src/notifications.ts fängt Fehler ab).
+EMAIL_FROM_ADDRESS = "turnen@squora.de"
 
 # JWT_SECRET wird NICHT hier eingetragen, sondern per Secret gesetzt:
 #   wrangler secret put JWT_SECRET
+
+# Erfordert einmaliges Onboarding der Absender-Domain (squora.de) für Email
+# Sending im Cloudflare Dashboard, siehe EMAIL_FROM_ADDRESS oben.
+[[send_email]]
+name = "EMAIL"
 
 [observability]
 enabled = true

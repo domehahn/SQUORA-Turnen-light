@@ -1,5 +1,6 @@
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export function normalizedEmail(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -71,5 +72,17 @@ export function validSortOrder(value: unknown): number | undefined {
 
 export function validBool(value: unknown): boolean | undefined {
   if (typeof value !== "boolean") return undefined;
+  return value;
+}
+
+export function validWeekday(value: unknown): number | null | undefined {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 6) return undefined;
+  return value;
+}
+
+export function validTime(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string" || !TIME_RE.test(value)) return undefined;
   return value;
 }

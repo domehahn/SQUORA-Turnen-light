@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
   FRONTEND_URL: string;
+  EMAIL?: SendEmail;
+  EMAIL_FROM_ADDRESS?: string;
 }
 
 export type ClubRole = "member" | "jugendleiter";
@@ -46,6 +48,9 @@ export interface Group {
   maxAge: number;
   sortOrder: number;
   maxChildren: number | null;
+  weekday: number | null;
+  startTime: string | null;
+  endTime: string | null;
   ownerId: string | null;
   ownerName: string | null;
   clubId: string | null;
@@ -60,6 +65,9 @@ export interface GroupRow {
   max_age: number;
   sort_order: number;
   max_children: number | null;
+  weekday: number | null;
+  start_time: string | null;
+  end_time: string | null;
   owner_id: string | null;
   club_id: string | null;
   created_at: string;
@@ -72,6 +80,9 @@ export interface Child {
   birthDate: string;
   groupId: string | null;
   notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  healthNotes: string | null;
   canEdit: boolean;
   createdAt: string;
 }
@@ -83,6 +94,9 @@ export interface ChildRow {
   birth_date: string;
   group_id: string | null;
   notes: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  health_notes: string | null;
   created_at: string;
 }
 
@@ -152,4 +166,62 @@ export interface CapacityRequestDetail {
   requestedByName: string | null;
   status: MoveRequestStatus;
   createdAt: string;
+}
+
+// --- Warteliste ------------------------------------------------------------
+
+export type WaitlistStatus = "waiting" | "promoted" | "cancelled";
+
+export interface WaitlistEntryRow {
+  id: string;
+  group_id: string;
+  child_id: string;
+  requested_by: string | null;
+  status: WaitlistStatus;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface WaitlistEntryDetail {
+  id: string;
+  groupId: string;
+  groupName: string;
+  childId: string;
+  childName: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  status: WaitlistStatus;
+  position: number;
+  createdAt: string;
+}
+
+// --- Benachrichtigungen ------------------------------------------------------
+
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
+// --- Anwesenheits-Trends -----------------------------------------------------
+
+export interface AttendanceSummary {
+  childId: string;
+  lastPresentDate: string | null;
+  weeksSinceLastPresent: number | null;
 }

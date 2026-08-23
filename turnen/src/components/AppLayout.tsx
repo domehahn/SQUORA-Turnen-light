@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { ThemeToggle } from "./ThemeToggle";
+import { NotificationBell } from "./NotificationBell";
 
 const NAV_ITEMS = [
   { to: "/gruppen", label: "Gruppen" },
@@ -8,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/anwesenheit", label: "Anwesenheit" },
   { to: "/uebersicht", label: "Übersicht" },
   { to: "/auslastung", label: "Auslastung" },
+  { to: "/export", label: "Export" },
   { to: "/verein", label: "Verein" },
 ];
 
@@ -25,6 +27,7 @@ export function AppLayout() {
                 {userName ?? userEmail}
                 {clubName ? ` · ${clubName}` : ""}
               </span>
+              <NotificationBell />
               <ThemeToggle />
               <button
                 onClick={signOut}

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { CapacityRequest, Child, Group, MoveRequest } from "../../lib/types";
-import { FloatingInput } from "../../components/FloatingField";
+import type { CapacityRequest, Child, Group, MoveRequest, WaitlistEntry } from "../../lib/types";
+import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
 
@@ -14,6 +14,9 @@ const CAPACITY_BADGE_CLASSES: Record<CapacityLevel, string> = {
   over: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
 };
 
+const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+const WEEKDAY_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
 function capacityLevel(count: number, max: number | null): CapacityLevel {
   if (max === null || max === 0) return "unset";
   const ratio = count / max;
@@ -22,16 +25,27 @@ function capacityLevel(count: number, max: number | null): CapacityLevel {
   return "over";
 }
 
+function scheduleLabel(g: Group): string | null {
+  if (g.weekday === null && !g.startTime) return null;
+  const day = g.weekday !== null ? WEEKDAY_SHORT[g.weekday] : "";
+  const time = g.startTime && g.endTime ? `${g.startTime}–${g.endTime}` : g.startTime ?? "";
+  return [day, time].filter(Boolean).join(" ");
+}
+
 export default function Groups() {
   const { clubId, clubName, clubRole } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<MoveRequest[]>([]);
   const [incomingCapacityRequests, setIncomingCapacityRequests] = useState<CapacityRequest[]>([]);
+  const [waitlist, setWaitlist] = useState<Record<string, WaitlistEntry[]>>({});
   const [name, setName] = useState("");
   const [minAge, setMinAge] = useState("3");
   const [maxAge, setMaxAge] = useState("6");
   const [maxChildren, setMaxChildren] = useState("");
+  const [weekday, setWeekday] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -42,6 +56,15 @@ export default function Groups() {
       const [g, c] = await Promise.all([api.get<Group[]>("/api/groups"), api.get<Child[]>("/api/children")]);
       setGroups(g);
       setChildren(c);
+      const writable = g.filter((group) => group.canEdit);
+      const lists = await Promise.all(
+        writable.map((group) => api.get<WaitlistEntry[]>(`/api/groups/${group.id}/waitlist`).catch(() => []))
+      );
+      const map: Record<string, WaitlistEntry[]> = {};
+      writable.forEach((group, i) => {
+        if (lists[i].length > 0) map[group.id] = lists[i];
+      });
+      setWaitlist(map);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
     } finally {
@@ -78,6 +101,9 @@ export default function Groups() {
     setMinAge(String(g.minAge));
     setMaxAge(String(g.maxAge));
     setMaxChildren(g.maxChildren != null ? String(g.maxChildren) : "");
+    setWeekday(g.weekday != null ? String(g.weekday) : "");
+    setStartTime(g.startTime ?? "");
+    setEndTime(g.endTime ?? "");
   }
 
   function resetForm() {
@@ -86,6 +112,9 @@ export default function Groups() {
     setMinAge("3");
     setMaxAge("6");
     setMaxChildren("");
+    setWeekday("");
+    setStartTime("");
+    setEndTime("");
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -98,6 +127,9 @@ export default function Groups() {
         maxAge: Number(maxAge),
         sortOrder: Number(minAge),
         maxChildren: maxChildren === "" ? null : Number(maxChildren),
+        weekday: weekday === "" ? null : Number(weekday),
+        startTime: startTime || null,
+        endTime: endTime || null,
       };
       if (editingId) await api.put(`/api/groups/${editingId}`, payload);
       else await api.post("/api/groups", payload);
@@ -171,6 +203,16 @@ export default function Groups() {
     }
   }
 
+  async function handleCancelWaitlistEntry(id: string) {
+    setError(null);
+    try {
+      await api.del(`/api/waitlist/${id}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Entfernen");
+    }
+  }
+
   function capacityActionLabel(action: CapacityRequest["action"]): string {
     switch (action) {
       case "create_child":
@@ -227,6 +269,22 @@ export default function Groups() {
             onChange={(e) => setMaxChildren(e.target.value)}
           />
         </div>
+        <div className="w-40">
+          <FloatingSelect label="Trainingstag (optional)" value={weekday} onChange={(e) => setWeekday(e.target.value)}>
+            <option value="">–</option>
+            {WEEKDAY_NAMES.map((day, i) => (
+              <option key={i} value={i}>
+                {day}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <div className="w-28">
+          <FloatingInput label="Von" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+        </div>
+        <div className="w-28">
+          <FloatingInput label="Bis" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+        </div>
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}
         </button>
@@ -251,6 +309,7 @@ export default function Groups() {
               <tr>
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Altersspanne</th>
+                <th className="px-4 py-2 font-medium">Training</th>
                 <th className="px-4 py-2 font-medium">Kinder</th>
                 <th className="px-4 py-2 font-medium">Turnleiter</th>
                 <th className="px-4 py-2 font-medium"></th>
@@ -263,6 +322,8 @@ export default function Groups() {
                 const label = g.maxChildren != null ? `${count} / ${g.maxChildren}` : `${count}`;
                 const requestsForGroup = incomingRequests.filter((r) => r.toGroupId === g.id);
                 const capacityRequestsForGroup = incomingCapacityRequests.filter((r) => r.groupId === g.id);
+                const waitlistForGroup = waitlist[g.id] ?? [];
+                const schedule = scheduleLabel(g);
                 return (
                 <Fragment key={g.id}>
                 <tr className="border-t border-slate-100 dark:border-slate-800">
@@ -270,10 +331,16 @@ export default function Groups() {
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.minAge}–{g.maxAge} Jahre
                   </td>
+                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{schedule ?? "–"}</td>
                   <td className="px-4 py-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}>
                       {label}
                     </span>
+                    {waitlistForGroup.length > 0 && (
+                      <span className="ml-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                        +{waitlistForGroup.length} Warteliste
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.canEdit && g.ownerId !== null ? (
@@ -344,7 +411,7 @@ export default function Groups() {
                 </tr>
                 {requestsForGroup.length > 0 && (
                   <tr className="border-t border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
-                    <td colSpan={5} className="px-4 py-2">
+                    <td colSpan={6} className="px-4 py-2">
                       <p className="mb-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
                         Offene Verschiebe-Anfragen für „{g.name}“ ({requestsForGroup.length})
                       </p>
@@ -377,7 +444,7 @@ export default function Groups() {
                 )}
                 {capacityRequestsForGroup.length > 0 && (
                   <tr className="border-t border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30">
-                    <td colSpan={5} className="px-4 py-2">
+                    <td colSpan={6} className="px-4 py-2">
                       <p className="mb-1 text-xs font-semibold text-red-800 dark:text-red-300">
                         Kapazitäts-Anfragen für „{g.name}“ ({capacityRequestsForGroup.length})
                       </p>
@@ -408,12 +475,37 @@ export default function Groups() {
                     </td>
                   </tr>
                 )}
+                {waitlistForGroup.length > 0 && (
+                  <tr className="border-t border-purple-200 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/30">
+                    <td colSpan={6} className="px-4 py-2">
+                      <p className="mb-1 text-xs font-semibold text-purple-800 dark:text-purple-300">
+                        Warteliste für „{g.name}“ ({waitlistForGroup.length})
+                      </p>
+                      <ol className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
+                        {waitlistForGroup.map((w) => (
+                          <li key={w.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              {w.position}. {w.childName}
+                              {w.requestedByName ? ` · eingetragen von ${w.requestedByName}` : ""}
+                            </span>
+                            <button
+                              onClick={() => handleCancelWaitlistEntry(w.id)}
+                              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                              Entfernen
+                            </button>
+                          </li>
+                        ))}
+                      </ol>
+                    </td>
+                  </tr>
+                )}
                 </Fragment>
                 );
               })}
               {groups.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={6} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
                     Noch keine Gruppen angelegt.
                   </td>
                 </tr>

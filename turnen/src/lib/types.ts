@@ -5,6 +5,9 @@ export interface Group {
   maxAge: number;
   sortOrder: number;
   maxChildren: number | null;
+  weekday: number | null; // 0 = Sonntag ... 6 = Samstag
+  startTime: string | null; // "HH:MM"
+  endTime: string | null; // "HH:MM"
   ownerId: string | null;
   ownerName: string | null;
   clubId: string | null;
@@ -19,6 +22,9 @@ export interface Child {
   birthDate: string; // ISO yyyy-mm-dd
   groupId: string | null;
   notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  healthNotes: string | null;
   canEdit: boolean;
   createdAt: string;
 }
@@ -99,4 +105,41 @@ export interface CapacityRequest {
   requestedByName: string | null;
   status: MoveRequestStatus;
   createdAt: string;
+}
+
+export type WaitlistStatus = "waiting" | "promoted" | "cancelled";
+
+export interface WaitlistEntry {
+  id: string;
+  groupId: string;
+  groupName: string;
+  childId: string;
+  childName: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  status: WaitlistStatus;
+  position: number;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface AttendanceSummary {
+  childId: string;
+  lastPresentDate: string | null;
+  weeksSinceLastPresent: number | null;
+}
+
+export interface AttendanceSession {
+  entries: AttendanceEntry[];
+  ledBy: string | null;
+  ledByName: string | null;
 }

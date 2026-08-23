@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import type { AttendanceEntry, Child, Group } from "../../lib/types";
+import type { AttendanceEntry, AttendanceSession, Child, ClubMember, Group } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
+import { useAuth } from "../../context/useAuth";
 
 // Bewusst NICHT toISOString() (rechnet nach UTC um - in Europe/Berlin kann
 // lokale Mitternacht dadurch auf den Vortag fallen), sondern die lokalen
@@ -14,11 +15,14 @@ function today(): string {
 }
 
 export default function Attendance() {
+  const { userId, clubId } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [members, setMembers] = useState<ClubMember[]>([]);
   const [groupId, setGroupId] = useState("");
   const [date, setDate] = useState(today());
   const [present, setPresent] = useState<Record<string, boolean>>({});
+  const [ledBy, setLedBy] = useState<string>(userId ?? "");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +42,7 @@ export default function Attendance() {
         setGroups(writableGroups);
         setChildren(childrenList);
         if (writableGroups.length > 0) setGroupId(writableGroups[0].id);
+        if (clubId) setMembers(await api.get<ClubMember[]>("/api/clubs/mine/members"));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden");
       } finally {
@@ -45,6 +50,7 @@ export default function Attendance() {
       }
     }
     loadBase();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -53,16 +59,17 @@ export default function Attendance() {
       setError(null);
       setSavedMessage(null);
       try {
-        const entries = await api.get<AttendanceEntry[]>(`/api/attendance/${groupId}/${date}`);
+        const session = await api.get<AttendanceSession>(`/api/attendance/${groupId}/${date}`);
         const map: Record<string, boolean> = {};
-        for (const entry of entries) map[entry.childId] = entry.present;
+        for (const entry of session.entries) map[entry.childId] = entry.present;
         setPresent(map);
+        setLedBy(session.ledBy ?? userId ?? "");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden der Anwesenheit");
       }
     }
     loadAttendance();
-  }, [groupId, date]);
+  }, [groupId, date, userId]);
 
   const groupChildren = children.filter((c) => c.groupId === groupId);
 
@@ -79,7 +86,7 @@ export default function Attendance() {
         childId: c.id,
         present: present[c.id] ?? false,
       }));
-      await api.put(`/api/attendance/${groupId}/${date}`, { entries });
+      await api.put(`/api/attendance/${groupId}/${date}`, { entries, ledBy: ledBy || null });
       setSavedMessage("Anwesenheit gespeichert.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Speichern");
@@ -110,6 +117,17 @@ export default function Attendance() {
         <div className="w-44">
           <FloatingInput label="Datum" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
+        {members.length > 0 && (
+          <div className="w-56">
+            <FloatingSelect label="Wer hat geleitet?" value={ledBy} onChange={(e) => setLedBy(e.target.value)}>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name ?? m.email}
+                </option>
+              ))}
+            </FloatingSelect>
+          </div>
+        )}
         <div className="ml-auto text-sm text-slate-500 dark:text-slate-400">
           {presentCount} von {groupChildren.length} anwesend
         </div>

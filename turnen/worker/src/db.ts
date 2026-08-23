@@ -14,8 +14,13 @@ import type {
   MoveRequestDetail,
   MoveRequestRow,
   MoveRequestStatus,
+  Notification,
+  NotificationRow,
   User,
   UserRow,
+  WaitlistEntryDetail,
+  WaitlistEntryRow,
+  WaitlistStatus,
 } from "./types";
 
 type GroupOwnership = { owner_id: string | null; club_id: string | null };
@@ -52,6 +57,9 @@ function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | nu
     maxAge: row.max_age,
     sortOrder: row.sort_order,
     maxChildren: row.max_children,
+    weekday: row.weekday,
+    startTime: row.start_time,
+    endTime: row.end_time,
     ownerId: row.owner_id,
     ownerName: ctx.ownerName,
     clubId: row.club_id,
@@ -68,6 +76,9 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
     birthDate: row.birth_date,
     groupId: row.group_id,
     notes: row.notes,
+    emergencyContactName: row.emergency_contact_name,
+    emergencyContactPhone: row.emergency_contact_phone,
+    healthNotes: row.health_notes,
     canEdit,
     createdAt: row.created_at,
   };
@@ -227,6 +238,9 @@ export async function createGroup(
     maxAge: number;
     sortOrder: number;
     maxChildren: number | null;
+    weekday: number | null;
+    startTime: string | null;
+    endTime: string | null;
     ownerId: string;
     ownerName: string | null;
     clubId: string | null;
@@ -235,9 +249,22 @@ export async function createGroup(
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO groups (id, name, min_age, max_age, sort_order, max_children, owner_id, club_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      `INSERT INTO groups (id, name, min_age, max_age, sort_order, max_children, weekday, start_time, end_time, owner_id, club_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, input.name, input.minAge, input.maxAge, input.sortOrder, input.maxChildren, input.ownerId, input.clubId)
+    .bind(
+      id,
+      input.name,
+      input.minAge,
+      input.maxAge,
+      input.sortOrder,
+      input.maxChildren,
+      input.weekday,
+      input.startTime,
+      input.endTime,
+      input.ownerId,
+      input.clubId
+    )
     .run();
   const row = await db.prepare("SELECT * FROM groups WHERE id = ?").bind(id).first<GroupRow>();
   return rowToGroup(row as GroupRow, { userId: input.ownerId, ownerName: input.ownerName });
@@ -246,14 +273,34 @@ export async function createGroup(
 export async function updateGroup(
   db: D1Database,
   id: string,
-  input: { name: string; minAge: number; maxAge: number; sortOrder: number; maxChildren: number | null },
+  input: {
+    name: string;
+    minAge: number;
+    maxAge: number;
+    sortOrder: number;
+    maxChildren: number | null;
+    weekday: number | null;
+    startTime: string | null;
+    endTime: string | null;
+  },
   ctx: { userId: string; ownerName: string | null }
 ): Promise<Group | null> {
   await db
     .prepare(
-      "UPDATE groups SET name = ?, min_age = ?, max_age = ?, sort_order = ?, max_children = ? WHERE id = ?"
+      `UPDATE groups SET name = ?, min_age = ?, max_age = ?, sort_order = ?, max_children = ?,
+              weekday = ?, start_time = ?, end_time = ? WHERE id = ?`
     )
-    .bind(input.name, input.minAge, input.maxAge, input.sortOrder, input.maxChildren, id)
+    .bind(
+      input.name,
+      input.minAge,
+      input.maxAge,
+      input.sortOrder,
+      input.maxChildren,
+      input.weekday,
+      input.startTime,
+      input.endTime,
+      id
+    )
     .run();
   const row = await db.prepare("SELECT * FROM groups WHERE id = ?").bind(id).first<GroupRow>();
   return row ? rowToGroup(row, ctx) : null;
@@ -321,31 +368,58 @@ export async function countChildrenInGroup(db: D1Database, groupId: string, excl
   return row?.n ?? 0;
 }
 
-export async function createChild(
-  db: D1Database,
-  input: { firstName: string; lastName: string; birthDate: string; groupId: string | null; notes: string | null }
-): Promise<Child> {
+export interface ChildInput {
+  firstName: string;
+  lastName: string;
+  birthDate: string;
+  groupId: string | null;
+  notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  healthNotes: string | null;
+}
+
+export async function createChild(db: D1Database, input: ChildInput): Promise<Child> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO children (id, first_name, last_name, birth_date, group_id, notes) VALUES (?, ?, ?, ?, ?, ?)"
+      `INSERT INTO children
+         (id, first_name, last_name, birth_date, group_id, notes, emergency_contact_name, emergency_contact_phone, health_notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, input.firstName, input.lastName, input.birthDate, input.groupId, input.notes)
+    .bind(
+      id,
+      input.firstName,
+      input.lastName,
+      input.birthDate,
+      input.groupId,
+      input.notes,
+      input.emergencyContactName,
+      input.emergencyContactPhone,
+      input.healthNotes
+    )
     .run();
   const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
   return rowToChild(row as ChildRow, true);
 }
 
-export async function updateChild(
-  db: D1Database,
-  id: string,
-  input: { firstName: string; lastName: string; birthDate: string; groupId: string | null; notes: string | null }
-): Promise<Child | null> {
+export async function updateChild(db: D1Database, id: string, input: ChildInput): Promise<Child | null> {
   await db
     .prepare(
-      "UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, notes = ? WHERE id = ?"
+      `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, notes = ?,
+              emergency_contact_name = ?, emergency_contact_phone = ?, health_notes = ? WHERE id = ?`
     )
-    .bind(input.firstName, input.lastName, input.birthDate, input.groupId, input.notes, id)
+    .bind(
+      input.firstName,
+      input.lastName,
+      input.birthDate,
+      input.groupId,
+      input.notes,
+      input.emergencyContactName,
+      input.emergencyContactPhone,
+      input.healthNotes,
+      id
+    )
     .run();
   const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
   return row ? rowToChild(row, true) : null;
@@ -355,21 +429,32 @@ export async function deleteChild(db: D1Database, id: string): Promise<void> {
   await db.prepare("DELETE FROM children WHERE id = ?").bind(id).run();
 }
 
-export async function getAttendance(
-  db: D1Database,
-  groupId: string,
-  sessionDate: string
-): Promise<AttendanceEntry[]> {
+export interface AttendanceSession {
+  entries: AttendanceEntry[];
+  ledBy: string | null;
+  ledByName: string | null;
+}
+
+export async function getAttendance(db: D1Database, groupId: string, sessionDate: string): Promise<AttendanceSession> {
   const session = await db
-    .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
+    .prepare(
+      `SELECT s.id as id, s.led_by as led_by, u.name as led_by_name, u.email as led_by_email
+       FROM attendance_sessions s
+       LEFT JOIN users u ON u.id = s.led_by
+       WHERE s.group_id = ? AND s.session_date = ?`
+    )
     .bind(groupId, sessionDate)
-    .first<{ id: string }>();
-  if (!session) return [];
+    .first<{ id: string; led_by: string | null; led_by_name: string | null; led_by_email: string | null }>();
+  if (!session) return { entries: [], ledBy: null, ledByName: null };
   const { results } = await db
     .prepare("SELECT child_id, present FROM attendance_entries WHERE session_id = ?")
     .bind(session.id)
     .all<AttendanceEntryRow>();
-  return results.map((row) => ({ childId: row.child_id, present: row.present === 1 }));
+  return {
+    entries: results.map((row) => ({ childId: row.child_id, present: row.present === 1 })),
+    ledBy: session.led_by,
+    ledByName: session.led_by_name ?? session.led_by_email,
+  };
 }
 
 export async function getAttendanceRange(
@@ -399,7 +484,8 @@ export async function saveAttendance(
   db: D1Database,
   groupId: string,
   sessionDate: string,
-  entries: AttendanceEntry[]
+  entries: AttendanceEntry[],
+  ledBy: string | null
 ): Promise<void> {
   let session = await db
     .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
@@ -412,9 +498,12 @@ export async function saveAttendance(
   if (!session) {
     statements.push(
       db
-        .prepare("INSERT INTO attendance_sessions (id, group_id, session_date) VALUES (?, ?, ?)")
-        .bind(sessionId, groupId, sessionDate)
+        .prepare("INSERT INTO attendance_sessions (id, group_id, session_date, led_by) VALUES (?, ?, ?, ?)")
+        .bind(sessionId, groupId, sessionDate, ledBy)
     );
+  } else if (ledBy !== null) {
+    // Nachträglich korrigierbar, z.B. wenn eine Vertretung geleitet hat.
+    statements.push(db.prepare("UPDATE attendance_sessions SET led_by = ? WHERE id = ?").bind(ledBy, sessionId));
   }
   statements.push(db.prepare("DELETE FROM attendance_entries WHERE session_id = ?").bind(sessionId));
   for (const entry of entries) {
@@ -425,6 +514,62 @@ export async function saveAttendance(
     );
   }
   await db.batch(statements);
+}
+
+export interface HourExportRow {
+  sessionDate: string;
+  groupName: string;
+  weekday: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  ledByName: string | null;
+  presentCount: number;
+}
+
+// Geleistete Turnstunden im Zeitraum für die übergebenen Gruppen - Basis für
+// den CSV-Export (Übungsleiterpauschale/Zuschussnachweis).
+export async function listSessionsForExport(
+  db: D1Database,
+  groupIds: string[],
+  from: string,
+  to: string
+): Promise<HourExportRow[]> {
+  if (groupIds.length === 0) return [];
+  const placeholders = groupIds.map((_, i) => `?${i + 1}`).join(", ");
+  const fromIdx = groupIds.length + 1;
+  const toIdx = groupIds.length + 2;
+  const { results } = await db
+    .prepare(
+      `SELECT s.session_date as session_date,
+              g.name as group_name, g.weekday as weekday, g.start_time as start_time, g.end_time as end_time,
+              u.name as led_by_name, u.email as led_by_email,
+              (SELECT COUNT(*) FROM attendance_entries e WHERE e.session_id = s.id AND e.present = 1) as present_count
+       FROM attendance_sessions s
+       JOIN groups g ON g.id = s.group_id
+       LEFT JOIN users u ON u.id = s.led_by
+       WHERE s.group_id IN (${placeholders}) AND s.session_date BETWEEN ?${fromIdx} AND ?${toIdx}
+       ORDER BY s.session_date ASC, g.name ASC`
+    )
+    .bind(...groupIds, from, to)
+    .all<{
+      session_date: string;
+      group_name: string;
+      weekday: number | null;
+      start_time: string | null;
+      end_time: string | null;
+      led_by_name: string | null;
+      led_by_email: string | null;
+      present_count: number;
+    }>();
+  return results.map((row) => ({
+    sessionDate: row.session_date,
+    groupName: row.group_name,
+    weekday: row.weekday,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    ledByName: row.led_by_name ?? row.led_by_email,
+    presentCount: row.present_count,
+  }));
 }
 
 // --- Gruppenwechsel / Verschiebe-Anfragen ---------------------------------
@@ -622,4 +767,175 @@ export async function listOutgoingCapacityRequests(db: D1Database, userId: strin
     .bind(userId)
     .all<CapacityRequestJoinRow>();
   return results.map(rowToCapacityRequestDetail);
+}
+
+// --- Warteliste --------------------------------------------------------------
+
+export async function addToWaitlist(
+  db: D1Database,
+  input: { groupId: string; childId: string; requestedBy: string }
+): Promise<WaitlistEntryRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO waitlist_entries (id, group_id, child_id, requested_by) VALUES (?, ?, ?, ?)")
+    .bind(id, input.groupId, input.childId, input.requestedBy)
+    .run();
+  const row = await db.prepare("SELECT * FROM waitlist_entries WHERE id = ?").bind(id).first<WaitlistEntryRow>();
+  return row as WaitlistEntryRow;
+}
+
+export async function getWaitlistEntryById(db: D1Database, id: string): Promise<WaitlistEntryRow | null> {
+  return db.prepare("SELECT * FROM waitlist_entries WHERE id = ?").bind(id).first<WaitlistEntryRow>();
+}
+
+export async function setWaitlistEntryStatus(db: D1Database, id: string, status: WaitlistStatus): Promise<void> {
+  await db
+    .prepare("UPDATE waitlist_entries SET status = ?, resolved_at = datetime('now') WHERE id = ?")
+    .bind(status, id)
+    .run();
+}
+
+type WaitlistJoinRow = WaitlistEntryRow & {
+  group_name: string;
+  child_first_name: string;
+  child_last_name: string;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+  position: number;
+};
+
+const WAITLIST_DETAIL_SELECT = `
+  SELECT w.*,
+         g.name as group_name,
+         c.first_name as child_first_name, c.last_name as child_last_name,
+         ru.name as requested_by_name, ru.email as requested_by_email,
+         (SELECT COUNT(*) FROM waitlist_entries w2
+          WHERE w2.group_id = w.group_id AND w2.status = 'waiting' AND w2.created_at <= w.created_at) as position
+  FROM waitlist_entries w
+  JOIN groups g ON g.id = w.group_id
+  JOIN children c ON c.id = w.child_id
+  LEFT JOIN users ru ON ru.id = w.requested_by
+`;
+
+function rowToWaitlistDetail(row: WaitlistJoinRow): WaitlistEntryDetail {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    childId: row.child_id,
+    childName: `${row.child_first_name} ${row.child_last_name}`,
+    requestedBy: row.requested_by,
+    requestedByName: row.requested_by_name ?? row.requested_by_email ?? null,
+    status: row.status,
+    position: row.position,
+    createdAt: row.created_at,
+  };
+}
+
+// Warteliste einer Gruppe, wartende Einträge zuerst (nach Position sortiert).
+export async function listWaitlistForGroup(db: D1Database, groupId: string): Promise<WaitlistEntryDetail[]> {
+  const { results } = await db
+    .prepare(`${WAITLIST_DETAIL_SELECT} WHERE w.group_id = ?1 AND w.status = 'waiting' ORDER BY w.created_at ASC`)
+    .bind(groupId)
+    .all<WaitlistJoinRow>();
+  return results.map(rowToWaitlistDetail);
+}
+
+export async function listWaitlistForUser(db: D1Database, userId: string): Promise<WaitlistEntryDetail[]> {
+  const { results } = await db
+    .prepare(`${WAITLIST_DETAIL_SELECT} WHERE w.requested_by = ?1 AND w.status = 'waiting' ORDER BY w.created_at ASC`)
+    .bind(userId)
+    .all<WaitlistJoinRow>();
+  return results.map(rowToWaitlistDetail);
+}
+
+// Rückt bei freiem Platz den nächsten wartenden Eintrag nach: verschiebt das
+// Kind in die Gruppe und markiert den Eintrag als "promoted". Gibt den
+// beförderten Eintrag zurück (für Benachrichtigungen) oder null, wenn die
+// Warteliste leer ist.
+export async function promoteNextWaitlistEntry(db: D1Database, groupId: string): Promise<WaitlistEntryDetail | null> {
+  const { results } = await db
+    .prepare(`${WAITLIST_DETAIL_SELECT} WHERE w.group_id = ?1 AND w.status = 'waiting' ORDER BY w.created_at ASC LIMIT 1`)
+    .bind(groupId)
+    .all<WaitlistJoinRow>();
+  const next = results[0];
+  if (!next) return null;
+
+  await db.batch([
+    db.prepare("UPDATE children SET group_id = ? WHERE id = ?").bind(groupId, next.child_id),
+    db.prepare("UPDATE waitlist_entries SET status = 'promoted', resolved_at = datetime('now') WHERE id = ?").bind(next.id),
+  ]);
+  return rowToWaitlistDetail(next);
+}
+
+// --- Benachrichtigungen ------------------------------------------------------
+
+function rowToNotification(row: NotificationRow): Notification {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    link: row.link,
+    read: row.read_at !== null,
+    createdAt: row.created_at,
+  };
+}
+
+export async function createNotification(
+  db: D1Database,
+  input: { userId: string; type: string; title: string; body: string; link: string | null }
+): Promise<NotificationRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO notifications (id, user_id, type, title, body, link) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(id, input.userId, input.type, input.title, input.body, input.link)
+    .run();
+  const row = await db.prepare("SELECT * FROM notifications WHERE id = ?").bind(id).first<NotificationRow>();
+  return row as NotificationRow;
+}
+
+export async function listNotificationsForUser(db: D1Database, userId: string, limit = 50): Promise<Notification[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?")
+    .bind(userId, limit)
+    .all<NotificationRow>();
+  return results.map(rowToNotification);
+}
+
+export async function markNotificationRead(db: D1Database, id: string, userId: string): Promise<void> {
+  await db
+    .prepare("UPDATE notifications SET read_at = datetime('now') WHERE id = ? AND user_id = ? AND read_at IS NULL")
+    .bind(id, userId)
+    .run();
+}
+
+export async function markAllNotificationsRead(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare("UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND read_at IS NULL")
+    .bind(userId)
+    .run();
+}
+
+// --- Anwesenheits-Trends -------------------------------------------------------
+
+// Letztes Anwesenheitsdatum je Kind - Basis für "seit X Wochen nicht da"
+// Hinweise. Kinder ohne jeden Anwesenheitseintrag fehlen im Ergebnis
+// (lastPresentDate bleibt für sie null).
+export async function getLastPresentDates(db: D1Database, childIds: string[]): Promise<Record<string, string>> {
+  if (childIds.length === 0) return {};
+  const placeholders = childIds.map((_, i) => `?${i + 1}`).join(", ");
+  const { results } = await db
+    .prepare(
+      `SELECT e.child_id as child_id, MAX(s.session_date) as last_date
+       FROM attendance_entries e
+       JOIN attendance_sessions s ON s.id = e.session_id
+       WHERE e.present = 1 AND e.child_id IN (${placeholders})
+       GROUP BY e.child_id`
+    )
+    .bind(...childIds)
+    .all<{ child_id: string; last_date: string }>();
+  const map: Record<string, string> = {};
+  for (const row of results) map[row.child_id] = row.last_date;
+  return map;
 }

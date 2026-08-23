@@ -9,6 +9,7 @@ import Attendance from "./pages/admin/Attendance";
 import Overview from "./pages/admin/Overview";
 import ClubPage from "./pages/admin/Club";
 import Utilization from "./pages/admin/Utilization";
+import Export from "./pages/admin/Export";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
               <Route path="anwesenheit" element={<Attendance />} />
               <Route path="uebersicht" element={<Overview />} />
               <Route path="auslastung" element={<Utilization />} />
+              <Route path="export" element={<Export />} />
               <Route path="verein" element={<ClubPage />} />
             </Route>
           </Route>

@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { CapacityRequest, Child, Group, MoveChildResponse, MoveRequest, PendingCapacityApproval } from "../../lib/types";
+import type {
+  AttendanceSummary,
+  CapacityRequest,
+  Child,
+  Group,
+  MoveChildResponse,
+  MoveRequest,
+  PendingCapacityApproval,
+  WaitlistEntry,
+} from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
 import {
@@ -13,7 +22,19 @@ import {
   type SwitchUrgency,
 } from "../../lib/age";
 
-const emptyForm = { firstName: "", lastName: "", birthDate: "", groupId: "", notes: "" };
+const emptyForm = {
+  firstName: "",
+  lastName: "",
+  birthDate: "",
+  groupId: "",
+  notes: "",
+  emergencyContactName: "",
+  emergencyContactPhone: "",
+  healthNotes: "",
+};
+
+const STALE_ATTENDANCE_WEEKS = 4;
+const WAITLIST_PREFIX = "waitlist:";
 
 function isPendingCapacityApproval(value: unknown): value is PendingCapacityApproval {
   return (
@@ -85,6 +106,9 @@ export default function Children() {
   const [outgoingRequests, setOutgoingRequests] = useState<MoveRequest[]>([]);
   const [incomingCapacityRequests, setIncomingCapacityRequests] = useState<CapacityRequest[]>([]);
   const [outgoingCapacityRequests, setOutgoingCapacityRequests] = useState<CapacityRequest[]>([]);
+  const [myWaitlistEntries, setMyWaitlistEntries] = useState<WaitlistEntry[]>([]);
+  const [attendanceSummary, setAttendanceSummary] = useState<Record<string, AttendanceSummary>>({});
+  const [search, setSearch] = useState("");
 
   async function load() {
     setLoading(true);
@@ -130,10 +154,31 @@ export default function Children() {
     }
   }
 
+  async function loadWaitlist() {
+    try {
+      setMyWaitlistEntries(await api.get<WaitlistEntry[]>("/api/waitlist/mine"));
+    } catch {
+      // s.o.
+    }
+  }
+
+  async function loadAttendanceSummary() {
+    try {
+      const summary = await api.get<AttendanceSummary[]>("/api/children/attendance-summary");
+      const map: Record<string, AttendanceSummary> = {};
+      for (const entry of summary) map[entry.childId] = entry;
+      setAttendanceSummary(map);
+    } catch {
+      // Zusatzinfo - Ladefehler soll die Seite nicht blockieren.
+    }
+  }
+
   useEffect(() => {
     load();
     loadMoveRequests();
     loadCapacityRequests();
+    loadWaitlist();
+    loadAttendanceSummary();
   }, []);
 
   async function handleMove(childId: string, toGroupId: string) {
@@ -228,6 +273,31 @@ export default function Children() {
     }
   }
 
+  async function handleAddToWaitlist(childId: string, groupId: string) {
+    setError(null);
+    setInfo(null);
+    try {
+      await api.post(`/api/groups/${groupId}/waitlist`, { childId });
+      const groupName = groups.find((g) => g.id === groupId)?.name ?? "die Gruppe";
+      setInfo(`Auf die Warteliste von „${groupName}“ gesetzt.`);
+      await loadWaitlist();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Eintragen in die Warteliste");
+    } finally {
+      setMoveSelection((prev) => ({ ...prev, [childId]: "" }));
+    }
+  }
+
+  async function handleCancelWaitlistEntry(id: string) {
+    setError(null);
+    try {
+      await api.del(`/api/waitlist/${id}`);
+      await loadWaitlist();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Zurückziehen");
+    }
+  }
+
   function startEdit(child: Child) {
     setEditingId(child.id);
     setForm({
@@ -236,6 +306,9 @@ export default function Children() {
       birthDate: child.birthDate,
       groupId: child.groupId ?? "",
       notes: child.notes ?? "",
+      emergencyContactName: child.emergencyContactName ?? "",
+      emergencyContactPhone: child.emergencyContactPhone ?? "",
+      healthNotes: child.healthNotes ?? "",
     });
   }
 
@@ -256,6 +329,9 @@ export default function Children() {
           birthDate: form.birthDate,
           groupId: form.groupId || null,
           notes: form.notes || null,
+          emergencyContactName: form.emergencyContactName || null,
+          emergencyContactPhone: form.emergencyContactPhone || null,
+          healthNotes: form.healthNotes || null,
           confirmOverCapacity,
         };
         return editingId
@@ -287,6 +363,16 @@ export default function Children() {
   function groupName(id: string | null): string {
     return groups.find((g) => g.id === id)?.name ?? "–";
   }
+
+  const filteredChildren = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return children;
+    return children.filter((child) => {
+      const haystack = `${child.firstName} ${child.lastName} ${groupName(child.groupId)}`.toLowerCase();
+      return haystack.includes(term);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children, groups, search]);
 
   // Kinder können nur in eigene (bearbeitbare) Gruppen einsortiert werden -
   // fremde, lediglich lesbare Vereinsgruppen fehlen bewusst in der Auswahl.
@@ -532,6 +618,29 @@ export default function Children() {
         </div>
       )}
 
+      {myWaitlistEntries.length > 0 && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">
+          <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">
+            Meine Wartelisten-Einträge ({myWaitlistEntries.length})
+          </h3>
+          <ul className="space-y-2 text-sm text-purple-900 dark:text-purple-200">
+            {myWaitlistEntries.map((w) => (
+              <li key={w.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {w.childName} → {w.groupName} · Platz {w.position} auf der Warteliste
+                </span>
+                <button
+                  onClick={() => handleCancelWaitlistEntry(w.id)}
+                  className="rounded-md border border-purple-300 px-2 py-1 text-xs text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                >
+                  Zurückziehen
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex-1 min-w-[140px]">
           <FloatingInput
@@ -575,6 +684,29 @@ export default function Children() {
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
         </div>
+        <div className="w-full border-t border-slate-100 pt-3 dark:border-slate-800" />
+        <div className="flex-1 min-w-[160px]">
+          <FloatingInput
+            label="Notfallkontakt: Name (optional)"
+            value={form.emergencyContactName}
+            onChange={(e) => setForm({ ...form, emergencyContactName: e.target.value })}
+          />
+        </div>
+        <div className="w-52">
+          <FloatingInput
+            label="Notfallkontakt: Telefon (optional)"
+            type="tel"
+            value={form.emergencyContactPhone}
+            onChange={(e) => setForm({ ...form, emergencyContactPhone: e.target.value })}
+          />
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <FloatingInput
+            label="Gesundheitshinweise, z.B. Allergien (optional)"
+            value={form.healthNotes}
+            onChange={(e) => setForm({ ...form, healthNotes: e.target.value })}
+          />
+        </div>
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}
         </button>
@@ -591,24 +723,34 @@ export default function Children() {
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-amber-700 dark:text-amber-400">{info}</p>}
+
+      <div className="max-w-xs">
+        <FloatingInput
+          label="Suche nach Name oder Gruppe"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-          <table className="w-full min-w-[600px] text-left text-sm">
+          <table className="w-full min-w-[700px] text-left text-sm">
             <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               <tr>
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="hidden px-4 py-2 font-medium sm:table-cell">Geburtsdatum</th>
                 <th className="px-4 py-2 font-medium">Alter</th>
                 <th className="px-4 py-2 font-medium">Gruppe</th>
+                <th className="px-4 py-2 font-medium">Zuletzt da</th>
                 <th className="px-4 py-2 font-medium">Wechsel zur nächsten Gruppe</th>
                 <th className="px-4 py-2 font-medium">Verschieben</th>
                 <th className="px-4 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody>
-              {children.map((child) => {
+              {filteredChildren.map((child) => {
                 const age = calculateAgeYears(child.birthDate);
                 const currentGroup = groups.find((g) => g.id === child.groupId);
                 const matchingGroup = groupForAge(age, groups);
@@ -625,11 +767,41 @@ export default function Children() {
 
                 const moveTargets = groups.filter((g) => g.id !== child.groupId);
                 const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
+                const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
+
+                const attendance = attendanceSummary[child.id];
+                let attendanceLabel = "–";
+                let attendanceStale = false;
+                if (child.groupId && attendance) {
+                  if (attendance.weeksSinceLastPresent === null) {
+                    attendanceLabel = "nie";
+                    attendanceStale = true;
+                  } else if (attendance.weeksSinceLastPresent === 0) {
+                    attendanceLabel = "diese Woche";
+                  } else {
+                    attendanceLabel = `vor ${attendance.weeksSinceLastPresent} Wo.`;
+                    attendanceStale = attendance.weeksSinceLastPresent >= STALE_ATTENDANCE_WEEKS;
+                  }
+                }
 
                 return (
                   <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
                       {child.firstName} {child.lastName}
+                      {hasHealthInfo && (
+                        <span
+                          className="ml-1.5 cursor-help"
+                          title={[
+                            child.emergencyContactName ? `Notfallkontakt: ${child.emergencyContactName}` : null,
+                            child.emergencyContactPhone ? `Tel: ${child.emergencyContactPhone}` : null,
+                            child.healthNotes ? `Gesundheit: ${child.healthNotes}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        >
+                          ⚕️
+                        </span>
+                      )}
                     </td>
                     <td className="hidden px-4 py-2 text-slate-600 dark:text-slate-300 sm:table-cell">{child.birthDate}</td>
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{age} Jahre</td>
@@ -644,6 +816,22 @@ export default function Children() {
                         </span>
                       )}
                     </td>
+                    <td className="px-4 py-2">
+                      {child.groupId ? (
+                        <span
+                          className={
+                            attendanceStale
+                              ? "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                              : "text-slate-600 dark:text-slate-300"
+                          }
+                          title={attendanceStale ? "Möglicherweise abgemeldet, aber nicht ausgetragen" : undefined}
+                        >
+                          {attendanceLabel}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500">–</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{switchLabel}</td>
                     <td className="px-4 py-2">
                       {!child.canEdit ? (
@@ -654,15 +842,27 @@ export default function Children() {
                         <select
                           value={moveSelection[child.id] ?? ""}
                           onChange={(e) => {
-                            const groupId = e.target.value;
-                            setMoveSelection((prev) => ({ ...prev, [child.id]: groupId }));
-                            handleMove(child.id, groupId);
+                            const value = e.target.value;
+                            setMoveSelection((prev) => ({ ...prev, [child.id]: value }));
+                            if (value.startsWith(WAITLIST_PREFIX)) {
+                              handleAddToWaitlist(child.id, value.slice(WAITLIST_PREFIX.length));
+                            } else {
+                              handleMove(child.id, value);
+                            }
                           }}
                           className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                         >
                           <option value="">Verschieben nach…</option>
                           {moveTargets.map((g) => {
                             const fits = age >= g.minAge && age < g.maxAge;
+                            const full = g.maxChildren !== null && children.filter((c) => c.groupId === g.id).length >= g.maxChildren;
+                            if (full) {
+                              return (
+                                <option key={g.id} value={`${WAITLIST_PREFIX}${g.id}`}>
+                                  {g.name} (voll – auf Warteliste)
+                                </option>
+                              );
+                            }
                             return (
                               <option key={g.id} value={g.id}>
                                 {g.name}
@@ -695,10 +895,10 @@ export default function Children() {
                   </tr>
                 );
               })}
-              {children.length === 0 && (
+              {filteredChildren.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
-                    Noch keine Kinder angelegt.
+                  <td colSpan={8} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
+                    {children.length === 0 ? "Noch keine Kinder angelegt." : "Keine Treffer für diese Suche."}
                   </td>
                 </tr>
               )}
