@@ -1932,7 +1932,52 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
   if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
 
-  await db.saveAttendance(c.env.DB, groupId, date, entries, ledBy, { startTime, endTime, location, note });
+  // Ein abweichender Termin (andere Uhrzeit/Ort/Bezeichnung als sonst, z.B.
+  // Turnier) braucht die Freigabe der Jugendleitung - Turnleiter*innen
+  // können nur anfragen. Die Anwesenheit selbst wird trotzdem sofort
+  // gespeichert; nur die Überschreibung bleibt bis zur Freigabe unangetastet.
+  const overrideRequested = startTime !== null || endTime !== null || location !== null || note !== null;
+  let overridesToApply: db.SessionOverrides | null = { startTime, endTime, location, note };
+  let pendingOverride: { requestId: string; groupName: string } | null = null;
+
+  if (overrideRequested) {
+    const clubId = c.get("clubId");
+    const isLeader = Boolean(clubId && group.club_id === clubId && c.get("clubRole") === "jugendleiter");
+    const hasLeadership = group.club_id ? (await db.countClubLeaders(c.env.DB, group.club_id)) > 0 : false;
+    if (!isLeader && hasLeadership) {
+      overridesToApply = null;
+      let request;
+      try {
+        request = await db.createSessionOverrideRequest(c.env.DB, {
+          groupId,
+          sessionDate: date,
+          requestedBy: c.get("userId"),
+          startTime,
+          endTime,
+          location,
+          note,
+        });
+      } catch {
+        return c.json({ error: "Für diesen Termin läuft bereits eine Anfrage für einen abweichenden Termin" }, 409);
+      }
+      pendingOverride = { requestId: request.id, groupName: group.name };
+
+      const leaders = (await db.listClubMembers(c.env.DB, group.club_id as string)).filter((m) => m.role === "jugendleiter");
+      for (const leader of leaders) {
+        await notifyUser(c.env, {
+          userId: leader.id,
+          userEmail: leader.email,
+          userName: leader.name,
+          type: "session_override_requested",
+          title: `Abweichender Termin angefragt für „${group.name}“`,
+          body: `${c.get("name") ?? c.get("email")} möchte den Termin am ${date} in „${group.name}“ abweichend durchführen${note ? ` (${note})` : ""} - bitte freigeben oder ablehnen.`,
+          link: "/anwesenheit",
+        });
+      }
+    }
+  }
+
+  await db.saveAttendance(c.env.DB, groupId, date, entries, ledBy, overridesToApply);
 
   // Wurde jemand anderes als die eintragende Person als Leitung erfasst,
   // ist das eine Vertretung: sie zählt ab jetzt in deren Stundennachweis
@@ -1959,6 +2004,112 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
       targetLabel: `${group.name} am ${date} → ${substitute?.name ?? substitute?.email ?? ledBy}`,
       groupId: group.id,
     });
+  }
+
+  if (pendingOverride) {
+    return c.json({ status: "pending_override_approval", requestId: pendingOverride.requestId, groupName: pendingOverride.groupName }, 202);
+  }
+  return c.json({ ok: true });
+});
+
+// --- Abweichende Termine (Freigabe der Jugendleitung) ---------------------------
+
+app.get("/api/session-override-requests/incoming", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  return c.json(await db.listPendingSessionOverrideRequestsForClub(c.env.DB, clubId));
+});
+
+app.get("/api/session-override-requests/mine", requireAuth, async (c) => {
+  return c.json(await db.listMySessionOverrideRequests(c.env.DB, c.get("userId")));
+});
+
+app.post("/api/session-override-requests/:id/cancel", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const request = await db.getSessionOverrideRequestById(c.env.DB, id);
+  if (!request) return c.body(null, 204);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  if (request.requested_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  await db.setSessionOverrideRequestStatus(c.env.DB, id, "cancelled");
+  return c.body(null, 204);
+});
+
+app.post("/api/session-override-requests/:id/approve", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const request = await db.getSessionOverrideRequestById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group || group.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+
+  await db.applySessionOverride(c.env.DB, request.group_id, request.session_date, {
+    startTime: request.start_time,
+    endTime: request.end_time,
+    location: request.location,
+    note: request.note,
+  });
+  await db.setSessionOverrideRequestStatus(c.env.DB, id, "approved");
+
+  await db.logAudit(c.env.DB, {
+    clubId: group.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "session_override_request.approved",
+    targetLabel: `${group.name} am ${request.session_date}`,
+    groupId: group.id,
+  });
+
+  if (request.requested_by) {
+    const requester = await db.getUserById(c.env.DB, request.requested_by);
+    if (requester) {
+      await notifyUser(c.env, {
+        userId: requester.id,
+        userEmail: requester.email,
+        userName: requester.name,
+        type: "session_override_approved",
+        title: `Abweichender Termin freigegeben für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} hat deinen abweichenden Termin am ${request.session_date} in „${group.name}“ freigegeben.`,
+        link: "/anwesenheit",
+      });
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post("/api/session-override-requests/:id/reject", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const request = await db.getSessionOverrideRequestById(c.env.DB, id);
+  if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
+  if (request.status !== "pending") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  if (!group || group.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+
+  await db.setSessionOverrideRequestStatus(c.env.DB, id, "rejected");
+
+  if (request.requested_by) {
+    const requester = await db.getUserById(c.env.DB, request.requested_by);
+    if (requester) {
+      await notifyUser(c.env, {
+        userId: requester.id,
+        userEmail: requester.email,
+        userName: requester.name,
+        type: "session_override_rejected",
+        title: `Abweichender Termin abgelehnt für „${group.name}“`,
+        body: `${c.get("name") ?? c.get("email")} hat deinen abweichenden Termin am ${request.session_date} in „${group.name}“ abgelehnt.`,
+        link: "/anwesenheit",
+      });
+    }
   }
 
   return c.json({ ok: true });

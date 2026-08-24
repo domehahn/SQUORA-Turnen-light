@@ -24,6 +24,9 @@ import type {
   ClubJoinRequestRow,
   ClubJoinRequestStatus,
   ClubWaitlistEntryDetail,
+  SessionOverrideRequestDetail,
+  SessionOverrideRequestRow,
+  SessionOverrideRequestStatus,
   ClubWaitlistRow,
   ClubWaitlistStatus,
   PlacementRequestDetail,
@@ -601,7 +604,11 @@ export async function saveAttendance(
   sessionDate: string,
   entries: AttendanceEntry[],
   ledBy: string | null,
-  overrides: SessionOverrides
+  // `null` = Termin-Überschreibung (Uhrzeit/Ort/Notiz) nicht anfassen - z.B.
+  // wenn ein abweichender Termin erst noch von der Jugendleitung freigegeben
+  // werden muss (siehe attendanceOverrideAccess() in index.ts), die
+  // Anwesenheit selbst aber trotzdem sofort gespeichert werden soll.
+  overrides: SessionOverrides | null
 ): Promise<void> {
   let session = await db
     .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
@@ -617,9 +624,18 @@ export async function saveAttendance(
         .prepare(
           "INSERT INTO attendance_sessions (id, group_id, session_date, led_by, start_time, end_time, location, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(sessionId, groupId, sessionDate, ledBy, overrides.startTime, overrides.endTime, overrides.location, overrides.note)
+        .bind(
+          sessionId,
+          groupId,
+          sessionDate,
+          ledBy,
+          overrides?.startTime ?? null,
+          overrides?.endTime ?? null,
+          overrides?.location ?? null,
+          overrides?.note ?? null
+        )
     );
-  } else {
+  } else if (overrides) {
     statements.push(
       db
         .prepare(
@@ -629,6 +645,10 @@ export async function saveAttendance(
            WHERE id = ?`
         )
         .bind(ledBy, overrides.startTime, overrides.endTime, overrides.location, overrides.note, sessionId)
+    );
+  } else {
+    statements.push(
+      db.prepare("UPDATE attendance_sessions SET led_by = COALESCE(?, led_by) WHERE id = ?").bind(ledBy, sessionId)
     );
   }
   statements.push(db.prepare("DELETE FROM attendance_entries WHERE session_id = ?").bind(sessionId));
@@ -1268,6 +1288,130 @@ export async function setSessionLeader(db: D1Database, groupId: string, sessionD
       .bind(crypto.randomUUID(), groupId, sessionDate, ledBy)
       .run();
   }
+}
+
+// Nur die Termin-Überschreibung (Uhrzeit/Ort/Notiz) setzen, ohne Einträge
+// oder Leitung anzurühren - für die Freigabe eines abweichenden Termins
+// durch die Jugendleitung (siehe session_override_requests).
+export async function applySessionOverride(
+  db: D1Database,
+  groupId: string,
+  sessionDate: string,
+  overrides: SessionOverrides
+): Promise<void> {
+  const session = await db
+    .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
+    .bind(groupId, sessionDate)
+    .first<{ id: string }>();
+  if (session) {
+    await db
+      .prepare("UPDATE attendance_sessions SET start_time = ?, end_time = ?, location = ?, note = ? WHERE id = ?")
+      .bind(overrides.startTime, overrides.endTime, overrides.location, overrides.note, session.id)
+      .run();
+  } else {
+    await db
+      .prepare(
+        "INSERT INTO attendance_sessions (id, group_id, session_date, start_time, end_time, location, note) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(crypto.randomUUID(), groupId, sessionDate, overrides.startTime, overrides.endTime, overrides.location, overrides.note)
+      .run();
+  }
+}
+
+// --- Abweichende Termine (Freigabe der Jugendleitung) ---------------------------
+
+export async function createSessionOverrideRequest(
+  db: D1Database,
+  input: {
+    groupId: string;
+    sessionDate: string;
+    requestedBy: string;
+    startTime: string | null;
+    endTime: string | null;
+    location: string | null;
+    note: string | null;
+  }
+): Promise<SessionOverrideRequestRow> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO session_override_requests
+         (id, group_id, session_date, requested_by, start_time, end_time, location, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(id, input.groupId, input.sessionDate, input.requestedBy, input.startTime, input.endTime, input.location, input.note)
+    .run();
+  const row = await db
+    .prepare("SELECT * FROM session_override_requests WHERE id = ?")
+    .bind(id)
+    .first<SessionOverrideRequestRow>();
+  return row as SessionOverrideRequestRow;
+}
+
+export async function getSessionOverrideRequestById(db: D1Database, id: string): Promise<SessionOverrideRequestRow | null> {
+  return db.prepare("SELECT * FROM session_override_requests WHERE id = ?").bind(id).first<SessionOverrideRequestRow>();
+}
+
+export async function setSessionOverrideRequestStatus(
+  db: D1Database,
+  id: string,
+  status: SessionOverrideRequestStatus
+): Promise<void> {
+  await db
+    .prepare("UPDATE session_override_requests SET status = ?, resolved_at = datetime('now') WHERE id = ?")
+    .bind(status, id)
+    .run();
+}
+
+type SessionOverrideRequestJoinRow = SessionOverrideRequestRow & {
+  group_name: string;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+};
+
+const SESSION_OVERRIDE_REQUEST_DETAIL_SELECT = `
+  SELECT r.*, g.name as group_name, u.name as requested_by_name, u.email as requested_by_email
+  FROM session_override_requests r
+  JOIN groups g ON g.id = r.group_id
+  LEFT JOIN users u ON u.id = r.requested_by
+`;
+
+function rowToSessionOverrideRequestDetail(row: SessionOverrideRequestJoinRow): SessionOverrideRequestDetail {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    sessionDate: row.session_date,
+    requestedBy: row.requested_by,
+    requestedByName: row.requested_by_name ?? row.requested_by_email ?? null,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    location: row.location,
+    note: row.note,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+// Offene Anfragen für Gruppen im übergebenen Verein - für die Freigabe durch
+// die Jugendleitung.
+export async function listPendingSessionOverrideRequestsForClub(db: D1Database, clubId: string): Promise<SessionOverrideRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${SESSION_OVERRIDE_REQUEST_DETAIL_SELECT} WHERE r.status = 'pending' AND g.club_id = ?1 ORDER BY r.created_at ASC`
+    )
+    .bind(clubId)
+    .all<SessionOverrideRequestJoinRow>();
+  return results.map(rowToSessionOverrideRequestDetail);
+}
+
+// Eigene Anfragen (gestellt), neueste zuerst.
+export async function listMySessionOverrideRequests(db: D1Database, userId: string): Promise<SessionOverrideRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${SESSION_OVERRIDE_REQUEST_DETAIL_SELECT} WHERE r.requested_by = ?1 ORDER BY r.created_at DESC LIMIT 50`)
+    .bind(userId)
+    .all<SessionOverrideRequestJoinRow>();
+  return results.map(rowToSessionOverrideRequestDetail);
 }
 
 // Aktive Übernahme einer Vertretung für genau diesen Termin, falls vorhanden

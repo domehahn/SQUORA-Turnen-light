@@ -225,6 +225,23 @@ export interface HoursSummary {
   byYear: HoursSummaryYear[];
 }
 
+export type SessionOverrideRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface SessionOverrideRequest {
+  id: string;
+  groupId: string;
+  groupName: string;
+  sessionDate: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  note: string | null;
+  status: SessionOverrideRequestStatus;
+  createdAt: string;
+}
+
 export type ClubJoinRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export interface ClubJoinRequest {
