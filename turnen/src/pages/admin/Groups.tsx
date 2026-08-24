@@ -331,6 +331,7 @@ export default function Groups() {
             onChange={(e) => setMaxChildren(e.target.value)}
           />
         </div>
+        <div className="w-full" />
         <div className="w-40">
           <FloatingSelect label="Trainingstag (optional)" value={weekday} onChange={(e) => setWeekday(e.target.value)}>
             <option value="">–</option>
@@ -347,6 +348,7 @@ export default function Groups() {
         <div className="w-28">
           <FloatingInput label="Bis" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
         </div>
+        <div className="w-full" />
         <div className="w-40">
           <FloatingInput
             label="Ort/Halle (optional)"
