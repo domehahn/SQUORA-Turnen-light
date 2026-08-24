@@ -131,10 +131,13 @@ export default function AttendancePrint() {
   });
 
   // Anwesend-Zeile pro Termin (wie in der Übersicht) - wie viele der Kinder
-  // waren an diesem Tag da.
+  // waren an diesem Tag da, sowie die Quote bezogen auf die tatsächlich
+  // erfassten Kinder (nicht gegen alle - unerfasste zählen nicht als Absage).
   const dateStats = dates.map((d) => {
-    const present = groupChildren.filter((child) => attendance[d]?.find((e) => e.childId === child.id)?.present).length;
-    return { date: d, present, total: groupChildren.length };
+    const entries = groupChildren.map((child) => attendance[d]?.find((e) => e.childId === child.id)).filter(Boolean);
+    const present = entries.filter((e) => e?.present).length;
+    const recorded = entries.length;
+    return { date: d, present, total: groupChildren.length, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
   });
 
   return (
@@ -269,6 +272,14 @@ export default function AttendancePrint() {
                       {dateStats.map(({ date, present, total }) => (
                         <td key={date} className={`${tdClass} text-center`}>
                           {present}/{total}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr className="font-semibold">
+                      <td className={tdClass}>Quote</td>
+                      {dateStats.map(({ date, quote }) => (
+                        <td key={date} className={`${tdClass} text-center`}>
+                          {quote === null ? "–" : `${quote}%`}
                         </td>
                       ))}
                     </tr>

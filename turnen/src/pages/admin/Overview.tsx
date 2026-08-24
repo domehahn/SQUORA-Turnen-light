@@ -124,7 +124,8 @@ export default function Overview() {
   const dateStats = trainingDates.map((d) => {
     const entries = attendance[d] ?? [];
     const present = entries.filter((e) => e.present).length;
-    return { date: d, present, total: groupChildren.length };
+    const recorded = entries.length;
+    return { date: d, present, total: groupChildren.length, recorded, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
   });
 
   function childStats(childId: string) {
@@ -316,6 +317,15 @@ export default function Overview() {
                   {dateStats.map(({ date, present, total }) => (
                     <td key={date} className="px-2 py-2 text-center">
                       {present}/{total}
+                    </td>
+                  ))}
+                  <td className="px-4 py-2"></td>
+                </tr>
+                <tr className="border-t border-slate-100 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
+                  <td className="sticky left-0 z-10 bg-slate-50 px-4 py-2 font-medium dark:bg-slate-800/60">Quote</td>
+                  {dateStats.map(({ date, quote }) => (
+                    <td key={date} className="px-2 py-2 text-center">
+                      {quote === null ? "–" : `${quote}%`}
                     </td>
                   ))}
                   <td className="px-4 py-2"></td>
