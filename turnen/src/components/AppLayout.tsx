@@ -25,12 +25,12 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; end?: boo
       { to: "/uebersicht", label: "Übersicht" },
       { to: "/auslastung", label: "Auslastung" },
       { to: "/vertretungen", label: "Vertretungen" },
+      { to: "/warteliste", label: "Warteliste" },
     ],
   },
   {
     label: "Verein",
     items: [
-      { to: "/warteliste", label: "Warteliste" },
       { to: "/mitgliederstatistik", label: "Statistik" },
       { to: "/export", label: "Export" },
       { to: "/verlauf", label: "Verlauf" },
