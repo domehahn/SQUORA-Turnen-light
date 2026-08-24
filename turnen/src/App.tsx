@@ -17,6 +17,7 @@ import HoursReportPage from "./pages/HoursReport";
 import Substitutes from "./pages/admin/Substitutes";
 import ClubWaitlist from "./pages/admin/ClubWaitlist";
 import Dashboard from "./pages/admin/Dashboard";
+import MemberStats from "./pages/admin/MemberStats";
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="anwesenheit" element={<Attendance />} />
               <Route path="uebersicht" element={<Overview />} />
               <Route path="auslastung" element={<Utilization />} />
+              <Route path="mitgliederstatistik" element={<MemberStats />} />
               <Route path="kalender" element={<Calendar />} />
               <Route path="export" element={<Export />} />
               <Route path="verlauf" element={<AuditLog />} />

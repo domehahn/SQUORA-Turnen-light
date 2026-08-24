@@ -163,6 +163,7 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
     healthNotes: row.health_notes,
     familyId: row.family_id,
     status: row.status,
+    archivedAt: row.archived_at,
     canEdit,
     createdAt: row.created_at,
   };

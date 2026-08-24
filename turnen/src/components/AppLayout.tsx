@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/warteliste", label: "Warteliste" },
   { to: "/uebersicht", label: "Übersicht" },
   { to: "/auslastung", label: "Auslastung" },
+  { to: "/mitgliederstatistik", label: "Statistik" },
   { to: "/kalender", label: "Kalender" },
   { to: "/export", label: "Export" },
   { to: "/verlauf", label: "Verlauf" },

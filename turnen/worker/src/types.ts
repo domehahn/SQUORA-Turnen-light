@@ -91,6 +91,7 @@ export interface Child {
   healthNotes: string | null;
   familyId: string | null;
   status: ChildStatus;
+  archivedAt: string | null;
   canEdit: boolean;
   createdAt: string;
 }
