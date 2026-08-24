@@ -282,13 +282,6 @@ export default function AttendancePrint() {
                 )}
               </table>
 
-              {groupChildren.length > 0 && dates.length > 0 && (
-                <p className="mt-2 text-sm font-medium text-slate-800">
-                  Gesamtquote im Zeitraum:{" "}
-                  {overallQuote === null ? "–" : `${overallQuote}%`}
-                </p>
-              )}
-
               {groupChildren.length > 0 && (
                 <table className="mt-6 w-full max-w-md border-collapse text-sm">
                   <caption className="mb-1 text-left text-sm font-semibold text-slate-800">
@@ -315,6 +308,12 @@ export default function AttendancePrint() {
                     ))}
                   </tbody>
                 </table>
+              )}
+
+              {groupChildren.length > 0 && dates.length > 0 && (
+                <p className="mt-2 max-w-md border-t border-slate-300 pt-2 text-sm font-medium text-slate-800">
+                  Gesamtquote im Zeitraum: {overallQuote === null ? "–" : `${overallQuote}%`}
+                </p>
               )}
             </div>
           </>
