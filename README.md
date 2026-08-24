@@ -49,6 +49,7 @@ großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berech
 - Monatsübersicht pro Gruppe mit Anwesenheitsquote je Kind, Kalenderansicht der Trainingstermine (berücksichtigt rheinland-pfälzische Schulferien).
 - **Anwesenheits-Trends**: zeigt, welche Kinder seit Wochen nicht mehr da waren.
 - **Auslastungsübersicht**: Turnleiter*innen sehen die Auslastung der eigenen Gruppe(n), die Jugendleitung die aller Gruppen des Vereins.
+- **Mitgliederstatistik über Zeit**: Mitgliederzahl je Gruppe/Verein der letzten 12 Quartale, mit Trendbalken und Veränderung zum Vorquartal – basiert auf An-/Abmeldedatum der Kinder (möglich seit „Austreten lassen“ statt Löschen).
 
 ### Vertretungen
 - Eine Turnstunde kann von jemand anderem als der Gruppenleitung übernommen werden („Vertretung“); die Stunde zählt automatisch im Stundennachweis der vertretenden Person statt der eigentlichen Leitung.
@@ -102,6 +103,7 @@ zusätzlich alle Turnleiter-Rechte.
 | Vertretung anbieten/übernehmen | ✅ (Vertretungsbörse) | ✅ |
 | Vertretung zurückgeben | ✅ (als Vertretung oder als ursprüngliche Leitung) | ✅ |
 | Auslastung ansehen | nur eigene Gruppe(n) | alle Gruppen des Vereins |
+| Mitgliederstatistik ansehen | nur eigene Gruppe(n) | alle Gruppen des Vereins |
 | Verlauf/Audit-Log ansehen | nur eigene Gruppe | gesamter Verein |
 | Stunden-Export (CSV) | nur eigene Gruppen | eigene Gruppen **oder** vereinsweit |
 | Vereinsweite Warteliste: Kind anmelden | ✅ | ✅ |
