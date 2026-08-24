@@ -6,58 +6,100 @@ Trainingstermin erfassen, Vertretungen organisieren und daraus automatisch
 den amtlichen Übungsleiter-Stundennachweis erzeugen.
 
 Aufbau im Stil von [tournament-manager](https://github.com/): React 19 + Vite
-+ Tailwind v4 Frontend (SQUORA-Blau-Farbschema), Cloudflare Worker (Hono) +
-D1 als Backend mit JWT-Login, als zwei Cloudflare Workers deploybar
-(`turnen-web` für Assets/SPA, `turnen-api` für die API). E-Mail-Versand über
-Cloudflare Email Sending (`no_reply@squora.de`).
++ Tailwind v4 Frontend (SQUORA-Blau-Farbschema, Logo/Tabellenstil auch auf
+den Druckseiten), Cloudflare Worker (Hono) + D1 als Backend mit JWT-Login,
+als zwei Cloudflare Workers deploybar (`turnen-web` für Assets/SPA,
+`turnen-api` für die API). E-Mail-Versand über Cloudflare Email Sending
+(`no_reply@squora.de`).
+
+Die App kennt zwei Rollen pro Verein: **Turnleiter*in** (`member`, leitet
+eine oder mehrere eigene Gruppen) und **Jugendleiter*in** (`jugendleiter`,
+Vereinsverwaltung + Freigabe-Instanz). Eine Jugendleitung kann gleichzeitig
+auch eigene Gruppen leiten – überall, wo das relevant ist, greift dann die
+großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berechtigungen).
 
 ## Features
 
 ### Gruppen & Kinder
 - Altersgruppen mit Alters-Range, optionalem Kapazitätslimit, Wochentag/Uhrzeit/Ort.
 - Kinder mit Name, Geburtsdatum, Notfallkontakt, Gesundheitshinweisen (z. B. Allergien).
+- Kinder-Liste nach Gruppe gruppiert (Überschrift pro Gruppe statt Gruppen-Spalte).
 - Automatische Berechnung, wann ein Kind altersbedingt in die nächste Gruppe wechseln müsste, inkl. Verschiebe-Workflow.
-- **Geschwister-Verknüpfung**: Kinder lassen sich zu einer Familie (gemeinsamer Kontakt) zusammenfassen – vereinsweit, funktioniert also auch gruppen- und übungsleiterübergreifend.
-- **Warteliste**: Ist eine Gruppe voll, landet ein Kind auf der Warteliste und rückt automatisch nach, sobald ein Platz frei wird.
+- **Geschwister-Verknüpfung**: Kinder direkt über eine Auswahl anderer Kinder als Geschwister verknüpfen (keine separat zu benennende „Familie“ mehr) – vereinsweit, funktioniert also auch gruppen- und übungsleiterübergreifend.
+- **Gruppen-Warteliste**: Ist eine Gruppe voll, landet ein Kind auf der Warteliste und rückt automatisch nach, sobald ein Platz frei wird.
+- **Vereinsweite Warteliste** (getrennt von der Gruppen-Warteliste): Kinder ohne Gruppe – auch als Direkt-Neuanmeldung ohne Umweg über die Kinder-Seite anlegbar. Turnleiter*innen melden an, die Jugendleitung sieht die konsolidierte Liste, kann eine passende Gruppe vorschlagen (automatische Empfehlung nach Alter + geringster Auslastung) und wird bei jeder Neuanmeldung per E-Mail benachrichtigt; die vorgeschlagene Gruppenleitung muss den Vorschlag aktiv bestätigen oder ablehnen, bevor das Kind wirklich verschoben wird.
 
 ### Mehrere Vereine (Multi-Club)
 - Gruppen gehören einem Verein; andere Übungsleiter*innen desselben Vereins sehen dessen Gruppen/Kinder lesend mit.
-- Rolle **Jugendleiter*in**: kann Mitglieder dem Verein zuordnen, hat das letzte Wort bei Kapazitäts- und Altersgruppen-Konflikten.
+- **Vereinsbeitritt braucht Freigabe**: Tritt jemand einem Verein mit bestehender Jugendleitung bei, entsteht eine Beitrittsanfrage – die Jugendleitung muss sie freigeben oder ablehnen (Vereine ohne Jugendleitung bleiben direkt beitretbar). Verlassen eines Vereins bleibt jederzeit sofort möglich.
+- Mitgliederliste samt Befördern/Zurückstufen zur Jugendleitung sieht nur die Jugendleitung selbst.
 - **Genehmigungs-Workflows**: Altersgruppen-Wechsel und Kapazitätsüberschreitungen lösen – je nach Zuständigkeit – entweder eine Selbstbestätigung oder eine Freigabe-Anfrage an die Jugendleitung aus.
 - Altbestand ohne Vereinszuordnung lässt sich per „Beanspruchen“ (Claim) einem Verein zuordnen.
 
 ### Anwesenheit & Übersicht
-- Anwesenheitsliste pro Gruppe und Termin, inkl. Sondertermine (z. B. Turnier) mit abweichender Uhrzeit/Ort/Notiz.
+- Anwesenheitsliste pro Gruppe – auswählbar sind nur Termine am konfigurierten Trainingstag der Gruppe, plus eigene, aktuell übernommene Vertretungstermine.
+- **Abweichender Termin** (z. B. Turnier, andere Uhrzeit/Ort): Turnleiter*innen können das nur anfragen, die Jugendleitung muss freigeben oder ablehnen; die eigentliche Anwesenheitserfassung wird davon unabhängig sofort gespeichert.
 - **„Wer hat geleitet?“**: Jeder Termin bekommt eine Leitung zugeordnet (vereinsweite Auswahl) – Basis für die Stundenerfassung.
 - Monatsübersicht pro Gruppe mit Anwesenheitsquote je Kind, Kalenderansicht der Trainingstermine (berücksichtigt rheinland-pfälzische Schulferien).
 - **Anwesenheits-Trends**: zeigt, welche Kinder seit Wochen nicht mehr da waren.
-- Club-weite **Auslastungsübersicht**: wie voll sind die Gruppen im Verein.
+- **Auslastungsübersicht**: Turnleiter*innen sehen die Auslastung der eigenen Gruppe(n), die Jugendleitung die aller Gruppen des Vereins.
 
 ### Vertretungen
 - Eine Turnstunde kann von jemand anderem als der Gruppenleitung übernommen werden („Vertretung“); die Stunde zählt automatisch im Stundennachweis der vertretenden Person statt der eigentlichen Leitung.
-- Sichtbar in der Übersicht (↺-Markierung an den betroffenen Terminen).
-- Benachrichtigung + Eintrag im Verlauf, sobald jemand als Vertretung eingetragen wird.
 - **Vertretungsbörse**: offene Vertretungs-Anfragen vereinsweit veröffentlichen, übernehmen oder zurückziehen.
+- Sobald eine Anfrage übernommen ist, liegen die Schreibrechte für genau diesen Termin exklusiv bei der Vertretung – die ursprüngliche Gruppenleitung kann für diesen Tag keine Anwesenheit mehr erfassen und sich die Stunde nicht mehr selbst anrechnen.
+- **Zurückgeben**: sowohl die Vertretung („kann kurzfristig doch nicht“) als auch die ursprüngliche Gruppenleitung („übernimmt kurzfristig wieder selbst“) können eine übernommene Vertretung zurückgeben – die Schreibrechte wandern sofort zurück.
+- Sichtbar im Trainingskalender (Abschnitt „Anstehende Vertretungen“, vereinsweit) und in der Übersicht (↺-Markierung an den betroffenen Terminen).
+- Benachrichtigung + Eintrag im Verlauf, sobald jemand als Vertretung eingetragen wird.
+
+### Trainingskalender
+- Wochenplan aller Gruppen des Vereins, nach Wochentag sortiert; eigene Gruppe(n) sind optisch hervorgehoben.
+- Abschnitt „Anstehende Vertretungen“: alle bereits übernommenen Vertretungstermine im Verein ab heute, mit Datum, Gruppe und wer für wen einspringt.
 
 ### Stundennachweis
-- Bildet das amtliche Landessportbund-Formular „Stundennachweis des Übungsleiters“ 1:1 nach – automatisch befüllt aus den erfassten Anwesenheiten/Leitungen, nach Jahr/Quartal wählbar.
+- Bildet das amtliche Landessportbund-Formular „Stundennachweis des Übungsleiters“ 1:1 nach (inkl. SQUORA-Logo/Farbschema) – automatisch befüllt aus den erfassten Anwesenheiten/Leitungen, nach Jahr/Quartal wählbar, Ort/Sportart/Lizenz-Nr. frei editierbar.
 - Rechnet die **Aufbauzeit** korrekt mit ein: die eigentliche Stunde beginnt 30 Minuten vor dem Trainingsbeginn (z. B. Training 16:30–17:30 → angerechnet 16:00–17:30). Gilt einheitlich für Stundennachweis und CSV-Export.
 - **Gesamtübersicht**: wie viele Stunden insgesamt schon geleitet wurden – aufgeteilt in eigene Gruppen vs. als Vertretung, mit Jahres-Aufschlüsselung.
-- CSV-Export der geleisteten Stunden (eigener Zeitraum oder, als Jugendleitung, vereinsweit) als Basis für Zuschussnachweis/Übungsleiterpauschale.
+- CSV-Export der geleisteten Stunden: Turnleiter*innen sehen und exportieren nur die eigenen Gruppen, die Jugendleitung zusätzlich wahlweise alle Gruppen des Vereins.
 
 ### Druckansichten
-- Anwesenheitsliste zum Ausdrucken mit wählbarem Zeitraum (Standard: aktueller Monat).
-- Namensliste (Nachname, Vorname, Geburtsdatum) zum Ausdrucken.
-- Alle Druckseiten sind unabhängig vom App-Darkmode immer hell/kontrastreich gestaltet.
+- Anwesenheitsliste zum Ausdrucken mit wählbarem Zeitraum (Standard: aktueller Monat), inkl. Gesamtanzahl der Kinder und einer Quote-Tabelle je Kind (X von Y Terminen, Prozent).
+- Namensliste (Nachname, Vorname, Geburtsdatum) zum Ausdrucken – auswählbar für mehrere Gruppen gleichzeitig (Badge-Auswahl), jede Gruppe auf eigener Seite.
+- Alle Druckseiten sind unabhängig vom App-Darkmode immer hell/kontrastreich gestaltet, im SQUORA-Formularstil (Logo, blaue Tabellenköpfe).
 
 ### Benachrichtigungen & Nachvollziehbarkeit
-- In-App-Postfach plus E-Mail-Benachrichtigung (Cloudflare Email Sending) bei Vertretungen, Genehmigungs-Anfragen, Wartelisten-Nachrückern etc.
-- **Verlauf/Audit-Log**: wer hat wann was geändert (Vertretungen, Genehmigungen, Gruppenwechsel …), vereinsweit einsehbar.
+- In-App-Postfach plus E-Mail-Benachrichtigung (Cloudflare Email Sending) bei Vertretungen, Genehmigungs-Anfragen, Wartelisten-Vorschlägen, Beitrittsanfragen etc.
+- **Verlauf/Audit-Log**: wer hat wann was geändert. Turnleiter*innen sehen nur Einträge zu ihrer eigenen Gruppe, die Jugendleitung den gesamten Verein.
 - **Suche** über Kinder und Gruppen.
 
 ### Sonstiges
 - PWA/Offline-fähig (Vite PWA, Caching der wichtigsten GET-Endpunkte).
-- SQUORA-Branding: Logo + blaues Farbschema (Remap der Tailwind-Emerald-Palette).
+- SQUORA-Branding: Logo + blaues Farbschema (Remap der Tailwind-Emerald-Palette), auch auf den Druckseiten.
+
+## Berechtigungen
+
+Kurzübersicht, wer was darf. „Eigene Gruppe“ bedeutet: Gruppen, deren
+`owner_id` der jeweiligen Person entspricht (oder herrenlose Alt-Gruppen ohne
+Verein). Eine Jugendleitung, die selbst eine Gruppe leitet, hat für diese
+zusätzlich alle Turnleiter-Rechte.
+
+| Bereich | Turnleiter*in | Jugendleiter*in |
+|---|---|---|
+| Eigene Gruppen/Kinder anlegen & bearbeiten | ✅ | ✅ (eigene) |
+| Fremde Gruppen/Kinder desselben Vereins | nur lesend | nur lesend (Schreiben bleibt bei der Gruppenleitung) |
+| Anwesenheit erfassen | nur eigene Gruppe, nur am Trainingstag (+ eigene Vertretungstermine) | wie Turnleiter*in für eigene Gruppe(n) |
+| Abweichenden Termin setzen (Uhrzeit/Ort) | nur anfragen | anfragen **und** freigeben/ablehnen |
+| Vertretung anbieten/übernehmen | ✅ (Vertretungsbörse) | ✅ |
+| Vertretung zurückgeben | ✅ (als Vertretung oder als ursprüngliche Leitung) | ✅ |
+| Auslastung ansehen | nur eigene Gruppe(n) | alle Gruppen des Vereins |
+| Verlauf/Audit-Log ansehen | nur eigene Gruppe | gesamter Verein |
+| Stunden-Export (CSV) | nur eigene Gruppen | eigene Gruppen **oder** vereinsweit |
+| Vereinsweite Warteliste: Kind anmelden | ✅ | ✅ |
+| Vereinsweite Warteliste: Gesamtliste ansehen, Gruppe vorschlagen | ❌ | ✅ |
+| Platzvorschlag für eigene Gruppe bestätigen/ablehnen | ✅ | ✅ |
+| Vereinsbeitritt | Anfrage stellen (braucht Freigabe, außer der Verein hat noch keine Jugendleitung) | direkt, plus Freigabe fremder Anfragen |
+| Mitgliederliste/-verwaltung, Vereinsnummer | ❌ | ✅ |
+| Kapazitäts-/Altersgruppen-Konflikte | Selbstbestätigung oder Freigabe-Anfrage, je nach Zuständigkeit | freigeben/ablehnen (bzw. Selbstbestätigung für eigene Gruppen) |
 
 ## Projektstruktur
 
@@ -66,7 +108,8 @@ turnen/
 ├── src/                 React-SPA (Vite, Tailwind v4, React Router)
 │   ├── pages/
 │   │   ├── admin/       Gruppen, Kinder, Anwesenheit, Übersicht, Auslastung,
-│   │   │                Kalender, Export, Verlauf, Vertretungen, Verein
+│   │   │                Kalender, Export, Verlauf, Vertretungen, Warteliste,
+│   │   │                Verein
 │   │   ├── AttendancePrint.tsx   Druckansicht Anwesenheitsliste/Namensliste
 │   │   └── HoursReport.tsx       Stundennachweis (eigene Route, außerhalb des Layouts)
 │   └── components/      Layout, Formulare, SQUORA-Branding
