@@ -125,8 +125,11 @@ export default function Overview() {
     const entries = attendance[d] ?? [];
     const present = entries.filter((e) => e.present).length;
     const recorded = entries.length;
-    return { date: d, present, total: groupChildren.length, recorded, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
+    return { date: d, present, total: groupChildren.length, recorded };
   });
+  const totalPresent = dateStats.reduce((sum, s) => sum + s.present, 0);
+  const totalRecorded = dateStats.reduce((sum, s) => sum + s.recorded, 0);
+  const overallQuote = totalRecorded > 0 ? Math.round((totalPresent / totalRecorded) * 100) : null;
 
   function childStats(childId: string) {
     let present = 0;
@@ -321,18 +324,14 @@ export default function Overview() {
                   ))}
                   <td className="px-4 py-2"></td>
                 </tr>
-                <tr className="border-t border-slate-100 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
-                  <td className="sticky left-0 z-10 bg-slate-50 px-4 py-2 font-medium dark:bg-slate-800/60">Quote</td>
-                  {dateStats.map(({ date, quote }) => (
-                    <td key={date} className="px-2 py-2 text-center">
-                      {quote === null ? "–" : `${quote}%`}
-                    </td>
-                  ))}
-                  <td className="px-4 py-2"></td>
-                </tr>
               </tfoot>
             )}
           </table>
+          {groupChildren.length > 0 && trainingDates.length > 0 && (
+            <p className="border-t border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 dark:border-slate-800 dark:text-slate-300">
+              Gesamtquote im Zeitraum: {overallQuote === null ? "–" : `${overallQuote}%`}
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -137,8 +137,11 @@ export default function AttendancePrint() {
     const entries = groupChildren.map((child) => attendance[d]?.find((e) => e.childId === child.id)).filter(Boolean);
     const present = entries.filter((e) => e?.present).length;
     const recorded = entries.length;
-    return { date: d, present, total: groupChildren.length, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
+    return { date: d, present, total: groupChildren.length, recorded };
   });
+  const totalPresent = dateStats.reduce((sum, s) => sum + s.present, 0);
+  const totalRecorded = dateStats.reduce((sum, s) => sum + s.recorded, 0);
+  const overallQuote = totalRecorded > 0 ? Math.round((totalPresent / totalRecorded) * 100) : null;
 
   return (
     // Druckansichten sind bewusst immer hell/schwarz auf weiß, unabhängig
@@ -275,17 +278,16 @@ export default function AttendancePrint() {
                         </td>
                       ))}
                     </tr>
-                    <tr className="font-semibold">
-                      <td className={tdClass}>Quote</td>
-                      {dateStats.map(({ date, quote }) => (
-                        <td key={date} className={`${tdClass} text-center`}>
-                          {quote === null ? "–" : `${quote}%`}
-                        </td>
-                      ))}
-                    </tr>
                   </tfoot>
                 )}
               </table>
+
+              {groupChildren.length > 0 && dates.length > 0 && (
+                <p className="mt-2 text-sm font-medium text-slate-800">
+                  Gesamtquote im Zeitraum:{" "}
+                  {overallQuote === null ? "–" : `${overallQuote}%`}
+                </p>
+              )}
 
               {groupChildren.length > 0 && (
                 <table className="mt-6 w-full max-w-md border-collapse text-sm">
