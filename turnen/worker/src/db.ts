@@ -1533,6 +1533,23 @@ export async function listOpenSubstituteRequestsForClub(db: D1Database, clubId: 
   return results.map(rowToSubstituteRequestDetail);
 }
 
+// Anstehende, bereits übernommene Vertretungen im ganzen Verein (heute oder
+// später) - für den Vertretungs-Kalender, damit alle sehen, wer an welchem
+// Tag für wen einspringt, nicht nur die beiden Beteiligten selbst.
+export async function listUpcomingClaimedSubstituteRequestsForClub(
+  db: D1Database,
+  clubId: string,
+  fromDate: string
+): Promise<SubstituteRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status = 'claimed' AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
+    )
+    .bind(clubId, fromDate)
+    .all<SubstituteRequestJoinRow>();
+  return results.map(rowToSubstituteRequestDetail);
+}
+
 // Eigene Anfragen (gestellt oder übernommen), neueste zuerst.
 export async function listMySubstituteRequests(db: D1Database, userId: string): Promise<SubstituteRequestDetail[]> {
   const { results } = await db

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import type { Group } from "../../lib/types";
+import type { Group, SubstituteRequest } from "../../lib/types";
+import { useAuth } from "../../context/useAuth";
+
+function formatShortDate(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return `${day}.${month}.`;
+}
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0]; // Montag ... Sonntag
 const WEEKDAY_NAMES = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -24,7 +30,9 @@ function colorFor(groupId: string): string {
 }
 
 export default function Calendar() {
+  const { userId } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [upcomingSubstitutes, setUpcomingSubstitutes] = useState<SubstituteRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +41,11 @@ export default function Calendar() {
       setLoading(true);
       try {
         setGroups(await api.get<Group[]>("/api/groups"));
+        try {
+          setUpcomingSubstitutes(await api.get<SubstituteRequest[]>("/api/substitute-requests/upcoming"));
+        } catch {
+          // Zusatzinfo - Ladefehler soll den Wochenplan nicht blockieren.
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden");
       } finally {
@@ -77,8 +90,16 @@ export default function Calendar() {
                 <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{WEEKDAY_NAMES[i]}</h3>
                 <div className="space-y-2">
                   {byWeekday[day].map((g) => (
-                    <div key={g.id} className={`rounded-md border px-2 py-1.5 text-xs ${colorFor(g.id)}`}>
-                      <p className="font-medium">{g.name}</p>
+                    <div
+                      key={g.id}
+                      className={`rounded-md border px-2 py-1.5 text-xs ${colorFor(g.id)} ${
+                        g.ownerId === userId ? "ring-2 ring-offset-1 ring-current dark:ring-offset-slate-900" : ""
+                      }`}
+                    >
+                      <p className="font-medium">
+                        {g.name}
+                        {g.ownerId === userId && <span className="ml-1 font-normal opacity-70">(meine Gruppe)</span>}
+                      </p>
                       {g.startTime && g.endTime && (
                         <p>
                           {g.startTime}–{g.endTime}
@@ -105,6 +126,34 @@ export default function Calendar() {
               </ul>
             </div>
           )}
+
+          <div>
+            <h3 className="mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
+              Anstehende Vertretungen
+            </h3>
+            <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+              Bereits übernommene Vertretungstermine im Verein – wer springt wann für wen ein.
+            </p>
+            {upcomingSubstitutes.length === 0 ? (
+              <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell keine anstehenden Vertretungen.</p>
+            ) : (
+              <ul className="space-y-2">
+                {upcomingSubstitutes.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm dark:border-purple-900 dark:bg-purple-950/40"
+                  >
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                      {formatShortDate(r.sessionDate)}
+                    </span>
+                    <span className="text-purple-900 dark:text-purple-200">
+                      {r.groupName} · {r.claimedByName ?? "jemand"} vertritt {r.requestedByName ?? "jemanden"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </>
       )}
     </div>
