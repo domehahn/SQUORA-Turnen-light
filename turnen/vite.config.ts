@@ -17,12 +17,28 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: "autoUpdate",
-        // App-Shell (HTML/CSS/JS) wird gecacht, damit die App auch ohne Netz
-        // sofort öffnet. Schreibende API-Calls brauchen weiterhin eine
-        // Verbindung - hier geht es nur ums schnelle/robuste Laden, nicht um
-        // eine echte Offline-Warteschlange für Änderungen.
         workbox: {
-          globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
+          // App-Shell (CSS/JS/Icons) wird gecacht, damit die App auch ohne
+          // Netz sofort öffnet. Schreibende API-Calls brauchen weiterhin
+          // eine Verbindung - hier geht es nur ums schnelle/robuste Laden,
+          // nicht um eine echte Offline-Warteschlange für Änderungen.
+          //
+          // "html" bewusst NICHT in globPatterns: sonst precacht Workbox
+          // index.html und beantwortet jede Navigation danach dauerhaft aus
+          // dem lokalen Cache (CacheFirst), ohne je wieder das Netz zu
+          // fragen - eine zufällig einmal fehlerhaft gecachte Antwort (z. B.
+          // während eines Deploys/Routing-Wechsels) bliebe dann bis zu 24h
+          // oder länger hängen, weil auch die Update-Prüfung des Browsers
+          // für den Service Worker selbst nicht zuverlässig zeitnah greift.
+          // Die Navigationsanfrage geht dadurch immer live ans Netz;
+          // JS/CSS/Icons bleiben trotzdem für echtes Offline-Öffnen der
+          // App-Shell gecacht.
+          globPatterns: ["**/*.{js,css,png,svg,ico}"],
+          // vite-plugin-pwa registriert sonst automatisch eine
+          // NavigationRoute auf ein precachtes index.html (CacheFirst),
+          // unabhängig von globPatterns - navigateFallback: null schaltet
+          // das komplett ab, Navigationen gehen dadurch immer ans Netz.
+          navigateFallback: null,
           runtimeCaching: [
             {
               // Ohne führendes "^/": funktioniert unabhängig davon, ob die
