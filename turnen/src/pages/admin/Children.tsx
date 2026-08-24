@@ -982,7 +982,24 @@ export default function Children() {
                           : `ab ${formatMonthYear(switchDate)}`;
                       }
 
-                      const moveTargets = groups.filter((g) => g.id !== child.groupId);
+                      // Vorschlags-Reihenfolge wie bei der Warteliste: erst
+                      // altersmäßig passende, dann nach geringster
+                      // Auslastung sortiert - freie Gruppen stehen oben,
+                      // volle ganz unten.
+                      const moveTargets = groups
+                        .filter((g) => g.id !== child.groupId)
+                        .map((g) => {
+                          const count = children.filter((c) => c.groupId === g.id).length;
+                          const fits = age >= g.minAge && age < g.maxAge;
+                          const full = g.maxChildren !== null && count >= g.maxChildren;
+                          return { g, count, fits, full, utilization: g.maxChildren ? count / g.maxChildren : 0 };
+                        })
+                        .sort((a, b) => {
+                          if (a.fits !== b.fits) return a.fits ? -1 : 1;
+                          if (a.full !== b.full) return a.full ? 1 : -1;
+                          if (a.utilization !== b.utilization) return a.utilization - b.utilization;
+                          return a.count - b.count;
+                        });
                       const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
                       const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
                       const siblings = child.familyId
@@ -1078,20 +1095,18 @@ export default function Children() {
                                 className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                               >
                                 <option value="">Verschieben nach…</option>
-                                {moveTargets.map((g) => {
-                                  const fits = age >= g.minAge && age < g.maxAge;
-                                  const full = g.maxChildren !== null && children.filter((c) => c.groupId === g.id).length >= g.maxChildren;
+                                {moveTargets.map(({ g, count, fits, full }) => {
+                                  const occupancy = `${count}/${g.maxChildren ?? "∞"}`;
                                   if (full) {
                                     return (
                                       <option key={g.id} value={`${WAITLIST_PREFIX}${g.id}`}>
-                                        {g.name} (voll – auf Warteliste)
+                                        {g.name} ({occupancy}, voll – auf Warteliste)
                                       </option>
                                     );
                                   }
                                   return (
                                     <option key={g.id} value={g.id}>
-                                      {g.name}
-                                      {fits ? "" : " (benötigt Freigabe)"}
+                                      {g.name} ({occupancy}){fits ? "" : " (benötigt Freigabe)"}
                                     </option>
                                   );
                                 })}

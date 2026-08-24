@@ -212,46 +212,64 @@ export default function Dashboard() {
             </div>
           )}
 
-          {(mismatched.overdue.length > 0 || mismatched.tooYoung.length > 0) && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {mismatched.overdue.length > 0 && (
-                <Link
-                  to="/kinder"
-                  className="rounded-lg border border-red-300 bg-red-50 p-4 hover:border-red-400 dark:border-red-800 dark:bg-red-950/50 dark:hover:border-red-700"
-                >
-                  <h3 className="mb-2 text-sm font-semibold text-red-800 dark:text-red-300">
-                    Wechsel überfällig ({mismatched.overdue.length})
-                  </h3>
-                  <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
-                    {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
-                      <li key={child.id}>
-                        {child.firstName} {child.lastName} – noch in {currentGroup.name}
-                        {targetGroup ? `, gehört eigentlich zu ${targetGroup.name}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </Link>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Link
+              to="/kinder"
+              className={`rounded-lg border p-4 ${
+                mismatched.overdue.length > 0
+                  ? "border-red-300 bg-red-50 hover:border-red-400 dark:border-red-800 dark:bg-red-950/50 dark:hover:border-red-700"
+                  : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+              }`}
+            >
+              <h3
+                className={`mb-2 text-sm font-semibold ${
+                  mismatched.overdue.length > 0 ? "text-red-800 dark:text-red-300" : "text-slate-500 dark:text-slate-400"
+                }`}
+              >
+                Wechsel überfällig ({mismatched.overdue.length})
+              </h3>
+              {mismatched.overdue.length > 0 ? (
+                <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
+                  {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
+                    <li key={child.id}>
+                      {child.firstName} {child.lastName} – noch in {currentGroup.name}
+                      {targetGroup ? `, gehört eigentlich zu ${targetGroup.name}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell kein überfälliger Wechsel.</p>
               )}
-              {mismatched.tooYoung.length > 0 && (
-                <Link
-                  to="/kinder"
-                  className="rounded-lg border border-purple-300 bg-purple-50 p-4 hover:border-purple-400 dark:border-purple-800 dark:bg-purple-950/50 dark:hover:border-purple-700"
-                >
-                  <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">
-                    Eigentlich noch zu jung für die Gruppe ({mismatched.tooYoung.length})
-                  </h3>
-                  <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
-                    {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
-                      <li key={child.id}>
-                        {child.firstName} {child.lastName} – in {currentGroup.name}
-                        {targetGroup ? `, passt eher zu ${targetGroup.name}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </Link>
+            </Link>
+            <Link
+              to="/kinder"
+              className={`rounded-lg border p-4 ${
+                mismatched.tooYoung.length > 0
+                  ? "border-purple-300 bg-purple-50 hover:border-purple-400 dark:border-purple-800 dark:bg-purple-950/50 dark:hover:border-purple-700"
+                  : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+              }`}
+            >
+              <h3
+                className={`mb-2 text-sm font-semibold ${
+                  mismatched.tooYoung.length > 0 ? "text-purple-800 dark:text-purple-300" : "text-slate-500 dark:text-slate-400"
+                }`}
+              >
+                Eigentlich noch zu jung für die Gruppe ({mismatched.tooYoung.length})
+              </h3>
+              {mismatched.tooYoung.length > 0 ? (
+                <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
+                  {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
+                    <li key={child.id}>
+                      {child.firstName} {child.lastName} – in {currentGroup.name}
+                      {targetGroup ? `, passt eher zu ${targetGroup.name}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell kein Kind zu jung für seine Gruppe.</p>
               )}
-            </div>
-          )}
+            </Link>
+          </div>
 
           {upcomingSubstitutes.length > 0 && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">
@@ -267,12 +285,9 @@ export default function Dashboard() {
             </div>
           )}
 
-          {todos.length === 0 &&
-            upcomingSubstitutes.length === 0 &&
-            mismatched.overdue.length === 0 &&
-            mismatched.tooYoung.length === 0 && (
+          {todos.length === 0 && upcomingSubstitutes.length === 0 && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
-              Aktuell nichts, was auf dich wartet.
+              Keine offenen Anfragen und keine anstehenden Vertretungen.
             </div>
           )}
         </>
