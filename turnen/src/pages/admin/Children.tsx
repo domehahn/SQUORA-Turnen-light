@@ -1100,17 +1100,26 @@ export default function Children() {
                           </td>
                           <td className="px-4 py-2 text-right">
                             {child.canEdit ? (
-                              <>
-                                <button onClick={() => startEdit(child)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <button
+                                  onClick={() => startEdit(child)}
+                                  className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900"
+                                >
                                   Bearbeiten
                                 </button>
-                                <button onClick={() => handleArchive(child.id)} className="mr-3 text-sm text-amber-700 hover:underline dark:text-amber-400">
+                                <button
+                                  onClick={() => handleArchive(child.id)}
+                                  className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:hover:bg-amber-900"
+                                >
                                   Austreten lassen
                                 </button>
-                                <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                                <button
+                                  onClick={() => handleDelete(child.id)}
+                                  className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
+                                >
                                   Löschen
                                 </button>
-                              </>
+                              </div>
                             ) : (
                               <span
                                 className="text-sm text-slate-300 dark:text-slate-600"
@@ -1158,17 +1167,20 @@ export default function Children() {
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{groupName(child.groupId)}</td>
                     <td className="px-4 py-2 text-right">
                       {child.canEdit ? (
-                        <>
+                        <div className="flex flex-wrap justify-end gap-1.5">
                           <button
                             onClick={() => handleReactivate(child.id)}
-                            className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400"
+                            className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900"
                           >
                             Reaktivieren
                           </button>
-                          <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                          <button
+                            onClick={() => handleDelete(child.id)}
+                            className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
+                          >
                             Endgültig löschen
                           </button>
-                        </>
+                        </div>
                       ) : (
                         <span className="text-sm text-slate-300 dark:text-slate-600">nur lesbar</span>
                       )}
