@@ -1,5 +1,11 @@
 const TOKEN_KEY = "turnen_auth_token";
 
+// Leer am Domain-Root (lokale Entwicklung), "/turnen-light" im
+// Produktions-Build (siehe .env.production) - die App läuft dort unter
+// squora.de/turnen-light/ statt am Root, API-Aufrufe müssen also denselben
+// Präfix tragen.
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -28,7 +34,7 @@ export class ApiError extends Error {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = getToken();
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -42,6 +48,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+// Für Stellen außerhalb von api.get/post/..., die selbst fetch() aufrufen
+// (z.B. CSV-Download) oder einen rohen App-Pfad brauchen (z.B. Druck-Links).
+export function apiPath(path: string): string {
+  return `${API_BASE}${path}`;
 }
 
 export const api = {

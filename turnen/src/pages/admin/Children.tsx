@@ -12,6 +12,7 @@ import type {
 } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
+import { appPath } from "../../lib/paths";
 import {
   calculateAgeYears,
   formatMonthYear,
@@ -921,7 +922,7 @@ export default function Children() {
         {printGroupIds.length > 0 && (
           <>
             <a
-              href={`/druck?mode=namen&groupIds=${printGroupIds.join(",")}`}
+              href={appPath(`/druck?mode=namen&groupIds=${printGroupIds.join(",")}`)}
               target="_blank"
               rel="noreferrer"
               className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -929,7 +930,7 @@ export default function Children() {
               Namensliste drucken ({printGroupIds.length})
             </a>
             <a
-              href={`/druck?mode=notfall&groupIds=${printGroupIds.join(",")}`}
+              href={appPath(`/druck?mode=notfall&groupIds=${printGroupIds.join(",")}`)}
               target="_blank"
               rel="noreferrer"
               className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"

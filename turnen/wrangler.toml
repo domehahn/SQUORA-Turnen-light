@@ -6,6 +6,10 @@ main = "cloudflare/web-router.ts"
 compatibility_date = "2026-07-01"
 workers_dev = true
 
+[[routes]]
+pattern = "squora.de/turnen-light*"
+zone_name = "squora.de"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

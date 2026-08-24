@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { getToken } from "../../lib/api";
+import { apiPath, getToken } from "../../lib/api";
 import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
+import { appPath } from "../../lib/paths";
 
 function firstOfMonth(): string {
   const now = new Date();
@@ -26,7 +27,7 @@ export default function Export() {
     setBusy(true);
     try {
       const token = getToken();
-      const res = await fetch(`/api/export/hours?from=${from}&to=${to}&scope=${scope}`, {
+      const res = await fetch(apiPath(`/api/export/hours?from=${from}&to=${to}&scope=${scope}`), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
@@ -98,7 +99,7 @@ export default function Export() {
           Unterschreiben.
         </p>
         <a
-          href="/nachweis"
+          href={appPath("/nachweis")}
           target="_blank"
           rel="noreferrer"
           className="inline-block rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"

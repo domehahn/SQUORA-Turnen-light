@@ -188,9 +188,19 @@ npm run build
 npm run web:deploy
 ```
 
-`turnen/worker/wrangler.toml` und `turnen/wrangler.toml` sind so vorbereitet,
-dass bei Bedarf ein `[[routes]]`-Eintrag mit einer eigenen Domain ergänzt
-werden kann (analog zum Referenzprojekt `tournament-manager`).
+Live erreichbar unter:
+- <https://squora.de/turnen-light/> (primär, per `[[routes]]`-Eintrag in
+  `turnen/wrangler.toml` an die bestehende, Cloudflare-verwaltete Zone
+  `squora.de` gebunden – analog zum Referenzprojekt `tournament-manager`)
+- <https://turnen-web.squora.workers.dev> (Standard-`workers.dev`-Subdomain,
+  bleibt zusätzlich aktiv)
+
+Der Produktions-Build referenziert seine eigenen Assets dafür unter dem
+Präfix `/turnen-light/...` (`VITE_APP_BASE_PATH` in `turnen/.env.production`);
+`cloudflare/web-router.ts` schneidet diesen Präfix host-unabhängig wieder ab,
+sodass beide URLs mit demselben Build bedient werden. Lokale Entwicklung
+bleibt davon unberührt (kein `.env.development`, `vite dev` läuft weiter auf
+`/`).
 
 Neue D1-Migrationen werden aus `turnen/worker/` heraus ausgeführt:
 

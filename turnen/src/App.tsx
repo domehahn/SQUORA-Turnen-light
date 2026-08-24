@@ -19,9 +19,14 @@ import ClubWaitlist from "./pages/admin/ClubWaitlist";
 import Dashboard from "./pages/admin/Dashboard";
 import MemberStats from "./pages/admin/MemberStats";
 
+// "/" lokal, "/turnen-light" im Produktions-Build (BASE_URL endet auf "/",
+// React Router mag kein trailing slash im basename) - siehe .env.production
+// und cloudflare/web-router.ts, der denselben Präfix serverseitig abschneidet.
+const routerBasename = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename}>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
