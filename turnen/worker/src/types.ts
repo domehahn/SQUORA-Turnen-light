@@ -77,6 +77,8 @@ export interface GroupRow {
   created_at: string;
 }
 
+export type ChildStatus = "active" | "archived";
+
 export interface Child {
   id: string;
   firstName: string;
@@ -88,6 +90,7 @@ export interface Child {
   emergencyContactPhone: string | null;
   healthNotes: string | null;
   familyId: string | null;
+  status: ChildStatus;
   canEdit: boolean;
   createdAt: string;
 }
@@ -103,6 +106,8 @@ export interface ChildRow {
   emergency_contact_phone: string | null;
   health_notes: string | null;
   family_id: string | null;
+  status: ChildStatus;
+  archived_at: string | null;
   created_at: string;
 }
 

@@ -47,8 +47,70 @@ type GroupOwnership = { owner_id: string | null; club_id: string | null };
 // Eine Gruppe darf bearbeitet werden, wenn der anfragende Nutzer sie
 // angelegt hat, oder wenn es eine "herrenlose" Alt-Gruppe ohne Besitzer und
 // ohne Verein ist (Bestandsschutz für Gruppen aus der Zeit vor Vereinen).
+// Deckt NICHT Mit-Trainer*innen ab (siehe group_co_leaders) - dafür bei
+// Einzel-Prüfungen canWriteGroupAsync() verwenden, bei Listen die separat
+// vorab geladene Mit-Trainer-Zuordnung (siehe listCoLeaderGroupIdsForUser).
 export function canWriteGroup(group: GroupOwnership, userId: string): boolean {
   return group.owner_id === userId || (group.owner_id === null && group.club_id === null);
+}
+
+// --- Mit-Trainer*innen (mehrere gleichberechtigte Leitungen pro Gruppe) --------
+
+// Alle Gruppen-IDs, bei denen die Person Mit-Trainer*in ist - einmal pro
+// Anfrage vorab laden und dann synchron in .map() über Listen verwenden,
+// um N+1-Abfragen zu vermeiden.
+export async function listCoLeaderGroupIdsForUser(db: D1Database, userId: string): Promise<Set<string>> {
+  const { results } = await db
+    .prepare("SELECT group_id FROM group_co_leaders WHERE user_id = ?")
+    .bind(userId)
+    .all<{ group_id: string }>();
+  return new Set(results.map((r) => r.group_id));
+}
+
+// Einzelprüfung (z.B. in Routen-Handlern) - deckt Besitzer, Mit-Trainer*in
+// und herrenlose Alt-Gruppen ab.
+export async function canWriteGroupAsync(
+  db: D1Database,
+  group: GroupOwnership & { id: string },
+  userId: string
+): Promise<boolean> {
+  if (canWriteGroup(group, userId)) return true;
+  const row = await db
+    .prepare("SELECT 1 FROM group_co_leaders WHERE group_id = ? AND user_id = ?")
+    .bind(group.id, userId)
+    .first();
+  return Boolean(row);
+}
+
+export interface GroupCoLeader {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
+export async function listGroupCoLeaders(db: D1Database, groupId: string): Promise<GroupCoLeader[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT u.id as id, u.name as name, u.email as email
+       FROM group_co_leaders gcl
+       JOIN users u ON u.id = gcl.user_id
+       WHERE gcl.group_id = ?
+       ORDER BY u.name ASC, u.email ASC`
+    )
+    .bind(groupId)
+    .all<GroupCoLeader>();
+  return results;
+}
+
+export async function addGroupCoLeader(db: D1Database, groupId: string, userId: string, addedBy: string): Promise<void> {
+  await db
+    .prepare("INSERT OR IGNORE INTO group_co_leaders (group_id, user_id, added_by) VALUES (?, ?, ?)")
+    .bind(groupId, userId, addedBy)
+    .run();
+}
+
+export async function removeGroupCoLeader(db: D1Database, groupId: string, userId: string): Promise<void> {
+  await db.prepare("DELETE FROM group_co_leaders WHERE group_id = ? AND user_id = ?").bind(groupId, userId).run();
 }
 
 // Volle Lebensjahre am heutigen Tag - dieselbe Logik wie src/lib/age.ts im
@@ -68,7 +130,7 @@ export function ageFitsGroup(birthDate: string, group: { min_age: number; max_ag
   return age >= group.min_age && age < group.max_age;
 }
 
-function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | null }): Group {
+function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | null; isCoLeader?: boolean }): Group {
   return {
     id: row.id,
     name: row.name,
@@ -83,7 +145,7 @@ function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | nu
     ownerId: row.owner_id,
     ownerName: ctx.ownerName,
     clubId: row.club_id,
-    canEdit: canWriteGroup(row, ctx.userId),
+    canEdit: canWriteGroup(row, ctx.userId) || Boolean(ctx.isCoLeader),
     createdAt: row.created_at,
   };
 }
@@ -100,6 +162,7 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
     emergencyContactPhone: row.emergency_contact_phone,
     healthNotes: row.health_notes,
     familyId: row.family_id,
+    status: row.status,
     canEdit,
     createdAt: row.created_at,
   };
@@ -240,20 +303,24 @@ export async function setClubRole(
 // Vereins (lesend über canEdit=false erkennbar) sowie herrenlose Alt-Gruppen
 // ohne Besitzer/Verein.
 export async function listGroupsForUser(db: D1Database, userId: string, clubId: string | null): Promise<Group[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT g.*, u.name as owner_name, u.email as owner_email
-       FROM groups g
-       LEFT JOIN users u ON u.id = g.owner_id
-       WHERE g.owner_id = ?1
-          OR (g.club_id IS NOT NULL AND g.club_id = ?2)
-          OR (g.owner_id IS NULL AND g.club_id IS NULL)
-       ORDER BY g.sort_order ASC, g.min_age ASC`
-    )
-    .bind(userId, clubId)
-    .all<GroupRow & { owner_name: string | null; owner_email: string | null }>();
+  const [{ results }, coLeaderGroupIds] = await Promise.all([
+    db
+      .prepare(
+        `SELECT g.*, u.name as owner_name, u.email as owner_email
+         FROM groups g
+         LEFT JOIN users u ON u.id = g.owner_id
+         WHERE g.owner_id = ?1
+            OR (g.club_id IS NOT NULL AND g.club_id = ?2)
+            OR (g.owner_id IS NULL AND g.club_id IS NULL)
+            OR g.id IN (SELECT group_id FROM group_co_leaders WHERE user_id = ?1)
+         ORDER BY g.sort_order ASC, g.min_age ASC`
+      )
+      .bind(userId, clubId)
+      .all<GroupRow & { owner_name: string | null; owner_email: string | null }>(),
+    listCoLeaderGroupIdsForUser(db, userId),
+  ]);
   return results.map((row) =>
-    rowToGroup(row, { userId, ownerName: row.owner_name ?? row.owner_email ?? null })
+    rowToGroup(row, { userId, ownerName: row.owner_name ?? row.owner_email ?? null, isCoLeader: coLeaderGroupIds.has(row.id) })
   );
 }
 
@@ -338,7 +405,12 @@ export async function updateGroup(
     )
     .run();
   const row = await db.prepare("SELECT * FROM groups WHERE id = ?").bind(id).first<GroupRow>();
-  return row ? rowToGroup(row, ctx) : null;
+  if (!row) return null;
+  const isCoLeader = await db
+    .prepare("SELECT 1 FROM group_co_leaders WHERE group_id = ? AND user_id = ?")
+    .bind(id, ctx.userId)
+    .first();
+  return rowToGroup(row, { ...ctx, isCoLeader: Boolean(isCoLeader) });
 }
 
 export async function deleteGroup(db: D1Database, id: string): Promise<void> {
@@ -366,22 +438,37 @@ export async function claimGroup(
 // Sichtbar sind: Kinder ohne Gruppe (Alt-Bestand, weiterhin für alle offen),
 // Kinder in eigenen Gruppen sowie Kinder in Gruppen anderer Mitglieder
 // desselben Vereins (lesend).
-export async function listChildrenForUser(db: D1Database, userId: string, clubId: string | null): Promise<Child[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT c.*, g.owner_id as group_owner_id, g.club_id as group_club_id
-       FROM children c
-       LEFT JOIN groups g ON g.id = c.group_id
-       WHERE c.group_id IS NULL
-          OR g.owner_id = ?1
-          OR (g.club_id IS NOT NULL AND g.club_id = ?2)
-          OR (g.owner_id IS NULL AND g.club_id IS NULL)
-       ORDER BY c.last_name ASC, c.first_name ASC`
-    )
-    .bind(userId, clubId)
-    .all<ChildRow & { group_owner_id: string | null; group_club_id: string | null }>();
+// `includeArchived` zeigt auch ausgetretene Kinder mit an (für die
+// "Archiv"-Ansicht) - im Alltag (Anwesenheit, Gruppen-Listen etc.) sind nur
+// aktive Kinder relevant.
+export async function listChildrenForUser(
+  db: D1Database,
+  userId: string,
+  clubId: string | null,
+  includeArchived = false
+): Promise<Child[]> {
+  const [{ results }, coLeaderGroupIds] = await Promise.all([
+    db
+      .prepare(
+        `SELECT c.*, g.owner_id as group_owner_id, g.club_id as group_club_id
+         FROM children c
+         LEFT JOIN groups g ON g.id = c.group_id
+         WHERE (c.group_id IS NULL
+            OR g.owner_id = ?1
+            OR (g.club_id IS NOT NULL AND g.club_id = ?2)
+            OR (g.owner_id IS NULL AND g.club_id IS NULL))
+           AND (?3 OR c.status = 'active')
+         ORDER BY c.last_name ASC, c.first_name ASC`
+      )
+      .bind(userId, clubId, includeArchived ? 1 : 0)
+      .all<ChildRow & { group_owner_id: string | null; group_club_id: string | null }>(),
+    listCoLeaderGroupIdsForUser(db, userId),
+  ]);
   return results.map((row) => {
-    const canEdit = row.group_id === null || canWriteGroup({ owner_id: row.group_owner_id, club_id: row.group_club_id }, userId);
+    const canEdit =
+      row.group_id === null ||
+      canWriteGroup({ owner_id: row.group_owner_id, club_id: row.group_club_id }, userId) ||
+      coLeaderGroupIds.has(row.group_id);
     return rowToChild(row, canEdit);
   });
 }
@@ -404,11 +491,32 @@ export async function setChildFamily(db: D1Database, id: string, familyId: strin
 export async function countChildrenInGroup(db: D1Database, groupId: string, excludeChildId?: string): Promise<number> {
   const row = excludeChildId
     ? await db
-        .prepare("SELECT COUNT(*) as n FROM children WHERE group_id = ? AND id != ?")
+        .prepare("SELECT COUNT(*) as n FROM children WHERE group_id = ? AND status = 'active' AND id != ?")
         .bind(groupId, excludeChildId)
         .first<{ n: number }>()
-    : await db.prepare("SELECT COUNT(*) as n FROM children WHERE group_id = ?").bind(groupId).first<{ n: number }>();
+    : await db
+        .prepare("SELECT COUNT(*) as n FROM children WHERE group_id = ? AND status = 'active'")
+        .bind(groupId)
+        .first<{ n: number }>();
   return row?.n ?? 0;
+}
+
+// Austreten lassen statt löschen - Historie (Anwesenheit, Stundennachweis)
+// bleibt erhalten, das Kind zählt aber nirgends mehr mit (Kapazität,
+// Anwesenheitslisten, aktive Kinder-Zahl) und lässt sich reaktivieren.
+export async function archiveChild(db: D1Database, id: string): Promise<Child | null> {
+  await db
+    .prepare("UPDATE children SET status = 'archived', archived_at = datetime('now') WHERE id = ?")
+    .bind(id)
+    .run();
+  const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
+  return row ? rowToChild(row, true) : null;
+}
+
+export async function reactivateChild(db: D1Database, id: string): Promise<Child | null> {
+  await db.prepare("UPDATE children SET status = 'active', archived_at = NULL WHERE id = ?").bind(id).run();
+  const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
+  return row ? rowToChild(row, true) : null;
 }
 
 export interface ChildInput {
@@ -483,6 +591,8 @@ export interface AttendanceSession {
   endTime: string | null;
   location: string | null;
   note: string | null;
+  cancelled: boolean;
+  cancelReason: string | null;
 }
 
 const EMPTY_ATTENDANCE_SESSION: AttendanceSession = {
@@ -493,13 +603,16 @@ const EMPTY_ATTENDANCE_SESSION: AttendanceSession = {
   endTime: null,
   location: null,
   note: null,
+  cancelled: false,
+  cancelReason: null,
 };
 
 export async function getAttendance(db: D1Database, groupId: string, sessionDate: string): Promise<AttendanceSession> {
   const session = await db
     .prepare(
       `SELECT s.id as id, s.led_by as led_by, u.name as led_by_name, u.email as led_by_email,
-              s.start_time as start_time, s.end_time as end_time, s.location as location, s.note as note
+              s.start_time as start_time, s.end_time as end_time, s.location as location, s.note as note,
+              s.cancelled as cancelled, s.cancel_reason as cancel_reason
        FROM attendance_sessions s
        LEFT JOIN users u ON u.id = s.led_by
        WHERE s.group_id = ? AND s.session_date = ?`
@@ -514,6 +627,8 @@ export async function getAttendance(db: D1Database, groupId: string, sessionDate
       end_time: string | null;
       location: string | null;
       note: string | null;
+      cancelled: number;
+      cancel_reason: string | null;
     }>();
   if (!session) return EMPTY_ATTENDANCE_SESSION;
   const { results } = await db
@@ -528,7 +643,35 @@ export async function getAttendance(db: D1Database, groupId: string, sessionDate
     endTime: session.end_time,
     location: session.location,
     note: session.note,
+    cancelled: session.cancelled === 1,
+    cancelReason: session.cancel_reason,
   };
+}
+
+// Trainingsausfall setzen/aufheben - berührt weder Anwesenheits-Einträge
+// noch Leitung/Termin-Überschreibung.
+export async function setSessionCancelled(
+  db: D1Database,
+  groupId: string,
+  sessionDate: string,
+  cancelled: boolean,
+  reason: string | null
+): Promise<void> {
+  const session = await db
+    .prepare("SELECT id FROM attendance_sessions WHERE group_id = ? AND session_date = ?")
+    .bind(groupId, sessionDate)
+    .first<{ id: string }>();
+  if (session) {
+    await db
+      .prepare("UPDATE attendance_sessions SET cancelled = ?, cancel_reason = ? WHERE id = ?")
+      .bind(cancelled ? 1 : 0, cancelled ? reason : null, session.id)
+      .run();
+  } else if (cancelled) {
+    await db
+      .prepare("INSERT INTO attendance_sessions (id, group_id, session_date, cancelled, cancel_reason) VALUES (?, ?, ?, 1, ?)")
+      .bind(crypto.randomUUID(), groupId, sessionDate, reason)
+      .run();
+  }
 }
 
 export async function getAttendanceRange(
@@ -588,6 +731,26 @@ export async function getSessionLeaders(
       isSubstitute: row.led_by !== row.owner_id,
     };
   }
+  return map;
+}
+
+// Abgesagte Trainingstermine im Zeitraum (Datum → Grund) - für die
+// Markierung in der Übersicht.
+export async function getCancelledSessions(
+  db: D1Database,
+  groupId: string,
+  from: string,
+  to: string
+): Promise<Record<string, string | null>> {
+  const { results } = await db
+    .prepare(
+      `SELECT session_date, cancel_reason FROM attendance_sessions
+       WHERE group_id = ? AND session_date BETWEEN ? AND ? AND cancelled = 1`
+    )
+    .bind(groupId, from, to)
+    .all<{ session_date: string; cancel_reason: string | null }>();
+  const map: Record<string, string | null> = {};
+  for (const row of results) map[row.session_date] = row.cancel_reason;
   return map;
 }
 

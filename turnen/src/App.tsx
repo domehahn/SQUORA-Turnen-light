@@ -16,6 +16,7 @@ import AttendancePrint from "./pages/AttendancePrint";
 import HoursReportPage from "./pages/HoursReport";
 import Substitutes from "./pages/admin/Substitutes";
 import ClubWaitlist from "./pages/admin/ClubWaitlist";
+import Dashboard from "./pages/admin/Dashboard";
 
 export default function App() {
   return (
@@ -29,7 +30,7 @@ export default function App() {
             <Route path="nachweis" element={<HoursReportPage />} />
 
             <Route element={<AppLayout />}>
-              <Route index element={<Navigate to="/gruppen" replace />} />
+              <Route index element={<Dashboard />} />
               <Route path="gruppen" element={<Groups />} />
               <Route path="kinder" element={<Children />} />
               <Route path="anwesenheit" element={<Attendance />} />

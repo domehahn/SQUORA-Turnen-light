@@ -12,7 +12,7 @@ const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag"
 const thClass = "border border-slate-300 bg-blue-100 px-2 py-1.5 font-semibold text-blue-900";
 const tdClass = "border border-slate-300 px-2 py-1.5";
 
-type Mode = "anwesenheit" | "namen";
+type Mode = "anwesenheit" | "namen" | "notfall";
 
 function formatDate(iso: string): string {
   const [year, month, day] = iso.split("-");
@@ -42,7 +42,8 @@ function sortByName(a: Child, b: Child): number {
 export default function AttendancePrint() {
   const { groupId: pathGroupId } = useParams<{ groupId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const mode: Mode = searchParams.get("mode") === "namen" ? "namen" : "anwesenheit";
+  const modeParam = searchParams.get("mode");
+  const mode: Mode = modeParam === "namen" ? "namen" : modeParam === "notfall" ? "notfall" : "anwesenheit";
   // Für die Namensliste können mehrere Gruppen gleichzeitig gewählt werden
   // (siehe Badge-Auswahl auf der Kinder-Seite); die Anwesenheitsliste bleibt
   // an einen einzelnen Trainingstermin gebunden und nutzt nur die erste
@@ -157,6 +158,14 @@ export default function AttendancePrint() {
                 }`}
               >
                 Namensliste
+              </button>
+              <button
+                onClick={() => setMode("notfall")}
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  mode === "notfall" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Notfallliste
               </button>
             </div>
             {mode === "anwesenheit" && (
@@ -277,7 +286,7 @@ export default function AttendancePrint() {
               )}
             </div>
           </>
-        ) : (
+        ) : mode === "namen" ? (
           <div className="space-y-8">
             {selectedGroups.map((g, i) => {
               const list = childrenOf(g);
@@ -310,6 +319,53 @@ export default function AttendancePrint() {
                       {list.length === 0 && (
                         <tr>
                           <td colSpan={3} className={`${tdClass} py-4 text-center text-slate-500`}>
+                            Keine Kinder in dieser Gruppe.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {selectedGroups.map((g, i) => {
+              const list = childrenOf(g);
+              return (
+                <div key={g.id} className={i > 0 ? "break-before-page" : ""}>
+                  <h1 className="text-xl font-semibold">{g.name}</h1>
+                  <p className="mb-2 text-sm text-slate-600">
+                    {g.minAge}–{g.maxAge} Jahre
+                    {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}
+                    {g.startTime && g.endTime && ` ${g.startTime}–${g.endTime}`}
+                    {g.location && ` · ${g.location}`}
+                  </p>
+                  <p className="mb-4 text-sm font-medium text-slate-800">Kinder gesamt: {list.length}</p>
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className={`${thClass} text-left`}>Name</th>
+                        <th className={`${thClass} text-left`}>Notfallkontakt</th>
+                        <th className={`${thClass} text-left`}>Telefon</th>
+                        <th className={`${thClass} text-left`}>Gesundheitshinweise</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.map((child) => (
+                        <tr key={child.id}>
+                          <td className={tdClass}>
+                            {child.firstName} {child.lastName}
+                          </td>
+                          <td className={tdClass}>{child.emergencyContactName || "–"}</td>
+                          <td className={tdClass}>{child.emergencyContactPhone || "–"}</td>
+                          <td className={tdClass}>{child.healthNotes || "–"}</td>
+                        </tr>
+                      ))}
+                      {list.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className={`${tdClass} py-4 text-center text-slate-500`}>
                             Keine Kinder in dieser Gruppe.
                           </td>
                         </tr>

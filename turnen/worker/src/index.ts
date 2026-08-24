@@ -83,7 +83,7 @@ async function isChildWritable(dbEnv: D1Database, child: { group_id: string | nu
   if (!child.group_id) return true;
   const group = await db.getGroupRowById(dbEnv, child.group_id);
   if (!group) return true;
-  return db.canWriteGroup(group, userId);
+  return db.canWriteGroupAsync(dbEnv, group, userId);
 }
 
 // Wer darf die Anwesenheit für genau diesen Termin lesen/erfassen? Normal
@@ -102,7 +102,7 @@ async function attendanceAccess(
   if (claim) {
     return { allowed: claim.claimed_by === userId, isSubstituteDate: true };
   }
-  return { allowed: db.canWriteGroup(group, userId), isSubstituteDate: false };
+  return { allowed: await db.canWriteGroupAsync(dbEnv, group, userId), isSubstituteDate: false };
 }
 
 interface CapacityWarning {
@@ -592,7 +592,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(existing, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, existing, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   const group = await db.updateGroup(
     c.env.DB,
@@ -653,7 +653,7 @@ app.delete("/api/groups/:id", requireAuth, async (c) => {
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.body(null, 204);
-  if (!db.canWriteGroup(existing, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, existing, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   await db.deleteGroup(c.env.DB, id);
   await db.logAudit(c.env.DB, {
@@ -666,10 +666,83 @@ app.delete("/api/groups/:id", requireAuth, async (c) => {
   return c.body(null, 204);
 });
 
+// Mehrere gleichberechtigte Leitungen pro Gruppe (dauerhaft, nicht nur als
+// Vertretung für einen einzelnen Termin): Mit-Trainer*innen bekommen
+// dieselben Schreibrechte wie die eigentliche Gruppenleitung. Verwalten
+// (hinzufügen/entfernen) dürfen nur die/der Besitzer:in der Gruppe oder die
+// Jugendleitung - nicht Mit-Trainer*innen selbst, um unkontrolliertes
+// Weiterreichen zu verhindern.
+app.get("/api/groups/:id/co-leaders", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const group = await db.getGroupRowById(c.env.DB, id);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  return c.json(await db.listGroupCoLeaders(c.env.DB, id));
+});
+
+app.post("/api/groups/:id/co-leaders", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const targetUserId = validId(body?.userId);
+  if (!id || !targetUserId) return c.json({ error: "Ungültige Anfrage" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, id);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  const isOwnerOrLeadership =
+    db.canWriteGroup(group, c.get("userId")) ||
+    (group.club_id && group.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter");
+  if (!isOwnerOrLeadership) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (targetUserId === group.owner_id) return c.json({ error: "Ist bereits Gruppenleitung" }, 400);
+
+  const target = await db.getUserById(c.env.DB, targetUserId);
+  if (!target || !group.club_id || target.clubId !== group.club_id) {
+    return c.json({ error: "Nur Mitglieder desselben Vereins können Mit-Trainer*in werden" }, 400);
+  }
+
+  await db.addGroupCoLeader(c.env.DB, id, targetUserId, c.get("userId"));
+  await db.logAudit(c.env.DB, {
+    clubId: group.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "group.co_leader_added",
+    targetLabel: `${group.name} ← ${target.name ?? target.email}`,
+    groupId: group.id,
+  });
+  await notifyUser(c.env, {
+    userId: target.id,
+    userEmail: target.email,
+    userName: target.name,
+    type: "group_co_leader_added",
+    title: `Mit-Trainer*in für „${group.name}“`,
+    body: `${c.get("name") ?? c.get("email")} hat dich als Mit-Trainer*in für „${group.name}“ eingetragen - du hast jetzt dieselben Rechte wie die Gruppenleitung.`,
+    link: "/gruppen",
+  });
+
+  return c.json({ ok: true }, 201);
+});
+
+app.delete("/api/groups/:id/co-leaders/:userId", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  const targetUserId = validId(c.req.param("userId"));
+  if (!id || !targetUserId) return c.json({ error: "Ungültige ID" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, id);
+  if (!group) return c.body(null, 204);
+  const isOwnerOrLeadership =
+    db.canWriteGroup(group, c.get("userId")) ||
+    (group.club_id && group.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter");
+  if (!isOwnerOrLeadership) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  await db.removeGroupCoLeader(c.env.DB, id, targetUserId);
+  return c.body(null, 204);
+});
+
 // --- Kinder --------------------------------------------------------------
 
 app.get("/api/children", requireAuth, async (c) => {
-  return c.json(await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId")));
+  const includeArchived = c.req.query("includeArchived") === "true";
+  return c.json(await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived));
 });
 
 // Benachrichtigt alle Jugendleitungen des Vereins, dem eine Gruppe gehört,
@@ -720,7 +793,7 @@ app.post("/api/children", requireAuth, async (c) => {
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-    if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+    if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
     const gate = await capacityGate(c.env.DB, group, undefined, {
       userId: c.get("userId"),
@@ -779,7 +852,7 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-    if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+    if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
     if (groupId !== existing.group_id) {
       const gate = await capacityGate(c.env.DB, group, id, {
@@ -826,6 +899,52 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
   await db.deleteChild(c.env.DB, id);
   if (existing.group_id) await promoteWaitlistIfPossible(c, existing.group_id);
   return c.body(null, 204);
+});
+
+// Austreten lassen statt löschen - Anwesenheitshistorie und Stundennachweis
+// bleiben erhalten, das Kind zählt aber nirgends mehr aktiv mit (Kapazität,
+// Anwesenheitslisten). Lässt sich jederzeit wieder reaktivieren.
+app.post("/api/children/:id/archive", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getChildRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+
+  const child = await db.archiveChild(c.env.DB, id);
+  if (existing.group_id) await promoteWaitlistIfPossible(c, existing.group_id);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "child.archived",
+    targetLabel: `${existing.first_name} ${existing.last_name}`,
+    groupId: existing.group_id,
+  });
+  return c.json(child);
+});
+
+app.post("/api/children/:id/reactivate", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getChildRowById(c.env.DB, id);
+  if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
+
+  const child = await db.reactivateChild(c.env.DB, id);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "child.reactivated",
+    targetLabel: `${existing.first_name} ${existing.last_name}`,
+    groupId: existing.group_id,
+  });
+  return c.json(child);
 });
 
 // --- Familien / Geschwister --------------------------------------------------
@@ -931,7 +1050,7 @@ app.post("/api/substitute-requests", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   const request = await db.createSubstituteRequest(c.env.DB, {
     groupId,
@@ -1058,7 +1177,7 @@ app.post("/api/substitute-requests/:id/return", requireAuth, async (c) => {
 
   const userId = c.get("userId");
   const isSubstitute = request.claimed_by === userId;
-  const isOwner = db.canWriteGroup(group, userId);
+  const isOwner = await db.canWriteGroupAsync(c.env.DB, group, userId);
   if (!isSubstitute && !isOwner) return c.json({ error: "Keine Berechtigung" }, 403);
 
   await db.returnSubstituteRequest(c.env.DB, id, request.group_id, request.session_date);
@@ -1391,7 +1510,7 @@ app.delete("/api/waitlist/:id", requireAuth, async (c) => {
   if (entry.status !== "waiting") return c.json({ error: "Eintrag ist nicht mehr aktiv" }, 409);
 
   const group = await db.getGroupRowById(c.env.DB, entry.group_id);
-  const canManage = entry.requested_by === c.get("userId") || (group && db.canWriteGroup(group, c.get("userId")));
+  const canManage = entry.requested_by === c.get("userId") || (group && (await db.canWriteGroupAsync(c.env.DB, group, c.get("userId"))));
   if (!canManage) return c.json({ error: "Keine Berechtigung" }, 403);
 
   await db.setWaitlistEntryStatus(c.env.DB, id, "cancelled");
@@ -1534,7 +1653,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, request.group_id);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   const entry = await db.getClubWaitlistEntryById(c.env.DB, request.waitlist_entry_id);
   if (!entry) return c.json({ error: "Warteliste-Eintrag nicht gefunden" }, 404);
@@ -1585,7 +1704,7 @@ app.post("/api/placement-requests/:id/decline", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, request.group_id);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   await db.setPlacementRequestStatus(c.env.DB, id, "declined");
 
@@ -1859,7 +1978,7 @@ app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getAttendanceRange(c.env.DB, groupId, from, to));
 });
@@ -1872,9 +1991,22 @@ app.get("/api/attendance-leaders/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!db.canWriteGroup(group, c.get("userId"))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getSessionLeaders(c.env.DB, groupId, from, to));
+});
+
+app.get("/api/attendance-cancellations/:groupId", requireAuth, async (c) => {
+  const groupId = validId(c.req.param("groupId"));
+  const from = validDate(c.req.query("from"));
+  const to = validDate(c.req.query("to"));
+  if (!groupId || !from || !to) return c.json({ error: "Ungültige Gruppe oder Zeitraum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  return c.json(await db.getCancelledSessions(c.env.DB, groupId, from, to));
 });
 
 app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
@@ -2122,6 +2254,52 @@ app.post("/api/session-override-requests/:id/reject", requireAuth, async (c) => 
     }
   }
 
+  return c.json({ ok: true });
+});
+
+// --- Trainingsausfall --------------------------------------------------------
+
+// Einen Termin komplett absagen (z.B. Ferien-Ausnahme, Trainer krank ohne
+// gefundene Vertretung) - mit Grund, statt einfach als "nicht erfasst" zu
+// erscheinen. Keine Freigabe der Jugendleitung nötig, das betrifft nur die
+// eigene Gruppe und schafft keine zusätzlichen Stunden.
+app.post("/api/attendance/:groupId/:date/cancel", requireAuth, async (c) => {
+  const groupId = validId(c.req.param("groupId"));
+  const date = validDate(c.req.param("date"));
+  if (!groupId || !date) return c.json({ error: "Ungültige Gruppe oder Datum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  const access = await attendanceAccess(c.env.DB, group, c.get("userId"), date);
+  if (!access.allowed) return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
+
+  const body = await c.req.json().catch(() => null);
+  const reason = optionalText(body?.reason, 200);
+  if (reason === undefined) return c.json({ error: "Grund ist zu lang" }, 400);
+
+  await db.setSessionCancelled(c.env.DB, groupId, date, true, reason);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "attendance.cancelled",
+    targetLabel: `${group.name} am ${date}${reason ? ` (${reason})` : ""}`,
+    groupId: group.id,
+  });
+  return c.json({ ok: true });
+});
+
+app.post("/api/attendance/:groupId/:date/uncancel", requireAuth, async (c) => {
+  const groupId = validId(c.req.param("groupId"));
+  const date = validDate(c.req.param("date"));
+  if (!groupId || !date) return c.json({ error: "Ungültige Gruppe oder Datum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  const access = await attendanceAccess(c.env.DB, group, c.get("userId"), date);
+  if (!access.allowed) return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
+
+  await db.setSessionCancelled(c.env.DB, groupId, date, false, null);
   return c.json({ ok: true });
 });
 

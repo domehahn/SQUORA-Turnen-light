@@ -14,7 +14,7 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-type CellState = "present" | "absent" | "none-past" | "none-future";
+type CellState = "present" | "absent" | "none-past" | "none-future" | "cancelled";
 
 export default function Overview() {
   const now = new Date();
@@ -25,6 +25,7 @@ export default function Overview() {
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [attendance, setAttendance] = useState<Record<string, AttendanceEntry[]>>({});
   const [leaders, setLeaders] = useState<Record<string, SessionLeader>>({});
+  const [cancellations, setCancellations] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +60,7 @@ export default function Overview() {
       if (!groupId || trainingDates.length === 0) {
         setAttendance({});
         setLeaders({});
+        setCancellations({});
         return;
       }
       setError(null);
@@ -74,6 +76,11 @@ export default function Overview() {
       } catch {
         setLeaders({});
       }
+      try {
+        setCancellations(await api.get<Record<string, string | null>>(`/api/attendance-cancellations/${groupId}?from=${from}&to=${to}`));
+      } catch {
+        setCancellations({});
+      }
     }
     loadAttendance();
   }, [groupId, trainingDates]);
@@ -87,6 +94,7 @@ export default function Overview() {
   );
 
   function cellState(dateIso: string, childId: string): CellState {
+    if (dateIso in cancellations) return "cancelled";
     const entries = attendance[dateIso];
     const entry = entries?.find((e) => e.childId === childId);
     if (entry) return entry.present ? "present" : "absent";
@@ -110,6 +118,8 @@ export default function Overview() {
   const substituteDates = trainingDates
     .map((d) => ({ date: d, leader: leaders[d] }))
     .filter((x): x is { date: string; leader: SessionLeader } => Boolean(x.leader?.isSubstitute));
+
+  const cancelledDates = trainingDates.filter((d) => d in cancellations);
 
   const dateStats = trainingDates.map((d) => {
     const entries = attendance[d] ?? [];
@@ -214,6 +224,19 @@ export default function Overview() {
         </div>
       )}
 
+      {cancelledDates.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+          <span className="font-semibold">Ausgefallen in {MONTH_NAMES[month - 1]}: </span>
+          {cancelledDates.map((date, i) => (
+            <span key={date}>
+              {i > 0 && ", "}
+              {formatShortDate(date)}
+              {cancellations[date] ? ` (${cancellations[date]})` : ""}
+            </span>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : trainingDates.length === 0 ? (
@@ -230,12 +253,21 @@ export default function Overview() {
                   const holiday = holidayFor(d);
                   const isToday = d === todayIso;
                   const leader = leaders[d];
+                  const isCancelled = d in cancellations;
                   return (
                     <th
                       key={d}
-                      title={holiday?.label ?? (leader?.isSubstitute ? `Vertretung: ${leader.ledByName}` : undefined)}
+                      title={
+                        holiday?.label ??
+                        (isCancelled ? `Ausgefallen${cancellations[d] ? `: ${cancellations[d]}` : ""}` : undefined) ??
+                        (leader?.isSubstitute ? `Vertretung: ${leader.ledByName}` : undefined)
+                      }
                       className={`min-w-[64px] px-2 py-2 text-center font-medium ${
-                        isToday ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : ""
+                        isCancelled
+                          ? "text-red-500 line-through dark:text-red-400"
+                          : isToday
+                            ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : ""
                       }`}
                     >
                       {formatShortDate(d)}
@@ -298,6 +330,16 @@ export default function Overview() {
 }
 
 function AttendanceMark({ state }: { state: CellState }) {
+  if (state === "cancelled") {
+    return (
+      <span
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-red-400 dark:bg-red-950/40 dark:text-red-500"
+        title="Ausgefallen"
+      >
+        –
+      </span>
+    );
+  }
   if (state === "present") {
     return (
       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">

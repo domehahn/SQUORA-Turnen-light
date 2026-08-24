@@ -5,6 +5,7 @@ import { NotificationBell } from "./NotificationBell";
 import SquoraBrand from "./SquoraBrand";
 
 const NAV_ITEMS = [
+  { to: "/", label: "Start", end: true },
   { to: "/gruppen", label: "Gruppen" },
   { to: "/kinder", label: "Kinder" },
   { to: "/anwesenheit", label: "Anwesenheit" },
@@ -50,6 +51,7 @@ export function AppLayout() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                end={item.end}
                 className={({ isActive }) =>
                   `flex-shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${
                     isActive

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { CapacityRequest, Child, Group, MoveRequest, WaitlistEntry } from "../../lib/types";
+import type { CapacityRequest, Child, ClubMember, Group, GroupCoLeader, MoveRequest, WaitlistEntry } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
@@ -58,12 +58,15 @@ function findScheduleConflicts(groups: Group[]): { a: Group; b: Group }[] {
 }
 
 export default function Groups() {
-  const { clubId, clubName, clubRole } = useAuth();
+  const { userId, clubId, clubName, clubRole } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<MoveRequest[]>([]);
   const [incomingCapacityRequests, setIncomingCapacityRequests] = useState<CapacityRequest[]>([]);
   const [waitlist, setWaitlist] = useState<Record<string, WaitlistEntry[]>>({});
+  const [coLeaders, setCoLeaders] = useState<Record<string, GroupCoLeader[]>>({});
+  const [clubMembers, setClubMembers] = useState<ClubMember[]>([]);
+  const [addCoLeaderSelection, setAddCoLeaderSelection] = useState<Record<string, string>>({});
   const [name, setName] = useState("");
   const [minAge, setMinAge] = useState("3");
   const [maxAge, setMaxAge] = useState("6");
@@ -83,14 +86,19 @@ export default function Groups() {
       setGroups(g);
       setChildren(c);
       const writable = g.filter((group) => group.canEdit);
-      const lists = await Promise.all(
-        writable.map((group) => api.get<WaitlistEntry[]>(`/api/groups/${group.id}/waitlist`).catch(() => []))
-      );
+      const [lists, coLeaderLists] = await Promise.all([
+        Promise.all(writable.map((group) => api.get<WaitlistEntry[]>(`/api/groups/${group.id}/waitlist`).catch(() => []))),
+        Promise.all(writable.map((group) => api.get<GroupCoLeader[]>(`/api/groups/${group.id}/co-leaders`).catch(() => []))),
+      ]);
       const map: Record<string, WaitlistEntry[]> = {};
+      const coLeaderMap: Record<string, GroupCoLeader[]> = {};
       writable.forEach((group, i) => {
         if (lists[i].length > 0) map[group.id] = lists[i];
+        coLeaderMap[group.id] = coLeaderLists[i];
       });
       setWaitlist(map);
+      setCoLeaders(coLeaderMap);
+      if (clubId) setClubMembers(await api.get<ClubMember[]>("/api/clubs/mine/members"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
     } finally {
@@ -229,6 +237,29 @@ export default function Groups() {
       await loadCapacityRequests();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
+    }
+  }
+
+  async function handleAddCoLeader(groupId: string) {
+    const targetUserId = addCoLeaderSelection[groupId];
+    if (!targetUserId) return;
+    setError(null);
+    try {
+      await api.post(`/api/groups/${groupId}/co-leaders`, { userId: targetUserId });
+      setAddCoLeaderSelection((prev) => ({ ...prev, [groupId]: "" }));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Hinzufügen");
+    }
+  }
+
+  async function handleRemoveCoLeader(groupId: string, targetUserId: string) {
+    setError(null);
+    try {
+      await api.del(`/api/groups/${groupId}/co-leaders/${targetUserId}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Entfernen");
     }
   }
 
@@ -400,7 +431,14 @@ export default function Groups() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
-                    {g.canEdit && g.ownerId !== null ? (
+                    {g.canEdit && g.ownerId !== null && g.ownerId !== userId ? (
+                      <span
+                        className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                        title={`Mit-Trainer*in – Gruppenleitung: ${g.ownerName ?? "unbekannt"}`}
+                      >
+                        Mit-Trainer*in ({g.ownerName ?? "unbekannt"})
+                      </span>
+                    ) : g.canEdit && g.ownerId !== null ? (
                       <span className="flex flex-col text-xs leading-tight">
                         <span className="text-slate-400 dark:text-slate-500">eigene Gruppe</span>
                         {g.clubId ? (
@@ -529,6 +567,54 @@ export default function Groups() {
                           </li>
                         ))}
                       </ul>
+                    </td>
+                  </tr>
+                )}
+                {g.canEdit && g.ownerId === userId && (
+                  <tr className="border-t border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/40">
+                    <td colSpan={6} className="px-4 py-2">
+                      <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        Mit-Trainer*innen für „{g.name}“ – gleichberechtigte Leitung, kein einzelner Vertretungstermin
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(coLeaders[g.id] ?? []).map((cl) => (
+                          <span
+                            key={cl.id}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          >
+                            {cl.name ?? cl.email}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCoLeader(g.id, cl.id)}
+                              aria-label={`${cl.name ?? cl.email} als Mit-Trainer*in entfernen`}
+                              className="text-emerald-500 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-100"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        <select
+                          value={addCoLeaderSelection[g.id] ?? ""}
+                          onChange={(e) => setAddCoLeaderSelection((prev) => ({ ...prev, [g.id]: e.target.value }))}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          <option value="">+ Mit-Trainer*in hinzufügen…</option>
+                          {clubMembers
+                            .filter((m) => m.id !== userId && !(coLeaders[g.id] ?? []).some((cl) => cl.id === m.id))
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name ?? m.email}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          onClick={() => handleAddCoLeader(g.id)}
+                          disabled={!addCoLeaderSelection[g.id]}
+                          className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          Hinzufügen
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )}

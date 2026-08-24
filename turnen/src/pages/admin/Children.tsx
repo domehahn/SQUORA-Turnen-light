@@ -94,7 +94,12 @@ const URGENCY_SECTIONS: {
 ];
 
 export default function Children() {
-  const [children, setChildren] = useState<Child[]>([]);
+  // Enthält auch ausgetretene (archivierte) Kinder - `children` weiter unten
+  // filtert auf aktive, damit der ganze bestehende Code unverändert nur mit
+  // aktiven Kindern arbeitet; `archivedChildren` bedient die eigene
+  // Archiv-Ansicht.
+  const [allChildren, setAllChildren] = useState<Child[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -125,15 +130,39 @@ export default function Children() {
     setLoading(true);
     try {
       const [childrenList, groupList] = await Promise.all([
-        api.get<Child[]>("/api/children"),
+        api.get<Child[]>("/api/children?includeArchived=true"),
         api.get<Group[]>("/api/groups"),
       ]);
-      setChildren(childrenList);
+      setAllChildren(childrenList);
       setGroups(groupList);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
     } finally {
       setLoading(false);
+    }
+  }
+
+  const children = useMemo(() => allChildren.filter((c) => c.status === "active"), [allChildren]);
+  const archivedChildren = useMemo(() => allChildren.filter((c) => c.status === "archived"), [allChildren]);
+
+  async function handleArchive(id: string) {
+    if (!confirm("Kind austreten lassen? Die Anwesenheitshistorie bleibt erhalten, das Kind kann jederzeit reaktiviert werden.")) return;
+    setError(null);
+    try {
+      await api.post(`/api/children/${id}/archive`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Austragen");
+    }
+  }
+
+  async function handleReactivate(id: string) {
+    setError(null);
+    try {
+      await api.post(`/api/children/${id}/reactivate`, {});
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Reaktivieren");
     }
   }
 
@@ -890,14 +919,24 @@ export default function Children() {
           })}
         </div>
         {printGroupIds.length > 0 && (
-          <a
-            href={`/druck?mode=namen&groupIds=${printGroupIds.join(",")}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Namensliste drucken ({printGroupIds.length})
-          </a>
+          <>
+            <a
+              href={`/druck?mode=namen&groupIds=${printGroupIds.join(",")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Namensliste drucken ({printGroupIds.length})
+            </a>
+            <a
+              href={`/druck?mode=notfall&groupIds=${printGroupIds.join(",")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Notfallliste drucken ({printGroupIds.length})
+            </a>
+          </>
         )}
       </div>
 
@@ -1065,6 +1104,9 @@ export default function Children() {
                                 <button onClick={() => startEdit(child)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
                                   Bearbeiten
                                 </button>
+                                <button onClick={() => handleArchive(child.id)} className="mr-3 text-sm text-amber-700 hover:underline dark:text-amber-400">
+                                  Austreten lassen
+                                </button>
                                 <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
                                   Löschen
                                 </button>
@@ -1088,6 +1130,63 @@ export default function Children() {
           ))}
         </div>
       )}
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowArchived((prev) => !prev)}
+          className="text-sm text-slate-500 hover:underline dark:text-slate-400"
+        >
+          {showArchived ? "Ausgetretene Kinder ausblenden" : `Ausgetretene Kinder anzeigen (${archivedChildren.length})`}
+        </button>
+        {showArchived && (
+          <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <table className="w-full min-w-[500px] text-left text-sm">
+              <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Name</th>
+                  <th className="px-4 py-2 font-medium">Letzte Gruppe</th>
+                  <th className="px-4 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedChildren.map((child) => (
+                  <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
+                      {child.firstName} {child.lastName}
+                    </td>
+                    <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{groupName(child.groupId)}</td>
+                    <td className="px-4 py-2 text-right">
+                      {child.canEdit ? (
+                        <>
+                          <button
+                            onClick={() => handleReactivate(child.id)}
+                            className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400"
+                          >
+                            Reaktivieren
+                          </button>
+                          <button onClick={() => handleDelete(child.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                            Endgültig löschen
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-sm text-slate-300 dark:text-slate-600">nur lesbar</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {archivedChildren.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
+                      Keine ausgetretenen Kinder.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

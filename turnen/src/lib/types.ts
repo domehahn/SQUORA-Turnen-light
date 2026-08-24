@@ -16,6 +16,8 @@ export interface Group {
   createdAt: string;
 }
 
+export type ChildStatus = "active" | "archived";
+
 export interface Child {
   id: string;
   firstName: string;
@@ -27,6 +29,7 @@ export interface Child {
   emergencyContactPhone: string | null;
   healthNotes: string | null;
   familyId: string | null;
+  status: ChildStatus;
   canEdit: boolean;
   createdAt: string;
 }
@@ -149,6 +152,14 @@ export interface AttendanceSession {
   endTime: string | null;
   location: string | null;
   note: string | null;
+  cancelled: boolean;
+  cancelReason: string | null;
+}
+
+export interface GroupCoLeader {
+  id: string;
+  name: string | null;
+  email: string;
 }
 
 export interface Family {
