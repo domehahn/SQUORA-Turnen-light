@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import type {
@@ -13,6 +13,7 @@ import type {
   SubstituteRequest,
 } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
+import { calculateAgeYears, groupForAge } from "../../lib/age";
 
 function formatShortDate(iso: string): string {
   const [, month, day] = iso.split("-");
@@ -96,6 +97,25 @@ export default function Dashboard() {
 
   const ownGroups = groups.filter((g) => g.canEdit);
   const activeChildren = children.filter((c) => c.status === "active");
+
+  // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
+  // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis.
+  const mismatched = useMemo(() => {
+    const overdue: { child: Child; currentGroup: Group; targetGroup: Group | undefined }[] = [];
+    const tooYoung: { child: Child; currentGroup: Group; targetGroup: Group | undefined }[] = [];
+    for (const child of activeChildren) {
+      const currentGroup = groups.find((g) => g.id === child.groupId);
+      if (!currentGroup) continue;
+      const age = calculateAgeYears(child.birthDate);
+      if (age >= currentGroup.maxAge) overdue.push({ child, currentGroup, targetGroup: groupForAge(age, groups) });
+      else if (age < currentGroup.minAge) tooYoung.push({ child, currentGroup, targetGroup: groupForAge(age, groups) });
+    }
+    const byName = (a: { child: Child }, b: { child: Child }) => a.child.lastName.localeCompare(b.child.lastName);
+    overdue.sort(byName);
+    tooYoung.sort(byName);
+    return { overdue, tooYoung };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChildren, groups]);
 
   const todos: TodoItem[] = [
     { label: "Verschiebe-Anfragen für deine Gruppen", count: incomingMoveRequests.length, to: "/gruppen", tone: "amber" as const },
@@ -192,6 +212,47 @@ export default function Dashboard() {
             </div>
           )}
 
+          {(mismatched.overdue.length > 0 || mismatched.tooYoung.length > 0) && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {mismatched.overdue.length > 0 && (
+                <Link
+                  to="/kinder"
+                  className="rounded-lg border border-red-300 bg-red-50 p-4 hover:border-red-400 dark:border-red-800 dark:bg-red-950/50 dark:hover:border-red-700"
+                >
+                  <h3 className="mb-2 text-sm font-semibold text-red-800 dark:text-red-300">
+                    Wechsel überfällig ({mismatched.overdue.length})
+                  </h3>
+                  <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
+                    {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
+                      <li key={child.id}>
+                        {child.firstName} {child.lastName} – noch in {currentGroup.name}
+                        {targetGroup ? `, gehört eigentlich zu ${targetGroup.name}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </Link>
+              )}
+              {mismatched.tooYoung.length > 0 && (
+                <Link
+                  to="/kinder"
+                  className="rounded-lg border border-purple-300 bg-purple-50 p-4 hover:border-purple-400 dark:border-purple-800 dark:bg-purple-950/50 dark:hover:border-purple-700"
+                >
+                  <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">
+                    Eigentlich noch zu jung für die Gruppe ({mismatched.tooYoung.length})
+                  </h3>
+                  <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
+                    {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
+                      <li key={child.id}>
+                        {child.firstName} {child.lastName} – in {currentGroup.name}
+                        {targetGroup ? `, passt eher zu ${targetGroup.name}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </Link>
+              )}
+            </div>
+          )}
+
           {upcomingSubstitutes.length > 0 && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">
               <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">Nächste Vertretungen</h3>
@@ -206,7 +267,10 @@ export default function Dashboard() {
             </div>
           )}
 
-          {todos.length === 0 && upcomingSubstitutes.length === 0 && (
+          {todos.length === 0 &&
+            upcomingSubstitutes.length === 0 &&
+            mismatched.overdue.length === 0 &&
+            mismatched.tooYoung.length === 0 && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
               Aktuell nichts, was auf dich wartet.
             </div>

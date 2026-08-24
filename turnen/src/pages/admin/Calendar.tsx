@@ -84,9 +84,15 @@ export default function Calendar() {
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 overflow-x-auto sm:grid-cols-4 lg:grid-cols-7">
+          {/* Feste 9rem-Spalten statt breakpoint-abhängigem grid-cols-N: die
+              Seitenleiste im Layout ändert, wie viel Platz tatsächlich zur
+              Verfügung steht, unabhängig von der Viewport-Breite - mit
+              festen Spalten reflowt die Anzahl nebeneinander passender Tage
+              automatisch, und der Rest scrollt sauber statt sich zu
+              verschieben/zu quetschen. */}
+          <div className="grid auto-cols-[9rem] grid-flow-col gap-3 overflow-x-auto pb-1">
             {WEEKDAYS.map((day, i) => (
-              <div key={day} className="min-w-[9rem] rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+              <div key={day} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{WEEKDAY_NAMES[i]}</h3>
                 <div className="space-y-2">
                   {byWeekday[day].map((g) => (
