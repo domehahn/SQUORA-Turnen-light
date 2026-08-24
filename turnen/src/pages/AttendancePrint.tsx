@@ -278,6 +278,14 @@ export default function AttendancePrint() {
                         </td>
                       ))}
                     </tr>
+                    <tr className="font-semibold">
+                      <td className={tdClass}>Quote</td>
+                      {dateStats.map(({ date, quote }) => (
+                        <td key={date} className={`${tdClass} text-center`}>
+                          {quote === null ? "–" : `${quote}%`}
+                        </td>
+                      ))}
+                    </tr>
                   </tfoot>
                 )}
               </table>
@@ -311,18 +319,9 @@ export default function AttendancePrint() {
               )}
 
               {groupChildren.length > 0 && dates.length > 0 && (
-                <div className="mt-2 max-w-md border-t border-slate-300 pt-2 text-sm text-slate-800">
-                  <p className="font-medium">Gesamtquote im Zeitraum: {overallQuote === null ? "–" : `${overallQuote}%`}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Quote je Termin:{" "}
-                    {dateStats.map(({ date, quote }, i) => (
-                      <span key={date}>
-                        {i > 0 && " · "}
-                        {formatShortDate(date)} {quote === null ? "–" : `${quote}%`}
-                      </span>
-                    ))}
-                  </p>
-                </div>
+                <p className="mt-2 max-w-md border-t border-slate-300 pt-2 text-sm font-medium text-slate-800">
+                  Gesamtquote im Zeitraum: {overallQuote === null ? "–" : `${overallQuote}%`}
+                </p>
               )}
             </div>
           </>
