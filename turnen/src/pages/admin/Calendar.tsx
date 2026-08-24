@@ -92,20 +92,18 @@ export default function Calendar() {
                   {byWeekday[day].map((g) => (
                     <div
                       key={g.id}
-                      className={`rounded-md border px-2 py-1.5 text-xs ${colorFor(g.id)} ${
-                        g.ownerId === userId ? "ring-2 ring-offset-1 ring-current dark:ring-offset-slate-900" : ""
+                      className={`overflow-hidden rounded-md border px-2 py-1.5 text-xs ${colorFor(g.id)} ${
+                        g.ownerId === userId ? "outline outline-2 outline-offset-1 outline-current" : ""
                       }`}
                     >
-                      <p className="font-medium">
-                        {g.name}
-                        {g.ownerId === userId && <span className="ml-1 font-normal opacity-70">(meine Gruppe)</span>}
-                      </p>
+                      <p className="break-words font-medium">{g.name}</p>
+                      {g.ownerId === userId && <p className="text-[0.65rem] font-normal opacity-70">meine Gruppe</p>}
                       {g.startTime && g.endTime && (
                         <p>
                           {g.startTime}–{g.endTime}
                         </p>
                       )}
-                      {g.location && <p className="opacity-80">{g.location}</p>}
+                      {g.location && <p className="break-words opacity-80">{g.location}</p>}
                     </div>
                   ))}
                   {byWeekday[day].length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">–</p>}
