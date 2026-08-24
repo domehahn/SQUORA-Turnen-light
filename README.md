@@ -20,10 +20,15 @@ großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berech
 
 ## Features
 
+### Start-Dashboard
+- Eigene Kennzahlen (Gruppen, aktive Kinder, offene/anstehende Vertretungen) sowie eine „Wartet auf dich“-Liste aller offenen Anfragen (Verschieben, Kapazität, Platzvorschläge, abweichende Termine, Vereinsbeitritt) mit direkten Links.
+
 ### Gruppen & Kinder
 - Altersgruppen mit Alters-Range, optionalem Kapazitätslimit, Wochentag/Uhrzeit/Ort.
+- **Mehrere gleichberechtigte Leitungen pro Gruppe** (Mit-Trainer*innen): bekommen dieselben Schreibrechte wie die Gruppenleitung, verwaltet von Besitzer:in oder Jugendleitung.
 - Kinder mit Name, Geburtsdatum, Notfallkontakt, Gesundheitshinweisen (z. B. Allergien).
 - Kinder-Liste nach Gruppe gruppiert (Überschrift pro Gruppe statt Gruppen-Spalte).
+- **Austreten lassen statt löschen**: ausgetretene Kinder behalten ihre Anwesenheitshistorie, zählen aber nirgends mehr aktiv mit (Kapazität, Listen) und lassen sich jederzeit reaktivieren (eigene Archiv-Ansicht).
 - Automatische Berechnung, wann ein Kind altersbedingt in die nächste Gruppe wechseln müsste, inkl. Verschiebe-Workflow.
 - **Geschwister-Verknüpfung**: Kinder direkt über eine Auswahl anderer Kinder als Geschwister verknüpfen (keine separat zu benennende „Familie“ mehr) – vereinsweit, funktioniert also auch gruppen- und übungsleiterübergreifend.
 - **Gruppen-Warteliste**: Ist eine Gruppe voll, landet ein Kind auf der Warteliste und rückt automatisch nach, sobald ein Platz frei wird.
@@ -38,6 +43,7 @@ großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berech
 
 ### Anwesenheit & Übersicht
 - Anwesenheitsliste pro Gruppe – auswählbar sind nur Termine am konfigurierten Trainingstag der Gruppe, plus eigene, aktuell übernommene Vertretungstermine.
+- **Trainingsausfall verwalten**: ein Termin lässt sich mit Grund komplett absagen (Ferien-Ausnahme, Trainer krank ohne Vertretung) und jederzeit wieder aufheben – sichtbar in der Übersicht (durchgestrichenes Datum, roter Hinweis). Keine Freigabe nötig.
 - **Abweichender Termin** (z. B. Turnier, andere Uhrzeit/Ort): Turnleiter*innen können das nur anfragen, die Jugendleitung muss freigeben oder ablehnen; die eigentliche Anwesenheitserfassung wird davon unabhängig sofort gespeichert.
 - **„Wer hat geleitet?“**: Jeder Termin bekommt eine Leitung zugeordnet (vereinsweite Auswahl) – Basis für die Stundenerfassung.
 - Monatsübersicht pro Gruppe mit Anwesenheitsquote je Kind, Kalenderansicht der Trainingstermine (berücksichtigt rheinland-pfälzische Schulferien).
@@ -65,6 +71,7 @@ großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berech
 ### Druckansichten
 - Anwesenheitsliste zum Ausdrucken mit wählbarem Zeitraum (Standard: aktueller Monat), inkl. Gesamtanzahl der Kinder und einer Quote-Tabelle je Kind (X von Y Terminen, Prozent).
 - Namensliste (Nachname, Vorname, Geburtsdatum) zum Ausdrucken – auswählbar für mehrere Gruppen gleichzeitig (Badge-Auswahl), jede Gruppe auf eigener Seite.
+- **Notfallliste** (Name, Notfallkontakt, Telefon, Gesundheitshinweise) zum Ausdrucken für den Ernstfall in der Halle – gleiche Mehrfach-Gruppen-Auswahl.
 - Alle Druckseiten sind unabhängig vom App-Darkmode immer hell/kontrastreich gestaltet, im SQUORA-Formularstil (Logo, blaue Tabellenköpfe).
 
 ### Benachrichtigungen & Nachvollziehbarkeit
@@ -87,7 +94,10 @@ zusätzlich alle Turnleiter-Rechte.
 |---|---|---|
 | Eigene Gruppen/Kinder anlegen & bearbeiten | ✅ | ✅ (eigene) |
 | Fremde Gruppen/Kinder desselben Vereins | nur lesend | nur lesend (Schreiben bleibt bei der Gruppenleitung) |
+| Mit-Trainer*in einer Gruppe hinzufügen/entfernen | nur als Besitzer:in der Gruppe | ✅ (für jede Gruppe des Vereins) |
+| Kind austreten lassen/reaktivieren | ✅ (eigene Gruppe) | ✅ (eigene Gruppe) |
 | Anwesenheit erfassen | nur eigene Gruppe, nur am Trainingstag (+ eigene Vertretungstermine) | wie Turnleiter*in für eigene Gruppe(n) |
+| Trainingstermin absagen/Absage aufheben | ✅ (eigene Gruppe) | ✅ (eigene Gruppe) |
 | Abweichenden Termin setzen (Uhrzeit/Ort) | nur anfragen | anfragen **und** freigeben/ablehnen |
 | Vertretung anbieten/übernehmen | ✅ (Vertretungsbörse) | ✅ |
 | Vertretung zurückgeben | ✅ (als Vertretung oder als ursprüngliche Leitung) | ✅ |
@@ -107,9 +117,9 @@ zusätzlich alle Turnleiter-Rechte.
 turnen/
 ├── src/                 React-SPA (Vite, Tailwind v4, React Router)
 │   ├── pages/
-│   │   ├── admin/       Gruppen, Kinder, Anwesenheit, Übersicht, Auslastung,
-│   │   │                Kalender, Export, Verlauf, Vertretungen, Warteliste,
-│   │   │                Verein
+│   │   ├── admin/       Dashboard, Gruppen, Kinder, Anwesenheit, Übersicht,
+│   │   │                Auslastung, Kalender, Export, Verlauf, Vertretungen,
+│   │   │                Warteliste, Verein
 │   │   ├── AttendancePrint.tsx   Druckansicht Anwesenheitsliste/Namensliste
 │   │   └── HoursReport.tsx       Stundennachweis (eigene Route, außerhalb des Layouts)
 │   └── components/      Layout, Formulare, SQUORA-Branding
