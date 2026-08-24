@@ -130,6 +130,13 @@ export default function AttendancePrint() {
     return { child, present, recorded, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
   });
 
+  // Anwesend-Zeile pro Termin (wie in der Übersicht) - wie viele der Kinder
+  // waren an diesem Tag da.
+  const dateStats = dates.map((d) => {
+    const present = groupChildren.filter((child) => attendance[d]?.find((e) => e.childId === child.id)?.present).length;
+    return { date: d, present, total: groupChildren.length };
+  });
+
   return (
     // Druckansichten sind bewusst immer hell/schwarz auf weiß, unabhängig
     // vom Darkmode der App - sonst ist der Text weder am Bildschirm noch
@@ -255,6 +262,18 @@ export default function AttendancePrint() {
                     </tr>
                   )}
                 </tbody>
+                {groupChildren.length > 0 && dates.length > 0 && (
+                  <tfoot>
+                    <tr className="font-semibold">
+                      <td className={tdClass}>Anwesend</td>
+                      {dateStats.map(({ date, present, total }) => (
+                        <td key={date} className={`${tdClass} text-center`}>
+                          {present}/{total}
+                        </td>
+                      ))}
+                    </tr>
+                  </tfoot>
+                )}
               </table>
 
               {groupChildren.length > 0 && (
