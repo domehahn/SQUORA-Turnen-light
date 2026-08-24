@@ -125,7 +125,7 @@ export default function Overview() {
     const entries = attendance[d] ?? [];
     const present = entries.filter((e) => e.present).length;
     const recorded = entries.length;
-    return { date: d, present, total: groupChildren.length, recorded };
+    return { date: d, present, total: groupChildren.length, recorded, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
   });
   const totalPresent = dateStats.reduce((sum, s) => sum + s.present, 0);
   const totalRecorded = dateStats.reduce((sum, s) => sum + s.recorded, 0);
@@ -328,9 +328,18 @@ export default function Overview() {
             )}
           </table>
           {groupChildren.length > 0 && trainingDates.length > 0 && (
-            <p className="border-t border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 dark:border-slate-800 dark:text-slate-300">
-              Gesamtquote im Zeitraum: {overallQuote === null ? "–" : `${overallQuote}%`}
-            </p>
+            <div className="border-t border-slate-200 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+              <p className="font-medium">Gesamtquote im Zeitraum: {overallQuote === null ? "–" : `${overallQuote}%`}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Quote je Termin:{" "}
+                {dateStats.map(({ date, quote }, i) => (
+                  <span key={date}>
+                    {i > 0 && " · "}
+                    {formatShortDate(date)} {quote === null ? "–" : `${quote}%`}
+                  </span>
+                ))}
+              </p>
+            </div>
           )}
         </div>
       )}
