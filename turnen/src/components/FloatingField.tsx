@@ -18,7 +18,13 @@ function hasValue(value: unknown): boolean {
   return value !== undefined && value !== null && String(value) !== "";
 }
 
-const LABEL_BASE = "pointer-events-none absolute left-3 origin-left transition-all duration-150";
+// Diskrete Schriftgrößen statt scale-Transform: mit transform würde die
+// (unveränderte) Zeilenhöhe der Box weiterhin den vollen Platz beanspruchen
+// und optisch mit dem Feldwert kollidieren, obwohl der Text selbst
+// geschrumpft aussieht. leading-none hält die Label-Box eng am Glyphen.
+const LABEL_BASE = "pointer-events-none absolute left-3 leading-none transition-all duration-150";
+const LABEL_FLOATED = "top-1.5 text-[10px]";
+const LABEL_RESTING = "top-1/2 -translate-y-1/2 text-sm";
 
 type FloatingInputProps = InputHTMLAttributes<HTMLInputElement> & { label: string; forceLight?: boolean };
 
@@ -41,19 +47,19 @@ export function FloatingInput({ label, id, forceLight, type, value, onFocus, onB
           setFocused(false);
           onBlur?.(e);
         }}
-        className={`peer w-full rounded-md border border-slate-300 px-3 pb-1.5 pt-4 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+        className={`peer w-full rounded-md border border-slate-300 px-3 pb-1.5 pt-5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
           forceLight ? "" : "dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark]"
         }`}
         {...props}
       />
       <label
         htmlFor={inputId}
-        className={`${LABEL_BASE} ${
+        className={`${LABEL_BASE} ${floated ? LABEL_FLOATED : LABEL_RESTING} ${
           floated
-            ? `top-1.5 scale-[0.72] ${
-                focused ? "text-emerald-600 dark:text-emerald-400" : `text-slate-500 ${forceLight ? "" : "dark:text-slate-400"}`
-              }`
-            : `top-1/2 -translate-y-1/2 text-sm text-slate-400 ${forceLight ? "" : "dark:text-slate-500"}`
+            ? focused
+              ? "text-emerald-600 dark:text-emerald-400"
+              : `text-slate-500 ${forceLight ? "" : "dark:text-slate-400"}`
+            : `text-slate-400 ${forceLight ? "" : "dark:text-slate-500"}`
         }`}
       >
         {label}
@@ -91,7 +97,7 @@ export function FloatingSelect({ label, id, children, forceLight, value, onFocus
           setFocused(false);
           onBlur?.(e);
         }}
-        className={`peer w-full rounded-md border border-slate-300 bg-white px-3 pb-1.5 pt-4 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+        className={`peer w-full rounded-md border border-slate-300 bg-white px-3 pb-1.5 pt-5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
           forceLight ? "" : "dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
         }`}
         {...props}
@@ -100,12 +106,12 @@ export function FloatingSelect({ label, id, children, forceLight, value, onFocus
       </select>
       <label
         htmlFor={selectId}
-        className={`${LABEL_BASE} ${
+        className={`${LABEL_BASE} ${floated ? LABEL_FLOATED : LABEL_RESTING} ${
           floated
-            ? `top-1.5 scale-[0.72] ${
-                focused ? "text-emerald-600 dark:text-emerald-400" : `text-slate-500 ${forceLight ? "" : "dark:text-slate-400"}`
-              }`
-            : `top-1/2 -translate-y-1/2 text-sm text-slate-400 ${forceLight ? "" : "dark:text-slate-500"}`
+            ? focused
+              ? "text-emerald-600 dark:text-emerald-400"
+              : `text-slate-500 ${forceLight ? "" : "dark:text-slate-400"}`
+            : `text-slate-400 ${forceLight ? "" : "dark:text-slate-500"}`
         }`}
       >
         {label}
