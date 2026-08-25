@@ -581,7 +581,7 @@ export default function Groups() {
                     </td>
                   </tr>
                 )}
-                {g.canEdit && g.ownerId === userId && (
+                {(g.ownerId === userId || (g.clubId && g.clubId === clubId && clubRole === "jugendleiter")) && (
                   <tr className="border-t border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/40">
                     <td colSpan={6} className="px-4 py-2">
                       <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
