@@ -506,6 +506,40 @@ app.post("/api/holidays", requireAuth, async (c) => {
   return c.json(holiday, 201);
 });
 
+// Bulk-Import (ICS/CSV wird im Frontend geparst, siehe src/lib/holidayImport.ts
+// - hier kommen nur schon aufbereitete {label, start, end}-Einträge an).
+// Begrenzt auf 500 Einträge pro Import, damit niemand versehentlich eine
+// riesige Datei in tausende Einzelzeilen verwandelt.
+app.post("/api/holidays/import", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann Ferien pflegen" }, 403);
+
+  const body = await c.req.json().catch(() => null);
+  const rawEntries = Array.isArray(body?.entries) ? body.entries : null;
+  if (!rawEntries || rawEntries.length === 0) return c.json({ error: "Keine Einträge übergeben" }, 400);
+  if (rawEntries.length > 500) return c.json({ error: "Zu viele Einträge auf einmal (max. 500)" }, 400);
+
+  const entries: { label: string; start: string; end: string }[] = [];
+  for (const raw of rawEntries) {
+    const label = requiredText(raw?.label, 200);
+    const start = validDate(raw?.start);
+    const end = validDate(raw?.end);
+    if (!label || !start || !end || start > end) return c.json({ error: "Ungültiger Eintrag in der Import-Datei" }, 400);
+    entries.push({ label, start, end });
+  }
+
+  const created = await db.createHolidaysBulk(c.env.DB, clubId, entries);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "holiday.imported",
+    targetLabel: `${created.length} Ferien-/Ausfallzeiträume importiert`,
+  });
+  return c.json(created, 201);
+});
+
 app.delete("/api/holidays/:id", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);

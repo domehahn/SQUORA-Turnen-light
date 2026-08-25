@@ -2037,6 +2037,23 @@ export async function createHoliday(
   return { id, label: input.label, start: input.start, end: input.end };
 }
 
+// Für den ICS/CSV-Import (siehe POST /api/holidays/import) - fügt mehrere
+// Zeiträume in einem Batch ein, statt pro Eintrag einen einzelnen Roundtrip.
+export async function createHolidaysBulk(
+  db: D1Database,
+  clubId: string,
+  entries: { label: string; start: string; end: string }[]
+): Promise<Holiday[]> {
+  const rows = entries.map((entry) => ({ id: crypto.randomUUID(), ...entry }));
+  const statements = rows.map((row) =>
+    db
+      .prepare("INSERT INTO holidays (id, club_id, label, start_date, end_date) VALUES (?, ?, ?, ?, ?)")
+      .bind(row.id, clubId, row.label, row.start, row.end)
+  );
+  if (statements.length > 0) await db.batch(statements);
+  return rows.map((row) => ({ id: row.id, label: row.label, start: row.start, end: row.end }));
+}
+
 export async function getHolidayRowById(db: D1Database, id: string): Promise<HolidayRow | null> {
   return db.prepare("SELECT * FROM holidays WHERE id = ?").bind(id).first<HolidayRow>();
 }

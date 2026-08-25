@@ -4,6 +4,7 @@ import type { Club, ClubJoinRequest, ClubMember, Holiday } from "../../lib/types
 import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { loadCustomHolidays } from "../../lib/holidays";
+import { parseHolidayFile } from "../../lib/holidayImport";
 
 interface PendingJoin {
   status: "pending_club_join_approval";
@@ -206,6 +207,28 @@ export default function ClubPage() {
     }
   }
 
+  async function handleImportFile(file: File) {
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      const text = await file.text();
+      const entries = parseHolidayFile(file.name, text);
+      if (entries.length === 0) {
+        setError("Konnte keine Zeiträume aus der Datei lesen - unterstützt werden .ics-Kalender oder CSV-Zeilen \"Bezeichnung,Von,Bis\".");
+        return;
+      }
+      const created = await api.post<Holiday[]>("/api/holidays/import", { entries });
+      setInfo(`${created.length} Ferien-/Ausfallzeiträume importiert.`);
+      await load();
+      await loadCustomHolidays();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Importieren");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDeleteHoliday(id: string) {
     setError(null);
     setBusy(true);
@@ -388,9 +411,9 @@ export default function ClubPage() {
               Zusätzliche Ferien/Trainingsausfälle ({holidays.length})
             </p>
             <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
-              Ergänzt die fest hinterlegten rheinland-pfälzischen Schulferien - z.B. für bewegliche Ferientage oder
-              Vereine außerhalb RLP. Wirkt sich auf alle Trainingstermin-Berechnungen aus (Anwesenheit, Kalender,
-              Übersicht).
+              Keine Ferien sind fest hinterlegt - trage hier ein, an welchen Zeiträumen kein Training stattfindet
+              (Schulferien, bewegliche Ferientage, Feiertage). Wirkt sich auf alle Trainingstermin-Berechnungen aus
+              (Anwesenheit, Kalender, Übersicht).
             </p>
             {holidays.length > 0 && (
               <ul className="mb-2 space-y-1 text-sm text-slate-700 dark:text-slate-300">
@@ -431,6 +454,28 @@ export default function ClubPage() {
                   Hinzufügen
                 </button>
               </form>
+            )}
+            {isJugendleiter && (
+              <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                  Ferienkalender importieren (.ics/.csv)
+                  <input
+                    type="file"
+                    accept=".ics,.ical,.csv,text/calendar,text/csv"
+                    className="hidden"
+                    disabled={busy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) handleImportFile(file);
+                    }}
+                  />
+                </label>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  ICS-Kalender (z.B. Export aus Outlook/Google Kalender/offiziellen Ferienkalendern) oder CSV-Zeilen
+                  im Format „Bezeichnung,Von,Bis" (Datum TT.MM.JJJJ oder JJJJ-MM-TT).
+                </p>
+              </div>
             )}
           </div>
           <button
