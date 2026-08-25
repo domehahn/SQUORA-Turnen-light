@@ -60,6 +60,11 @@ function buildQuarterRange(fromYear: number, fromQuarter: number, toYear: number
   return points;
 }
 
+function csvCell(value: string): string {
+  if (/[",\n;]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
 // War das Kind an diesem Zeitpunkt (Quartalsende) aktives Mitglied? Beruht
 // auf created_at/archived_at - ein Kind, das mehrfach aus- und wieder
 // eingetreten ist, zeigt nur das letzte Intervall (Reaktivieren setzt
@@ -148,6 +153,25 @@ export default function MemberStats() {
 
   const maxTotal = Math.max(1, ...rows.map((r) => r.total));
 
+  function handleExportCsv() {
+    const header = ["Quartal", ...visibleGroups.map((g) => g.name), "Gesamt"];
+    const lines = [header.map(csvCell).join(";")];
+    for (const r of rows) {
+      const cells = [r.label, ...visibleGroups.map((g) => String(r.perGroup[g.id] ?? 0)), String(r.total)];
+      lines.push(cells.map(csvCell).join(";"));
+    }
+    const csv = "﻿" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mitgliederstatistik_q${fromQuarter}-${fromYear}_bis_q${toQuarter}-${toYear}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -199,6 +223,14 @@ export default function MemberStats() {
             ))}
           </FloatingSelect>
         </div>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={rows.length === 0}
+          className="ml-auto rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          CSV herunterladen
+        </button>
       </div>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}

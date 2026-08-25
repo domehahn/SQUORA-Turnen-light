@@ -37,6 +37,7 @@ export default function Export() {
 
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 8 + i);
+  const [periodMode, setPeriodMode] = useState<"quarter" | "range">("range");
   const [quickYear, setQuickYear] = useState(currentYear);
   const [quickQuarter, setQuickQuarter] = useState(0); // 0 = Ganzes Jahr
 
@@ -85,49 +86,82 @@ export default function Export() {
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <div className="w-28">
-          <FloatingSelect
-            label="Jahr"
-            value={quickYear}
-            onChange={(e) => {
-              const year = Number(e.target.value);
-              setQuickYear(year);
-              applyQuarter(year, quickQuarter);
-            }}
+        <div className="flex w-full gap-1 rounded-md bg-slate-100 p-1 text-sm dark:bg-slate-800">
+          <button
+            type="button"
+            onClick={() => setPeriodMode("range")}
+            className={`flex-1 rounded px-3 py-1.5 font-medium ${
+              periodMode === "range"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+            }`}
           >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </FloatingSelect>
-        </div>
-        <div className="w-40">
-          <FloatingSelect
-            label="Quartal"
-            value={quickQuarter}
-            onChange={(e) => {
-              const quarter = Number(e.target.value);
-              setQuickQuarter(quarter);
-              applyQuarter(quickYear, quarter);
+            Von / Bis
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPeriodMode("quarter");
+              applyQuarter(quickYear, quickQuarter);
             }}
+            className={`flex-1 rounded px-3 py-1.5 font-medium ${
+              periodMode === "quarter"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+            }`}
           >
-            <option value={0}>Ganzes Jahr</option>
-            {[1, 2, 3, 4].map((q) => (
-              <option key={q} value={q}>
-                Q{q}
-              </option>
-            ))}
-          </FloatingSelect>
+            Jahr / Quartal
+          </button>
         </div>
-        <span className="pb-2 text-xs text-slate-400 dark:text-slate-500">füllt Von/Bis aus, beide bleiben frei anpassbar</span>
-        <div className="w-full" />
-        <div className="w-44">
-          <FloatingInput label="Von" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </div>
-        <div className="w-44">
-          <FloatingInput label="Bis" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </div>
+
+        {periodMode === "quarter" ? (
+          <>
+            <div className="w-28">
+              <FloatingSelect
+                label="Jahr"
+                value={quickYear}
+                onChange={(e) => {
+                  const year = Number(e.target.value);
+                  setQuickYear(year);
+                  applyQuarter(year, quickQuarter);
+                }}
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </FloatingSelect>
+            </div>
+            <div className="w-40">
+              <FloatingSelect
+                label="Quartal"
+                value={quickQuarter}
+                onChange={(e) => {
+                  const quarter = Number(e.target.value);
+                  setQuickQuarter(quarter);
+                  applyQuarter(quickYear, quarter);
+                }}
+              >
+                <option value={0}>Ganzes Jahr</option>
+                {[1, 2, 3, 4].map((q) => (
+                  <option key={q} value={q}>
+                    Q{q}
+                  </option>
+                ))}
+              </FloatingSelect>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="w-44">
+              <FloatingInput label="Von" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="w-44">
+              <FloatingInput label="Bis" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+          </>
+        )}
         {clubRole === "jugendleiter" && (
           <div className="w-56">
             <FloatingSelect label="Umfang" value={scope} onChange={(e) => setScope(e.target.value as "own" | "club")}>
