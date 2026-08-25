@@ -542,9 +542,13 @@ app.post("/api/groups", requireAuth, async (c) => {
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
   if (sortOrder === undefined) return c.json({ error: "Sortierung ist ungültig" }, 400);
   if (maxChildren === undefined) return c.json({ error: "Max. Kinderzahl ist ungültig" }, 400);
+  if (maxChildren === null) return c.json({ error: "Max. Kinderzahl fehlt" }, 400);
   if (weekday === undefined) return c.json({ error: "Wochentag ist ungültig" }, 400);
+  if (weekday === null) return c.json({ error: "Trainingstag fehlt" }, 400);
   if (startTime === undefined || endTime === undefined) return c.json({ error: "Uhrzeit ist ungültig (Format HH:MM)" }, 400);
+  if (startTime === null || endTime === null) return c.json({ error: "Von-/Bis-Uhrzeit fehlt" }, 400);
   if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
+  if (location === null) return c.json({ error: "Ort/Halle fehlt" }, 400);
 
   const group = await db.createGroup(c.env.DB, {
     name,
@@ -586,9 +590,13 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
   if (sortOrder === undefined) return c.json({ error: "Sortierung ist ungültig" }, 400);
   if (maxChildren === undefined) return c.json({ error: "Max. Kinderzahl ist ungültig" }, 400);
+  if (maxChildren === null) return c.json({ error: "Max. Kinderzahl fehlt" }, 400);
   if (weekday === undefined) return c.json({ error: "Wochentag ist ungültig" }, 400);
+  if (weekday === null) return c.json({ error: "Trainingstag fehlt" }, 400);
   if (startTime === undefined || endTime === undefined) return c.json({ error: "Uhrzeit ist ungültig (Format HH:MM)" }, 400);
+  if (startTime === null || endTime === null) return c.json({ error: "Von-/Bis-Uhrzeit fehlt" }, 400);
   if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
+  if (location === null) return c.json({ error: "Ort/Halle fehlt" }, 400);
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);

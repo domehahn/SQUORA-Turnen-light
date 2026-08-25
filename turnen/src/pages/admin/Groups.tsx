@@ -324,16 +324,17 @@ export default function Groups() {
         </div>
         <div className="w-36">
           <FloatingInput
-            label="Max. Kinder (optional)"
+            label="Max. Kinder"
             type="number"
             min={0}
+            required
             value={maxChildren}
             onChange={(e) => setMaxChildren(e.target.value)}
           />
         </div>
         <div className="w-full" />
         <div className="w-40">
-          <FloatingSelect label="Trainingstag (optional)" value={weekday} onChange={(e) => setWeekday(e.target.value)}>
+          <FloatingSelect label="Trainingstag" required value={weekday} onChange={(e) => setWeekday(e.target.value)}>
             <option value="">–</option>
             {WEEKDAY_NAMES.map((day, i) => (
               <option key={i} value={i}>
@@ -343,15 +344,16 @@ export default function Groups() {
           </FloatingSelect>
         </div>
         <div className="w-28">
-          <FloatingInput label="Von" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+          <FloatingInput label="Von" type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} />
         </div>
         <div className="w-28">
-          <FloatingInput label="Bis" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+          <FloatingInput label="Bis" type="time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} />
         </div>
         <div className="w-full" />
         <div className="w-40">
           <FloatingInput
-            label="Ort/Halle (optional)"
+            label="Ort/Halle"
+            required
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
