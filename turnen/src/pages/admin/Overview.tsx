@@ -42,7 +42,11 @@ export default function Overview() {
         ]);
         setGroups(groupList);
         setChildren(childrenList);
-        if (groupList.length > 0) setGroupId(groupList[0].id);
+        // Anwesenheitsdaten sind - anders als die Gruppenliste selbst -
+        // nicht vereinsweit lesbar (siehe /api/attendance-range), daher nur
+        // eigene/beschreibbare Gruppen zur Auswahl anbieten.
+        const writable = groupList.filter((g) => g.canEdit);
+        if (writable.length > 0) setGroupId(writable[0].id);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden");
       } finally {
@@ -51,6 +55,8 @@ export default function Overview() {
     }
     loadBase();
   }, []);
+
+  const writableGroups = useMemo(() => groups.filter((g) => g.canEdit), [groups]);
 
   const trainingDates = useMemo(() => trainingDatesInMonth(year, month), [year, month]);
   const monthStart = `${year}-${pad(month)}-01`;
@@ -158,7 +164,7 @@ export default function Overview() {
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="w-56">
           <FloatingSelect label="Gruppe" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-            {groups.map((g) => (
+            {writableGroups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name} ({g.minAge}–{g.maxAge} Jahre)
               </option>
