@@ -143,6 +143,10 @@ export default function Children() {
   // Abschnitt eigenständig, damit Blättern in einer großen Gruppe nicht die
   // anderen Abschnitte zurücksetzt.
   const [groupPage, setGroupPage] = useState<Record<string, number>>({});
+  // Detailansicht für Kontaktdaten - statt sich auf Hover/Titel-Tooltip zu
+  // verlassen (funktioniert auf Touch-Geräten nicht und ist schlecht
+  // auffindbar), öffnet ein Klick auf den Namen ein Detail-Panel.
+  const [detailChildId, setDetailChildId] = useState<string | null>(null);
 
   // Geschwister-Verknüpfung: statt einer separat zu benennenden "Familie"
   // wählt man hier direkt die Geschwister aus der Kinder-Liste aus - das
@@ -1132,29 +1136,15 @@ export default function Children() {
                       return (
                         <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
                           <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
-                            {child.firstName} {child.lastName}
-                            {hasHealthInfo && (
-                              <span
-                                className="ml-1.5 cursor-help"
-                                title={[
-                                  child.emergencyContactName ? `Notfallkontakt: ${child.emergencyContactName}` : null,
-                                  child.emergencyContactPhone ? `Tel: ${child.emergencyContactPhone}` : null,
-                                  child.healthNotes ? `Gesundheit: ${child.healthNotes}` : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              >
-                                ⚕️
-                              </span>
-                            )}
-                            {siblings.length > 0 && (
-                              <span
-                                className="ml-1.5 cursor-help"
-                                title={`Geschwister: ${siblings.map((s) => `${s.firstName} ${s.lastName}`).join(", ")}`}
-                              >
-                                👨‍👩‍👧
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => setDetailChildId(child.id)}
+                              className="text-left hover:underline"
+                            >
+                              {child.firstName} {child.lastName}
+                            </button>
+                            {hasHealthInfo && <span className="ml-1.5">⚕️</span>}
+                            {siblings.length > 0 && <span className="ml-1.5">👨‍👩‍👧</span>}
                             {mismatch && (
                               <span
                                 className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
@@ -1317,7 +1307,9 @@ export default function Children() {
                 {visibleArchivedChildren.map((child) => (
                   <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
-                      {child.firstName} {child.lastName}
+                      <button type="button" onClick={() => setDetailChildId(child.id)} className="text-left hover:underline">
+                        {child.firstName} {child.lastName}
+                      </button>
                     </td>
                     <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{groupName(child.groupId)}</td>
                     <td className="px-4 py-2 text-right">
@@ -1354,6 +1346,123 @@ export default function Children() {
           </div>
         )}
       </div>
+
+      {detailChildId &&
+        (() => {
+          const detailChild = allChildren.find((c) => c.id === detailChildId);
+          if (!detailChild) return null;
+          const detailSiblings = detailChild.familyId
+            ? allChildren.filter((c) => c.familyId === detailChild.familyId && c.id !== detailChild.id)
+            : [];
+          const detailAttendance = attendanceSummary[detailChild.id];
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+              onClick={() => setDetailChildId(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    {detailChild.firstName} {detailChild.lastName}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setDetailChildId(null)}
+                    aria-label="Schließen"
+                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <dl className="space-y-2.5 text-sm">
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                      Geburtsdatum
+                    </dt>
+                    <dd className="text-slate-700 dark:text-slate-300">
+                      {detailChild.birthDate} ({calculateAgeYears(detailChild.birthDate)} Jahre)
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Gruppe</dt>
+                    <dd className="text-slate-700 dark:text-slate-300">{groupName(detailChild.groupId)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                      Notfallkontakt
+                    </dt>
+                    <dd className="text-slate-700 dark:text-slate-300">{detailChild.emergencyContactName || "–"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Telefon</dt>
+                    <dd className="text-slate-700 dark:text-slate-300">
+                      {detailChild.emergencyContactPhone ? (
+                        <a href={`tel:${detailChild.emergencyContactPhone}`} className="text-emerald-700 hover:underline dark:text-emerald-400">
+                          {detailChild.emergencyContactPhone}
+                        </a>
+                      ) : (
+                        "–"
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                      Gesundheitshinweise
+                    </dt>
+                    <dd className="text-slate-700 dark:text-slate-300">{detailChild.healthNotes || "–"}</dd>
+                  </div>
+                  {detailChild.notes && (
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Notiz</dt>
+                      <dd className="text-slate-700 dark:text-slate-300">{detailChild.notes}</dd>
+                    </div>
+                  )}
+                  {detailSiblings.length > 0 && (
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        Geschwister
+                      </dt>
+                      <dd className="text-slate-700 dark:text-slate-300">
+                        {detailSiblings.map((s) => `${s.firstName} ${s.lastName} (${groupName(s.groupId)})`).join(", ")}
+                      </dd>
+                    </div>
+                  )}
+                  {detailAttendance && (
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        Zuletzt anwesend
+                      </dt>
+                      <dd className="text-slate-700 dark:text-slate-300">
+                        {detailAttendance.weeksSinceLastPresent === null
+                          ? "nie"
+                          : detailAttendance.weeksSinceLastPresent === 0
+                            ? "diese Woche"
+                            : `vor ${detailAttendance.weeksSinceLastPresent} Wochen`}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                {detailChild.canEdit && (
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailChildId(null);
+                        startEdit(detailChild);
+                      }}
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                    >
+                      Bearbeiten
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }
