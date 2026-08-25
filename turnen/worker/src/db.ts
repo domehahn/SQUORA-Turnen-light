@@ -287,17 +287,24 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  lastLoginAt: string | null;
 }
 
 export async function listClubMembers(db: D1Database, clubId: string): Promise<ClubMember[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, name, email, club_role as role FROM users WHERE club_id = ?
+      `SELECT id, name, email, club_role as role, last_login_at as lastLoginAt FROM users WHERE club_id = ?
        ORDER BY CASE club_role WHEN 'jugendleiter' THEN 0 ELSE 1 END, name ASC, email ASC`
     )
     .bind(clubId)
     .all<ClubMember>();
   return results;
+}
+
+// Zeitstempel der letzten erfolgreichen Anmeldung setzen - für die
+// Jugendleitung im Verein sichtbar, ergänzend zum Audit-Log.
+export async function touchLastLogin(db: D1Database, userId: string): Promise<void> {
+  await db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").bind(userId).run();
 }
 
 // Anzahl der Jugendleitungen im Verein, optional einen Nutzer ausschließend
@@ -1887,6 +1894,51 @@ function rowToClubWaitlistDetail(row: ClubWaitlistJoinRow): ClubWaitlistEntryDet
         }
       : null,
   };
+}
+
+export interface ClubWaitlistCandidate {
+  entryId: string;
+  childId: string;
+  childName: string;
+  birthDate: string;
+}
+
+// Wartende Kinder eines Vereins ohne offenen Platzvorschlag, deren Alter zur
+// übergebenen Gruppe passt - Basis für den proaktiven Hinweis "hier wird
+// gerade ein Platz frei, folgende Kinder von der Warteliste passen".
+export async function listClubWaitlistMatchesForGroup(
+  db: D1Database,
+  clubId: string,
+  group: { min_age: number; max_age: number }
+): Promise<ClubWaitlistCandidate[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT w.id as entry_id, c.id as child_id, c.first_name, c.last_name, c.birth_date
+       FROM club_waitlist_entries w
+       JOIN children c ON c.id = w.child_id
+       LEFT JOIN placement_requests pr ON pr.waitlist_entry_id = w.id AND pr.status = 'pending'
+       WHERE w.club_id = ?1 AND w.status = 'waiting' AND pr.id IS NULL`
+    )
+    .bind(clubId)
+    .all<{ entry_id: string; child_id: string; first_name: string; last_name: string; birth_date: string }>();
+  return results
+    .filter((row) => ageFitsGroup(row.birth_date, group))
+    .map((row) => ({
+      entryId: row.entry_id,
+      childId: row.child_id,
+      childName: `${row.first_name} ${row.last_name}`,
+      birthDate: row.birth_date,
+    }));
+}
+
+// Jugendleitung eines Vereins - Adressaten für vereinsweite Hinweise wie den
+// proaktiven Warteliste-Rückruf.
+export async function listClubLeaders(db: D1Database, clubId: string): Promise<{ id: string; name: string | null; email: string }[]> {
+  const { results } = await db
+    .prepare("SELECT id, name, email FROM users WHERE club_id = ? AND club_role = 'jugendleiter'")
+    .bind(clubId)
+    .all<{ id: string; name: string | null; email: string }>();
+  return results;
 }
 
 // Wartende Kinder eines Vereins, jeweils mit offenem Platzvorschlag (falls

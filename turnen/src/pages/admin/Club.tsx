@@ -12,6 +12,15 @@ interface PendingJoin {
   clubName: string;
 }
 
+function toIsoUtc(sqliteDate: string): string {
+  return sqliteDate.includes("T") ? sqliteDate : `${sqliteDate.replace(" ", "T")}Z`;
+}
+
+function formatLastLogin(iso: string | null): string {
+  if (!iso) return "Noch nie angemeldet";
+  return `Zuletzt angemeldet: ${new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(new Date(toIsoUtc(iso)))}`;
+}
+
 function isPendingJoin(value: unknown): value is PendingJoin {
   return (
     typeof value === "object" &&
@@ -385,13 +394,16 @@ export default function ClubPage() {
               <ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
                 {members.map((m) => (
                   <li key={m.id} className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="flex items-center gap-2">
-                      {m.name ?? m.email}
-                      {m.role === "jugendleiter" && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                          Jugendleitung
-                        </span>
-                      )}
+                    <span className="flex flex-col">
+                      <span className="flex items-center gap-2">
+                        {m.name ?? m.email}
+                        {m.role === "jugendleiter" && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                            Jugendleitung
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">{formatLastLogin(m.lastLoginAt)}</span>
                     </span>
                     {m.id !== userId && (
                       <span>

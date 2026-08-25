@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import type {
   AttendanceSummary,
@@ -137,7 +138,10 @@ export default function Children() {
   const [outgoingCapacityRequests, setOutgoingCapacityRequests] = useState<CapacityRequest[]>([]);
   const [myWaitlistEntries, setMyWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [attendanceSummary, setAttendanceSummary] = useState<Record<string, AttendanceSummary>>({});
-  const [search, setSearch] = useState("");
+  // Vorbelegt aus ?q= in der URL - so kann die globale Suche im Header
+  // direkt hierher mit vorausgefülltem Suchbegriff verlinken.
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const [printGroupIds, setPrintGroupIds] = useState<string[]>([]);
   // Seite pro Gruppen-Abschnitt (Key = Gruppen-ID bzw. "__none__"), je
   // Abschnitt eigenständig, damit Blättern in einer großen Gruppe nicht die

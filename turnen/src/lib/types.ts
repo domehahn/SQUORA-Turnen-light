@@ -59,6 +59,7 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  lastLoginAt: string | null;
 }
 
 export type MoveRequestStatus = "pending" | "approved" | "rejected" | "cancelled";

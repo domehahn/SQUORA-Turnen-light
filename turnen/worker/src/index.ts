@@ -243,6 +243,37 @@ async function promoteWaitlistIfPossible(c: { env: Env }, groupId: string): Prom
   }
 }
 
+// Proaktiver Hinweis an die Jugendleitung: wird in einer Gruppe Kapazität
+// frei, prüfen wir die vereinsweite Warteliste (club_waitlist_entries) auf
+// Kinder, die vom Alter her passen würden und noch keinen offenen
+// Platzvorschlag haben - ersetzt keine manuelle Prüfung/Freigabe, ist reine
+// Erinnerung, damit ein frei gewordener Platz nicht übersehen wird.
+async function notifyClubWaitlistOnFreedCapacity(c: { env: Env }, groupId: string): Promise<void> {
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group || group.max_children === null || !group.club_id) return;
+
+  const count = await db.countChildrenInGroup(c.env.DB, groupId);
+  if (count >= group.max_children) return;
+
+  const matches = await db.listClubWaitlistMatchesForGroup(c.env.DB, group.club_id, group);
+  if (matches.length === 0) return;
+
+  const freeSlots = group.max_children - count;
+  const names = matches.map((m) => m.childName).join(", ");
+  const leaders = await db.listClubLeaders(c.env.DB, group.club_id);
+  for (const leader of leaders) {
+    await notifyUser(c.env, {
+      userId: leader.id,
+      userEmail: leader.email,
+      userName: leader.name,
+      type: "waitlist_capacity_freed",
+      title: `Platz frei in „${group.name}“ – Warteliste prüfen`,
+      body: `In „${group.name}“ ${freeSlots === 1 ? "ist wieder 1 Platz" : `sind wieder ${freeSlots} Plätze`} frei. Von der Warteliste passt vom Alter her: ${names}.`,
+      link: "/warteliste",
+    });
+  }
+}
+
 app.post("/api/login", async (c) => {
   const body = await c.req.json().catch(() => null);
   const email = normalizedEmail(body?.email);
@@ -259,6 +290,7 @@ app.post("/api/login", async (c) => {
     { sub: userRow.id, email: userRow.email, name: userRow.name },
     c.env.JWT_SECRET
   );
+  await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ token, user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });
 
@@ -754,6 +786,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
 
   // Wurde die Kapazität erhöht, können jetzt Wartelisten-Einträge nachrücken.
   await promoteWaitlistIfPossible(c, id);
+  await notifyClubWaitlistOnFreedCapacity(c, id);
   return c.json(group);
 });
 
@@ -1042,7 +1075,10 @@ app.put("/api/children/:id", requireAuth, async (c) => {
 
   // Verließ das Kind eine kapazitätsbeschränkte Gruppe, kann jetzt jemand
   // von deren Warteliste nachrücken.
-  if (previousGroupId && previousGroupId !== groupId) await promoteWaitlistIfPossible(c, previousGroupId);
+  if (previousGroupId && previousGroupId !== groupId) {
+    await promoteWaitlistIfPossible(c, previousGroupId);
+    await notifyClubWaitlistOnFreedCapacity(c, previousGroupId);
+  }
 
   return c.json(child);
 });
@@ -1057,7 +1093,10 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   await db.deleteChild(c.env.DB, id);
-  if (existing.group_id) await promoteWaitlistIfPossible(c, existing.group_id);
+  if (existing.group_id) {
+    await promoteWaitlistIfPossible(c, existing.group_id);
+    await notifyClubWaitlistOnFreedCapacity(c, existing.group_id);
+  }
   return c.body(null, 204);
 });
 
@@ -1074,7 +1113,10 @@ app.post("/api/children/:id/archive", requireAuth, async (c) => {
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   const child = await db.archiveChild(c.env.DB, id);
-  if (existing.group_id) await promoteWaitlistIfPossible(c, existing.group_id);
+  if (existing.group_id) {
+    await promoteWaitlistIfPossible(c, existing.group_id);
+    await notifyClubWaitlistOnFreedCapacity(c, existing.group_id);
+  }
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
@@ -1453,7 +1495,10 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
     }
     const previousGroupId = child.group_id;
     await db.moveChildToGroup(c.env.DB, id, toGroupId);
-    if (previousGroupId) await promoteWaitlistIfPossible(c, previousGroupId);
+    if (previousGroupId) {
+      await promoteWaitlistIfPossible(c, previousGroupId);
+      await notifyClubWaitlistOnFreedCapacity(c, previousGroupId);
+    }
     return c.json({ status: "moved", groupId: toGroupId });
   }
 
@@ -1538,7 +1583,10 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
 
   await db.moveChildToGroup(c.env.DB, request.child_id, request.to_group_id);
   await db.setMoveRequestStatus(c.env.DB, id, "approved", c.get("userId"));
-  if (request.from_group_id) await promoteWaitlistIfPossible(c, request.from_group_id);
+  if (request.from_group_id) {
+    await promoteWaitlistIfPossible(c, request.from_group_id);
+    await notifyClubWaitlistOnFreedCapacity(c, request.from_group_id);
+  }
   const movedChild = await db.getChildRowById(c.env.DB, request.child_id);
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -1691,7 +1739,10 @@ app.post("/api/capacity-requests/:id/approve", requireAuth, async (c) => {
 
   await applyCapacityRequest(c.env.DB, request, c.get("userId"));
   await db.setCapacityRequestStatus(c.env.DB, id, "approved", c.get("userId"));
-  if (previousGroupId && previousGroupId !== request.group_id) await promoteWaitlistIfPossible(c, previousGroupId);
+  if (previousGroupId && previousGroupId !== request.group_id) {
+    await promoteWaitlistIfPossible(c, previousGroupId);
+    await notifyClubWaitlistOnFreedCapacity(c, previousGroupId);
+  }
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),

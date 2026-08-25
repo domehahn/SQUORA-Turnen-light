@@ -4,6 +4,7 @@ import { useAuth } from "../context/useAuth";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
+import { GlobalSearch } from "./GlobalSearch";
 import SquoraBrand from "./SquoraBrand";
 
 // Statt einer einzigen, mit 13 Punkten überladenen Zeile: gruppiert nach
@@ -96,6 +97,7 @@ export function AppLayout() {
             <SquoraBrand />
           </div>
           <div className="flex items-center gap-2">
+            <GlobalSearch />
             <NotificationBell />
             <ThemeToggle />
             <UserMenu />
