@@ -481,7 +481,7 @@ export default function Groups() {
                   </td>
                   <td className="px-4 py-2 text-right">
                     {g.canEdit ? (
-                      <>
+                      <div className="flex flex-wrap justify-end gap-1.5">
                         {g.ownerId === null && (
                           <button
                             onClick={() => handleClaim(g.id)}
@@ -493,18 +493,24 @@ export default function Groups() {
                                   ? "Nur die Jugendleitung kann Gruppen dem Verein zuordnen"
                                   : `Dieser Gruppe deinen Verein (${clubName}) zuordnen`
                             }
-                            className="mr-3 text-sm text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline dark:text-emerald-400 dark:disabled:text-slate-600"
+                            className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900"
                           >
                             Verein zuordnen
                           </button>
                         )}
-                        <button onClick={() => startEdit(g)} className="mr-3 text-sm text-emerald-700 hover:underline dark:text-emerald-400">
+                        <button
+                          onClick={() => startEdit(g)}
+                          className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900"
+                        >
                           Bearbeiten
                         </button>
-                        <button onClick={() => handleDelete(g.id)} className="text-sm text-red-600 hover:underline dark:text-red-400">
+                        <button
+                          onClick={() => handleDelete(g.id)}
+                          className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
+                        >
                           Löschen
                         </button>
-                      </>
+                      </div>
                     ) : (
                       <span
                         className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
