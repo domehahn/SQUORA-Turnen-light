@@ -109,11 +109,13 @@ export default function Dashboard() {
   const activeChildren = allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
 
   // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
-  // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis.
+  // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis. Jugendleitung
+  // sieht das vereinsweit (alle Gruppen), Turnleiter*innen nur die eigene(n).
   const mismatched = useMemo(() => {
     const overdue: { child: Child; currentGroup: Group; targetGroup: Group | undefined }[] = [];
     const tooYoung: { child: Child; currentGroup: Group; targetGroup: Group | undefined }[] = [];
-    for (const child of activeChildren) {
+    const relevantChildren = isJugendleiter ? allActiveChildren : activeChildren;
+    for (const child of relevantChildren) {
       const currentGroup = groups.find((g) => g.id === child.groupId);
       if (!currentGroup) continue;
       const age = calculateAgeYears(child.birthDate);
@@ -125,7 +127,7 @@ export default function Dashboard() {
     tooYoung.sort(byName);
     return { overdue, tooYoung };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChildren, groups]);
+  }, [isJugendleiter, allActiveChildren, activeChildren, groups]);
 
   const todos: TodoItem[] = [
     { label: "Verschiebe-Anfragen für deine Gruppen", count: incomingMoveRequests.length, to: "/gruppen", tone: "amber" as const },
@@ -268,8 +270,8 @@ export default function Dashboard() {
                 <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
                   {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
                     <li key={child.id}>
-                      {child.firstName} {child.lastName} – noch in {currentGroup.name}
-                      {targetGroup ? `, gehört eigentlich zu ${targetGroup.name}` : ""}
+                      {child.firstName} {child.lastName}
+                      {targetGroup ? ` – gehört eigentlich zu ${targetGroup.name}` : ""} · Gruppe: {currentGroup.name}
                     </li>
                   ))}
                 </ul>
@@ -296,8 +298,8 @@ export default function Dashboard() {
                 <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
                   {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
                     <li key={child.id}>
-                      {child.firstName} {child.lastName} – in {currentGroup.name}
-                      {targetGroup ? `, passt eher zu ${targetGroup.name}` : ""}
+                      {child.firstName} {child.lastName}
+                      {targetGroup ? ` – passt eher zu ${targetGroup.name}` : ""} · Gruppe: {currentGroup.name}
                     </li>
                   ))}
                 </ul>
