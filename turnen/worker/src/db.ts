@@ -207,6 +207,28 @@ export async function getUserById(db: D1Database, id: string): Promise<User | nu
   return row ? rowToUser(row) : null;
 }
 
+// Volle Zeile inkl. password_hash/password_salt - für die "altes Passwort
+// prüfen"-Logik beim Passwort-Ändern (siehe PUT /api/me/password).
+export async function getUserRowById(db: D1Database, id: string): Promise<UserRow | null> {
+  return db.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<UserRow>();
+}
+
+export async function updateUserProfile(
+  db: D1Database,
+  id: string,
+  input: { name: string | null; email: string }
+): Promise<User | null> {
+  await db.prepare("UPDATE users SET name = ?, email = ? WHERE id = ?").bind(input.name, input.email, id).run();
+  return getUserById(db, id);
+}
+
+export async function updateUserPassword(db: D1Database, id: string, input: { hash: string; salt: string }): Promise<void> {
+  await db
+    .prepare("UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?")
+    .bind(input.hash, input.salt, id)
+    .run();
+}
+
 // --- Vereine ---------------------------------------------------------------
 
 export async function listClubs(db: D1Database): Promise<Club[]> {

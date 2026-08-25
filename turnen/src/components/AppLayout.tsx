@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
+import { UserMenu } from "./UserMenu";
 import SquoraBrand from "./SquoraBrand";
 
 // Statt einer einzigen, mit 13 Punkten überladenen Zeile: gruppiert nach
@@ -50,7 +51,7 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function AppLayout() {
-  const { userName, userEmail, clubName, clubRole, signOut } = useAuth();
+  const { clubRole } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
   const [navOpen, setNavOpen] = useState(false);
 
@@ -95,18 +96,9 @@ export function AppLayout() {
             <SquoraBrand />
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden max-w-[14rem] truncate text-sm text-slate-500 dark:text-slate-400 sm:inline">
-              {userName ?? userEmail}
-              {clubName ? ` · ${clubName}` : ""}
-            </span>
             <NotificationBell />
             <ThemeToggle />
-            <button
-              onClick={signOut}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Abmelden
-            </button>
+            <UserMenu />
           </div>
         </div>
       </header>

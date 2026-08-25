@@ -275,6 +275,48 @@ app.get("/api/me", requireAuth, async (c) => {
   });
 });
 
+// Name/E-Mail des eigenen Accounts ändern. Ändert sich einer der beiden
+// Werte, steckt das alte JWT noch die alten Werte fest (signToken schreibt
+// email/name mit rein) - deshalb wird hier immer ein frisches Token
+// ausgestellt, das das Frontend übernehmen muss (siehe refreshProfile in
+// AuthContext.tsx).
+app.put("/api/me", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const email = normalizedEmail(body?.email);
+  const name = optionalText(body?.name, 100);
+  if (!email) return c.json({ error: "E-Mail fehlt oder ist ungültig" }, 400);
+  if (name === undefined) return c.json({ error: "Name ist zu lang" }, 400);
+
+  const existing = await db.getUserByEmail(c.env.DB, email);
+  if (existing && existing.id !== c.get("userId")) return c.json({ error: "E-Mail wird bereits verwendet" }, 409);
+
+  const user = await db.updateUserProfile(c.env.DB, c.get("userId"), { name, email });
+  if (!user) return c.json({ error: "Nutzer nicht gefunden" }, 404);
+
+  const token = await signToken({ sub: user.id, email: user.email, name: user.name }, c.env.JWT_SECRET);
+  return c.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+// Eigenes Passwort ändern - verlangt das aktuelle Passwort zur Bestätigung,
+// analog zum Login-Check.
+app.put("/api/me/password", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const currentPassword = typeof body?.currentPassword === "string" ? body.currentPassword : undefined;
+  const newPassword = validPassword(body?.newPassword);
+  if (!currentPassword) return c.json({ error: "Aktuelles Passwort fehlt" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
+
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  if (!userRow) return c.json({ error: "Nutzer nicht gefunden" }, 404);
+
+  const valid = await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt);
+  if (!valid) return c.json({ error: "Aktuelles Passwort ist falsch" }, 401);
+
+  const { hash, salt } = await hashPassword(newPassword);
+  await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
+  return c.json({ ok: true });
+});
+
 // --- Vereine -------------------------------------------------------------
 
 app.get("/api/clubs", requireAuth, async (c) => {

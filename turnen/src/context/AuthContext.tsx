@@ -98,6 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState(readState(null));
       },
       refreshClub: loadClub,
+      applyProfileToken(token: string) {
+        setToken(token);
+        setState(readState(token));
+      },
     }),
     [state]
   );
