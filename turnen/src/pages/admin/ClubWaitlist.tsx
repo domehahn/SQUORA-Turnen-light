@@ -364,20 +364,23 @@ export default function ClubWaitlist() {
                               Alter)
                             </span>
                           )}
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={proposalGroup[entry.id] ?? ""}
-                              onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
-                              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                            >
-                              <option value="">Gruppe vorschlagen…</option>
-                              {ranked.map((fit) => (
-                                <option key={fit.group.id} value={fit.group.id}>
-                                  {fit.group.name} ({fit.count}/{fit.group.maxChildren ?? "∞"})
-                                  {fit.ageFits ? "" : " – Alter passt nicht"}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="flex items-end gap-2">
+                            <div className="w-56">
+                              <FloatingSelect
+                                label="Gruppe vorschlagen"
+                                id={`propose-group-${entry.id}`}
+                                value={proposalGroup[entry.id] ?? ""}
+                                onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                              >
+                                <option value="">–</option>
+                                {ranked.map((fit) => (
+                                  <option key={fit.group.id} value={fit.group.id}>
+                                    {fit.group.name} ({fit.count}/{fit.group.maxChildren ?? "∞"})
+                                    {fit.ageFits ? "" : " – Alter passt nicht"}
+                                  </option>
+                                ))}
+                              </FloatingSelect>
+                            </div>
                             <button
                               onClick={() => handlePropose(entry.id)}
                               disabled={busy || !proposalGroup[entry.id]}

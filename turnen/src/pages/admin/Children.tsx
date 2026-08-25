@@ -862,25 +862,27 @@ export default function Children() {
                 </span>
               );
             })}
-            <select
-              value={addSiblingValue}
-              onChange={(e) => {
-                const id = e.target.value;
-                if (id) setSiblingIds((prev) => [...prev, id]);
-                setAddSiblingValue("");
-              }}
-              className="w-56 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="">+ Geschwisterkind hinzufügen…</option>
-              {children
-                .filter((c) => c.id !== editingId && !siblingIds.includes(c.id))
-                .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.firstName} {c.lastName} ({groupName(c.groupId)})
-                  </option>
-                ))}
-            </select>
+            <div className="w-56">
+              <FloatingSelect
+                label="Geschwisterkind hinzufügen"
+                value={addSiblingValue}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) setSiblingIds((prev) => [...prev, id]);
+                  setAddSiblingValue("");
+                }}
+              >
+                <option value="">–</option>
+                {children
+                  .filter((c) => c.id !== editingId && !siblingIds.includes(c.id))
+                  .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.firstName} {c.lastName} ({groupName(c.groupId)})
+                    </option>
+                  ))}
+              </FloatingSelect>
+            </div>
           </div>
         </div>
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
@@ -1098,36 +1100,39 @@ export default function Children() {
                             ) : hasOpenRequest ? (
                               <span className="text-xs text-amber-600 dark:text-amber-400">wartet auf Freigabe</span>
                             ) : (
-                              <select
-                                value={moveSelection[child.id] ?? ""}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setMoveSelection((prev) => ({ ...prev, [child.id]: value }));
-                                  if (value.startsWith(WAITLIST_PREFIX)) {
-                                    handleAddToWaitlist(child.id, value.slice(WAITLIST_PREFIX.length));
-                                  } else {
-                                    handleMove(child.id, value);
-                                  }
-                                }}
-                                className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                              >
-                                <option value="">Verschieben nach…</option>
-                                {moveTargets.map(({ g, count, fits, full }) => {
-                                  const occupancy = `${count}/${g.maxChildren ?? "∞"}`;
-                                  if (full) {
+                              <div className="w-40">
+                                <FloatingSelect
+                                  label="Verschieben nach"
+                                  id={`move-${child.id}`}
+                                  value={moveSelection[child.id] ?? ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setMoveSelection((prev) => ({ ...prev, [child.id]: value }));
+                                    if (value.startsWith(WAITLIST_PREFIX)) {
+                                      handleAddToWaitlist(child.id, value.slice(WAITLIST_PREFIX.length));
+                                    } else {
+                                      handleMove(child.id, value);
+                                    }
+                                  }}
+                                >
+                                  <option value="">–</option>
+                                  {moveTargets.map(({ g, count, fits, full }) => {
+                                    const occupancy = `${count}/${g.maxChildren ?? "∞"}`;
+                                    if (full) {
+                                      return (
+                                        <option key={g.id} value={`${WAITLIST_PREFIX}${g.id}`}>
+                                          {g.name} ({occupancy}, voll – auf Warteliste)
+                                        </option>
+                                      );
+                                    }
                                     return (
-                                      <option key={g.id} value={`${WAITLIST_PREFIX}${g.id}`}>
-                                        {g.name} ({occupancy}, voll – auf Warteliste)
+                                      <option key={g.id} value={g.id}>
+                                        {g.name} ({occupancy}){fits ? "" : " (benötigt Freigabe)"}
                                       </option>
                                     );
-                                  }
-                                  return (
-                                    <option key={g.id} value={g.id}>
-                                      {g.name} ({occupancy}){fits ? "" : " (benötigt Freigabe)"}
-                                    </option>
-                                  );
-                                })}
-                              </select>
+                                  })}
+                                </FloatingSelect>
+                              </div>
                             )}
                           </td>
                           <td className="px-4 py-2 text-right">

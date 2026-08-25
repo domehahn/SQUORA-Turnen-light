@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import type { AttendanceEntry, Child, Group } from "../lib/types";
 import { trainingDatesInRange, formatShortDate } from "../lib/schedule";
 import SquoraBrand from "../components/SquoraBrand";
+import { FloatingInput } from "../components/FloatingField";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -183,24 +184,12 @@ export default function AttendancePrint() {
             </div>
             {mode === "anwesenheit" && (
               <>
-                <label className="text-sm text-slate-600">
-                  Von
-                  <input
-                    type="date"
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                    className="ml-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
-                  />
-                </label>
-                <label className="text-sm text-slate-600">
-                  Bis
-                  <input
-                    type="date"
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    className="ml-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
-                  />
-                </label>
+                <div className="w-36">
+                  <FloatingInput label="Von" type="date" forceLight value={from} onChange={(e) => setFrom(e.target.value)} />
+                </div>
+                <div className="w-36">
+                  <FloatingInput label="Bis" type="date" forceLight value={to} onChange={(e) => setTo(e.target.value)} />
+                </div>
               </>
             )}
           </div>

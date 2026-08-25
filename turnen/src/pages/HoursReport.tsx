@@ -1,8 +1,9 @@
-import { useEffect, useState, type InputHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { HoursReport, HoursSummary } from "../lib/types";
 import SquoraBrand from "../components/SquoraBrand";
+import { FloatingInput, FloatingSelect } from "../components/FloatingField";
 
 // SQUORA-Formularstil (siehe tournament-manager/AufstellungsbogenPdfService):
 // helle blaue Tabellenköpfe statt schlichtem Grau/Schwarz.
@@ -19,39 +20,6 @@ const LOCAL_STORAGE_KEYS = {
 function currentQuarter(): { year: number; quarter: number } {
   const now = new Date();
   return { year: now.getFullYear(), quarter: Math.floor(now.getMonth() / 3) + 1 };
-}
-
-// Immer hell gestylte Eingabefelder, unabhängig vom App-Darkmode - die
-// FloatingField-Komponenten haben dark:-Varianten, die hier nicht greifen
-// dürfen (siehe Begründung für erzwungenes Hell-Theme weiter unten).
-function LightField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const fieldClass =
-  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
-
-function LightInput({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
-  return (
-    <LightField label={label}>
-      <input {...props} className={`${fieldClass} ${className ?? ""}`} />
-    </LightField>
-  );
-}
-
-function LightSelect({ label, className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { label: string }) {
-  return (
-    <LightField label={label}>
-      <select {...props} className={`${fieldClass} ${className ?? ""}`}>
-        {children}
-      </select>
-    </LightField>
-  );
 }
 
 export default function HoursReportPage() {
@@ -132,13 +100,23 @@ export default function HoursReportPage() {
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div className="flex flex-wrap items-end gap-3">
-                <LightInput label="Jahr" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24" />
-                <LightSelect label="Quartal" value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} className="w-32">
-                  <option value={1}>1. Quartal</option>
-                  <option value={2}>2. Quartal</option>
-                  <option value={3}>3. Quartal</option>
-                  <option value={4}>4. Quartal</option>
-                </LightSelect>
+                <div className="w-24">
+                  <FloatingInput
+                    label="Jahr"
+                    type="number"
+                    forceLight
+                    value={year}
+                    onChange={(e) => setYear(Number(e.target.value))}
+                  />
+                </div>
+                <div className="w-32">
+                  <FloatingSelect label="Quartal" forceLight value={quarter} onChange={(e) => setQuarter(Number(e.target.value))}>
+                    <option value={1}>1. Quartal</option>
+                    <option value={2}>2. Quartal</option>
+                    <option value={3}>3. Quartal</option>
+                    <option value={4}>4. Quartal</option>
+                  </FloatingSelect>
+                </div>
               </div>
               <button
                 onClick={() => window.print()}
@@ -149,10 +127,16 @@ export default function HoursReportPage() {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 sm:grid-cols-4">
-              <LightInput label="Sportart" value={sport} onChange={(e) => setSport(e.target.value)} />
-              <LightInput label="Lizenz-Nr." value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
-              <LightInput label="Gültig bis" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} placeholder="TT.MM.JJJJ" />
-              <LightInput label="Ort" value={ort} onChange={(e) => setOrt(e.target.value)} />
+              <FloatingInput label="Sportart" forceLight value={sport} onChange={(e) => setSport(e.target.value)} />
+              <FloatingInput label="Lizenz-Nr." forceLight value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+              <FloatingInput
+                label="Gültig bis"
+                forceLight
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+                placeholder="TT.MM.JJJJ"
+              />
+              <FloatingInput label="Ort" forceLight value={ort} onChange={(e) => setOrt(e.target.value)} />
             </div>
           </div>
         </div>

@@ -350,7 +350,7 @@ export default function Groups() {
           <FloatingInput label="Bis" type="time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} />
         </div>
         <div className="w-full" />
-        <div className="w-40">
+        <div className="min-w-[280px] flex-1">
           <FloatingInput
             label="Ort/Halle"
             required
@@ -587,7 +587,7 @@ export default function Groups() {
                       <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
                         Mit-Trainer*innen für „{g.name}“ – gleichberechtigte Leitung, kein einzelner Vertretungstermin
                       </p>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-end gap-2">
                         {(coLeaders[g.id] ?? []).map((cl) => (
                           <span
                             key={cl.id}
@@ -604,20 +604,23 @@ export default function Groups() {
                             </button>
                           </span>
                         ))}
-                        <select
-                          value={addCoLeaderSelection[g.id] ?? ""}
-                          onChange={(e) => setAddCoLeaderSelection((prev) => ({ ...prev, [g.id]: e.target.value }))}
-                          className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          <option value="">+ Mit-Trainer*in hinzufügen…</option>
-                          {clubMembers
-                            .filter((m) => m.id !== userId && !(coLeaders[g.id] ?? []).some((cl) => cl.id === m.id))
-                            .map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name ?? m.email}
-                              </option>
-                            ))}
-                        </select>
+                        <div className="w-56">
+                          <FloatingSelect
+                            label="Mit-Trainer*in hinzufügen"
+                            id={`co-leader-${g.id}`}
+                            value={addCoLeaderSelection[g.id] ?? ""}
+                            onChange={(e) => setAddCoLeaderSelection((prev) => ({ ...prev, [g.id]: e.target.value }))}
+                          >
+                            <option value="">–</option>
+                            {clubMembers
+                              .filter((m) => m.id !== userId && !(coLeaders[g.id] ?? []).some((cl) => cl.id === m.id))
+                              .map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name ?? m.email}
+                                </option>
+                              ))}
+                          </FloatingSelect>
+                        </div>
                         <button
                           onClick={() => handleAddCoLeader(g.id)}
                           disabled={!addCoLeaderSelection[g.id]}
