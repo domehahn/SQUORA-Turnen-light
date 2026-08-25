@@ -75,7 +75,9 @@ export default function Calendar() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Trainingskalender</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Alle Trainingszeiten der Woche auf einen Blick – nach Wochentag sortiert.
+          Alle Trainingszeiten der Woche auf einen Blick – nach Wochentag sortiert. Jede Gruppe hat eine eigene,
+          gleichbleibende Farbe zur besseren Unterscheidbarkeit (keine Wertung); die eigene Gruppe ist zusätzlich
+          umrandet.
         </p>
       </div>
 
@@ -84,13 +86,14 @@ export default function Calendar() {
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : (
         <>
-          {/* Feste 9rem-Spalten statt breakpoint-abhängigem grid-cols-N: die
-              Seitenleiste im Layout ändert, wie viel Platz tatsächlich zur
-              Verfügung steht, unabhängig von der Viewport-Breite - mit
-              festen Spalten reflowt die Anzahl nebeneinander passender Tage
-              automatisch, und der Rest scrollt sauber statt sich zu
-              verschieben/zu quetschen. */}
-          <div className="grid auto-cols-[9rem] grid-flow-col gap-3 overflow-x-auto pb-1">
+          {/* Spalten mit auto-fit/minmax statt breakpoint-abhängigem
+              grid-cols-N oder fester Spaltenzahl mit Scroll: die Seitenleiste
+              im Layout ändert, wie viel Platz tatsächlich zur Verfügung
+              steht, unabhängig von der Viewport-Breite - auto-fit füllt die
+              verfügbare Breite immer vollständig (Spalten strecken sich
+              gleichmäßig) und bricht erst bei zu wenig Platz um, statt
+              seitlich abzuschneiden. */}
+          <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))]">
             {WEEKDAYS.map((day, i) => (
               <div key={day} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{WEEKDAY_NAMES[i]}</h3>
