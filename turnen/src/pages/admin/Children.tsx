@@ -620,8 +620,14 @@ export default function Children() {
                 <ul className="space-y-1 text-sm">
                   {items.map(({ child, switchDate, targetGroup }) => (
                     <li key={child.id}>
-                      {child.firstName} {child.lastName}
-                      {targetGroup ? ` → ${targetGroup.name}` : ""} ab {formatMonthYear(switchDate)}
+                      {child.firstName} {child.lastName} – ab {formatMonthYear(switchDate)}
+                      {targetGroup ? (
+                        <>
+                          {" "}
+                          Vorschlag: <span className="font-medium">{targetGroup.name}</span>{" "}
+                          <span className="opacity-75">(vorbehaltlich freier Kapazität)</span>
+                        </>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -997,7 +1003,7 @@ export default function Children() {
                         const switchDate = nextGroupSwitchDate(child.birthDate, currentGroup.maxAge);
                         const target = nextGroup(currentGroup, groups);
                         switchLabel = target
-                          ? `${target.name} ab ${formatMonthYear(switchDate)}`
+                          ? `Vorschlag: ${target.name} ab ${formatMonthYear(switchDate)}`
                           : `ab ${formatMonthYear(switchDate)}`;
                       }
 
@@ -1093,7 +1099,12 @@ export default function Children() {
                               <span className="text-slate-400 dark:text-slate-500">–</span>
                             )}
                           </td>
-                          <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{switchLabel}</td>
+                          <td
+                            className="px-4 py-2 text-slate-600 dark:text-slate-300"
+                            title="Automatischer Vorschlag nach Alter - noch nicht durchgeführt, abhängig von freier Kapazität in der Zielgruppe"
+                          >
+                            {switchLabel}
+                          </td>
                           <td className="px-4 py-2">
                             {!child.canEdit ? (
                               <span className="text-xs text-slate-300 dark:text-slate-600">–</span>
