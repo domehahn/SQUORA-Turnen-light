@@ -36,7 +36,7 @@ export async function notifyUser(
       from: { email: env.EMAIL_FROM_ADDRESS, name: "Turnen" },
       subject: input.title,
       text: `${input.body}${linkLine}`,
-      html: `<p>${escapeHtml(input.body)}</p>${input.link ? `<p><a href="${env.FRONTEND_URL}${input.link}">In der App ansehen</a></p>` : ""}`,
+      html: `<p>${escapeHtml(input.body).replace(/\n/g, "<br>")}</p>${input.link ? `<p><a href="${env.FRONTEND_URL}${input.link}">In der App ansehen</a></p>` : ""}`,
     });
   } catch (err) {
     console.error("E-Mail-Versand fehlgeschlagen:", err);

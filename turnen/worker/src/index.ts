@@ -19,7 +19,7 @@ import {
   validTime,
   validWeekday,
 } from "./validation";
-import type { CapacityRequestRow, ClubRole, Env } from "./types";
+import type { CapacityRequestRow, ChildRow, ClubRole, Env } from "./types";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -745,6 +745,20 @@ app.get("/api/children", requireAuth, async (c) => {
   return c.json(await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived));
 });
 
+// Formatiert Geburtsdatum, Notfallkontakt und Gesundheitshinweise eines
+// Kindes für Benachrichtigungs-E-Mails an eine (neue) Gruppenleitung - die
+// Daten sind zwar ohnehin vereinsweit über die Kinderliste einsehbar, aber
+// direkt in der Mail sollen sie sofort verfügbar sein, ohne erst in der App
+// nachschauen zu müssen.
+function childContactSummary(child: ChildRow): string {
+  const [year, month, day] = child.birth_date.split("-");
+  const lines = [`Geburtsdatum: ${day}.${month}.${year}`];
+  const contact = [child.emergency_contact_name, child.emergency_contact_phone].filter(Boolean).join(", ");
+  if (contact) lines.push(`Notfallkontakt: ${contact}`);
+  if (child.health_notes) lines.push(`Gesundheitshinweise: ${child.health_notes}`);
+  return lines.join("\n");
+}
+
 // Benachrichtigt alle Jugendleitungen des Vereins, dem eine Gruppe gehört,
 // über eine neue Kapazitäts-Anfrage.
 async function notifyCapacityRequest(
@@ -1282,7 +1296,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
         userName: owner.name,
         type: "move_request",
         title: `Verschiebe-Anfrage für „${targetGroup.name}“`,
-        body: `${child.first_name} ${child.last_name} soll in deine Gruppe „${targetGroup.name}“ wechseln, erfüllt aber die Altersvoraussetzung nicht - bitte freigeben oder ablehnen.`,
+        body: `${child.first_name} ${child.last_name} soll in deine Gruppe „${targetGroup.name}“ wechseln, erfüllt aber die Altersvoraussetzung nicht - bitte freigeben oder ablehnen.\n\n${childContactSummary(child)}`,
         link: "/gruppen",
       });
     }
@@ -1347,6 +1361,40 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
     targetLabel: movedChild ? `${movedChild.first_name} ${movedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
     groupId: targetGroup.id,
   });
+
+  // Alte Gruppenleitung und ursprüngliche Antragsteller*in über den Ausgang
+  // informieren - vorher gab es hier gar keine Benachrichtigung.
+  const movedChildName = movedChild ? `${movedChild.first_name} ${movedChild.last_name}` : "Ein Kind";
+  const fromGroup = request.from_group_id ? await db.getGroupRowById(c.env.DB, request.from_group_id) : null;
+  if (fromGroup?.owner_id && fromGroup.owner_id !== c.get("userId")) {
+    const oldOwner = await db.getUserById(c.env.DB, fromGroup.owner_id);
+    if (oldOwner) {
+      await notifyUser(c.env, {
+        userId: oldOwner.id,
+        userEmail: oldOwner.email,
+        userName: oldOwner.name,
+        type: "move_request_approved",
+        title: `Verschiebe-Anfrage genehmigt: „${targetGroup.name}“`,
+        body: `${movedChildName} wurde von „${fromGroup.name}“ in „${targetGroup.name}“ verschoben.`,
+        link: "/gruppen",
+      });
+    }
+  }
+  if (request.requested_by && request.requested_by !== c.get("userId") && request.requested_by !== fromGroup?.owner_id) {
+    const requester = await db.getUserById(c.env.DB, request.requested_by);
+    if (requester) {
+      await notifyUser(c.env, {
+        userId: requester.id,
+        userEmail: requester.email,
+        userName: requester.name,
+        type: "move_request_approved",
+        title: `Deine Verschiebe-Anfrage wurde genehmigt`,
+        body: `${movedChildName} wurde in „${targetGroup.name}“ aufgenommen.`,
+        link: "/gruppen",
+      });
+    }
+  }
+
   return c.json({ ok: true });
 });
 
@@ -1372,6 +1420,40 @@ app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
     targetLabel: rejectedChild ? `${rejectedChild.first_name} ${rejectedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
     groupId: targetGroup.id,
   });
+
+  // Alte Gruppenleitung und ursprüngliche Antragsteller*in über die
+  // Ablehnung informieren - vorher gab es hier gar keine Benachrichtigung.
+  const rejectedChildName = rejectedChild ? `${rejectedChild.first_name} ${rejectedChild.last_name}` : "Das Kind";
+  const fromGroup = request.from_group_id ? await db.getGroupRowById(c.env.DB, request.from_group_id) : null;
+  if (fromGroup?.owner_id && fromGroup.owner_id !== c.get("userId")) {
+    const oldOwner = await db.getUserById(c.env.DB, fromGroup.owner_id);
+    if (oldOwner) {
+      await notifyUser(c.env, {
+        userId: oldOwner.id,
+        userEmail: oldOwner.email,
+        userName: oldOwner.name,
+        type: "move_request_rejected",
+        title: `Verschiebe-Anfrage abgelehnt: „${targetGroup.name}“`,
+        body: `${rejectedChildName} bleibt in „${fromGroup.name}“ - der Wechsel nach „${targetGroup.name}“ wurde abgelehnt.`,
+        link: "/gruppen",
+      });
+    }
+  }
+  if (request.requested_by && request.requested_by !== c.get("userId") && request.requested_by !== fromGroup?.owner_id) {
+    const requester = await db.getUserById(c.env.DB, request.requested_by);
+    if (requester) {
+      await notifyUser(c.env, {
+        userId: requester.id,
+        userEmail: requester.email,
+        userName: requester.name,
+        type: "move_request_rejected",
+        title: `Deine Verschiebe-Anfrage wurde abgelehnt`,
+        body: `${rejectedChildName} konnte nicht nach „${targetGroup.name}“ wechseln.`,
+        link: "/gruppen",
+      });
+    }
+  }
+
   return c.json({ ok: true });
 });
 
@@ -1687,6 +1769,24 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
         title: `Platzvorschlag bestätigt für „${group.name}“`,
         body: `${c.get("name") ?? c.get("email")} hat ${child.first_name} ${child.last_name} in „${group.name}“ aufgenommen.`,
         link: "/warteliste",
+      });
+    }
+  }
+
+  // Neue Gruppenleitung informieren, falls sie nicht selbst bestätigt hat
+  // (z.B. Bestätigung durch Mit-Trainer*in oder Jugendleitung) - vorher gab
+  // es hier keine Benachrichtigung an die eigentliche Gruppenleitung.
+  if (group.owner_id && group.owner_id !== c.get("userId")) {
+    const newOwner = await db.getUserById(c.env.DB, group.owner_id);
+    if (newOwner) {
+      await notifyUser(c.env, {
+        userId: newOwner.id,
+        userEmail: newOwner.email,
+        userName: newOwner.name,
+        type: "placement_confirmed",
+        title: `Neues Kind in deiner Gruppe „${group.name}“`,
+        body: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen.\n\n${childContactSummary(child)}`,
+        link: "/gruppen",
       });
     }
   }

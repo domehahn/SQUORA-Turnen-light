@@ -12,7 +12,7 @@ database_id = "60c1750c-a2c9-4036-b217-1376ea80f216"
 migrations_dir = "migrations"
 
 [vars]
-FRONTEND_URL = "https://turnen-web.squora.workers.dev"
+FRONTEND_URL = "https://squora.de/turnen-light"
 # Absenderadresse für Benachrichtigungs-E-Mails. squora.de ist für Email
 # Sending freigeschaltet - schlägt der Versand dennoch fehl, fängt
 # worker/src/notifications.ts das ab und die Benachrichtigung bleibt
