@@ -36,6 +36,7 @@ const emptyForm = {
 
 const STALE_ATTENDANCE_WEEKS = 4;
 const WAITLIST_PREFIX = "waitlist:";
+const CHILDREN_PAGE_SIZE = 10;
 
 function isPendingCapacityApproval(value: unknown): value is PendingCapacityApproval {
   return (
@@ -116,6 +117,10 @@ export default function Children() {
   const [attendanceSummary, setAttendanceSummary] = useState<Record<string, AttendanceSummary>>({});
   const [search, setSearch] = useState("");
   const [printGroupIds, setPrintGroupIds] = useState<string[]>([]);
+  // Seite pro Gruppen-Abschnitt (Key = Gruppen-ID bzw. "__none__"), je
+  // Abschnitt eigenständig, damit Blättern in einer großen Gruppe nicht die
+  // anderen Abschnitte zurücksetzt.
+  const [groupPage, setGroupPage] = useState<Record<string, number>>({});
 
   // Geschwister-Verknüpfung: statt einer separat zu benennenden "Familie"
   // wählt man hier direkt die Geschwister aus der Kinder-Liste aus - das
@@ -469,6 +474,12 @@ export default function Children() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [children, groups, search]);
+
+  // Bei neuer Suche wieder bei Seite 1 jedes Abschnitts anfangen, sonst
+  // könnte eine vorher gewählte Seite außerhalb der gefilterten Treffer liegen.
+  useEffect(() => {
+    setGroupPage({});
+  }, [search]);
 
   // Kinder können nur in eigene (bearbeitbare) Gruppen einsortiert werden -
   // fremde, lediglich lesbare Vereinsgruppen fehlen bewusst in der Auswahl.
@@ -949,8 +960,13 @@ export default function Children() {
         </div>
       ) : (
         <div className="space-y-6">
-          {groupedFilteredChildren.map(({ group: sectionGroup, children: sectionChildren }) => (
-            <div key={sectionGroup?.id ?? "__none__"}>
+          {groupedFilteredChildren.map(({ group: sectionGroup, children: sectionChildren }) => {
+            const sectionKey = sectionGroup?.id ?? "__none__";
+            const totalPages = Math.max(1, Math.ceil(sectionChildren.length / CHILDREN_PAGE_SIZE));
+            const page = Math.min(groupPage[sectionKey] ?? 0, totalPages - 1);
+            const pageChildren = sectionChildren.slice(page * CHILDREN_PAGE_SIZE, page * CHILDREN_PAGE_SIZE + CHILDREN_PAGE_SIZE);
+            return (
+            <div key={sectionKey}>
               <h3 className="mb-2 text-base font-semibold text-slate-900 dark:text-slate-100">
                 {sectionGroup ? sectionGroup.name : "Ohne Gruppe"}
               </h3>
@@ -968,7 +984,7 @@ export default function Children() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sectionChildren.map((child) => {
+                    {pageChildren.map((child) => {
                       const age = calculateAgeYears(child.birthDate);
                       const currentGroup = sectionGroup;
                       const matchingGroup = groupForAge(age, groups);
@@ -1151,8 +1167,32 @@ export default function Children() {
                   </tbody>
                 </table>
               </div>
+              {totalPages > 1 && (
+                <div className="mt-2 flex items-center justify-end gap-2 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setGroupPage((prev) => ({ ...prev, [sectionKey]: Math.max(0, page - 1) }))}
+                    disabled={page === 0}
+                    className="rounded-md border border-slate-300 px-2.5 py-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    ‹ Zurück
+                  </button>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Seite {page + 1} von {totalPages} ({sectionChildren.length} Kinder)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setGroupPage((prev) => ({ ...prev, [sectionKey]: Math.min(totalPages - 1, page + 1) }))}
+                    disabled={page >= totalPages - 1}
+                    className="rounded-md border border-slate-300 px-2.5 py-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Weiter ›
+                  </button>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
