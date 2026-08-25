@@ -1210,7 +1210,7 @@ export default function Children() {
                                   }}
                                 >
                                   <option value="">–</option>
-                                  {moveTargets.map(({ g, count, fits, full }) => {
+                                  {moveTargets.map(({ g, count, full }) => {
                                     const occupancy = `${count}/${g.maxChildren ?? "∞"}`;
                                     if (full) {
                                       return (
@@ -1221,7 +1221,7 @@ export default function Children() {
                                     }
                                     return (
                                       <option key={g.id} value={g.id}>
-                                        {g.name} ({occupancy}){fits ? "" : " (benötigt Freigabe)"}
+                                        {g.name} ({occupancy}){g.canEdit ? "" : " (benötigt Freigabe)"}
                                       </option>
                                     );
                                   })}

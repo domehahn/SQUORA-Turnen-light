@@ -1377,11 +1377,18 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
   const existingPending = await db.getPendingMoveRequestForChild(c.env.DB, id);
   if (existingPending) return c.json({ error: "Für dieses Kind liegt bereits eine offene Verschiebe-Anfrage vor" }, 409);
 
-  const fits = db.ageFitsGroup(child.birth_date, targetGroup);
-  const targetOwnedByRequester = targetGroup.owner_id === c.get("userId");
-  const targetUnclaimed = targetGroup.owner_id === null;
+  // Ohne Freigabe verschieben darf: wer die Zielgruppe selbst besitzt/mitleitet
+  // (oder sie herrenlos ist), sowie die Jugendleitung für jede Gruppe ihres
+  // Vereins. Für alle anderen (z.B. eine Turnleitung, die in eine fremde
+  // Gruppe verschiebt) ist immer eine Freigabe der Zielgruppen-Leitung nötig -
+  // auch wenn das Alter passt, damit die Zielgruppe das mitbekommt und
+  // gegebenenfalls widersprechen kann.
+  const targetOwnedOrCoLed = await db.canWriteGroupAsync(c.env.DB, targetGroup, c.get("userId"));
+  const isLeadershipOfTargetClub = Boolean(
+    targetGroup.club_id && targetGroup.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter"
+  );
 
-  if (fits || targetOwnedByRequester || targetUnclaimed) {
+  if (targetOwnedOrCoLed || isLeadershipOfTargetClub) {
     const gate = await capacityGate(c.env.DB, targetGroup, id, {
       userId: c.get("userId"),
       clubId: c.get("clubId"),
@@ -1417,13 +1424,17 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
   if (targetGroup.owner_id) {
     const owner = await db.getUserById(c.env.DB, targetGroup.owner_id);
     if (owner) {
+      const fits = db.ageFitsGroup(child.birth_date, targetGroup);
+      const reason = fits
+        ? `möchte in deine Gruppe „${targetGroup.name}“ wechseln`
+        : `soll in deine Gruppe „${targetGroup.name}“ wechseln, erfüllt aber die Altersvoraussetzung nicht`;
       await notifyUser(c.env, {
         userId: owner.id,
         userEmail: owner.email,
         userName: owner.name,
         type: "move_request",
         title: `Verschiebe-Anfrage für „${targetGroup.name}“`,
-        body: `${child.first_name} ${child.last_name} soll in deine Gruppe „${targetGroup.name}“ wechseln, erfüllt aber die Altersvoraussetzung nicht - bitte freigeben oder ablehnen.\n\n${childContactSummary(child)}`,
+        body: `${child.first_name} ${child.last_name} ${reason} - bitte freigeben oder ablehnen.\n\n${childContactSummary(child)}`,
         link: "/gruppen",
       });
     }
