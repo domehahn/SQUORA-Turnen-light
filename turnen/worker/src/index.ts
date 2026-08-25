@@ -525,7 +525,7 @@ app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
 // --- Gruppen -----------------------------------------------------------
 
 app.get("/api/groups", requireAuth, async (c) => {
-  return c.json(await db.listGroupsForUser(c.env.DB, c.get("userId"), c.get("clubId")));
+  return c.json(await db.listGroupsForUser(c.env.DB, c.get("userId"), c.get("clubId"), c.get("clubRole")));
 });
 
 app.post("/api/groups", requireAuth, async (c) => {
@@ -600,7 +600,11 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!(await db.canWriteGroupAsync(c.env.DB, existing, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const isLeadership = Boolean(
+    existing.club_id && existing.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter"
+  );
+  if (!isLeadership && !(await db.canWriteGroupAsync(c.env.DB, existing, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   const group = await db.updateGroup(
     c.env.DB,
@@ -661,7 +665,11 @@ app.delete("/api/groups/:id", requireAuth, async (c) => {
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.body(null, 204);
-  if (!(await db.canWriteGroupAsync(c.env.DB, existing, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const isLeadership = Boolean(
+    existing.club_id && existing.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter"
+  );
+  if (!isLeadership && !(await db.canWriteGroupAsync(c.env.DB, existing, c.get("userId"))))
+    return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   await db.deleteGroup(c.env.DB, id);
   await db.logAudit(c.env.DB, {

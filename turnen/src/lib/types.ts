@@ -13,6 +13,10 @@ export interface Group {
   ownerName: string | null;
   clubId: string | null;
   canEdit: boolean;
+  // true, wenn canEdit ausschließlich daher kommt, dass der/die Nutzer*in
+  // Jugendleitung des Vereins ist (nicht Besitzer:in oder Mit-Trainer*in) -
+  // fürs Frontend-Label, um das von "echter" Mit-Trainerschaft zu unterscheiden.
+  editableAsLeadership: boolean;
   createdAt: string;
 }
 

@@ -58,6 +58,7 @@ export interface Group {
   ownerName: string | null;
   clubId: string | null;
   canEdit: boolean;
+  editableAsLeadership: boolean;
   createdAt: string;
 }
 

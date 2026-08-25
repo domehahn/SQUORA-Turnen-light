@@ -130,7 +130,10 @@ export function ageFitsGroup(birthDate: string, group: { min_age: number; max_ag
   return age >= group.min_age && age < group.max_age;
 }
 
-function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | null; isCoLeader?: boolean }): Group {
+function rowToGroup(
+  row: GroupRow,
+  ctx: { userId: string; ownerName: string | null; isCoLeader?: boolean; isLeadership?: boolean }
+): Group {
   return {
     id: row.id,
     name: row.name,
@@ -145,7 +148,10 @@ function rowToGroup(row: GroupRow, ctx: { userId: string; ownerName: string | nu
     ownerId: row.owner_id,
     ownerName: ctx.ownerName,
     clubId: row.club_id,
-    canEdit: canWriteGroup(row, ctx.userId) || Boolean(ctx.isCoLeader),
+    // Die Jugendleitung darf Stammdaten jeder Vereinsgruppe bearbeiten/
+    // löschen, nicht nur eigene - siehe PUT/DELETE /api/groups/:id.
+    canEdit: canWriteGroup(row, ctx.userId) || Boolean(ctx.isCoLeader) || Boolean(ctx.isLeadership),
+    editableAsLeadership: Boolean(ctx.isLeadership) && !canWriteGroup(row, ctx.userId) && !ctx.isCoLeader,
     createdAt: row.created_at,
   };
 }
@@ -303,7 +309,12 @@ export async function setClubRole(
 // Sichtbar sind: eigene Gruppen, Gruppen anderer Mitglieder desselben
 // Vereins (lesend über canEdit=false erkennbar) sowie herrenlose Alt-Gruppen
 // ohne Besitzer/Verein.
-export async function listGroupsForUser(db: D1Database, userId: string, clubId: string | null): Promise<Group[]> {
+export async function listGroupsForUser(
+  db: D1Database,
+  userId: string,
+  clubId: string | null,
+  clubRole: ClubRole | null = null
+): Promise<Group[]> {
   const [{ results }, coLeaderGroupIds] = await Promise.all([
     db
       .prepare(
@@ -320,8 +331,14 @@ export async function listGroupsForUser(db: D1Database, userId: string, clubId: 
       .all<GroupRow & { owner_name: string | null; owner_email: string | null }>(),
     listCoLeaderGroupIdsForUser(db, userId),
   ]);
+  const isLeadership = clubRole === "jugendleiter";
   return results.map((row) =>
-    rowToGroup(row, { userId, ownerName: row.owner_name ?? row.owner_email ?? null, isCoLeader: coLeaderGroupIds.has(row.id) })
+    rowToGroup(row, {
+      userId,
+      ownerName: row.owner_name ?? row.owner_email ?? null,
+      isCoLeader: coLeaderGroupIds.has(row.id),
+      isLeadership: isLeadership && row.club_id !== null && row.club_id === clubId,
+    })
   );
 }
 

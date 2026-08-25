@@ -435,7 +435,14 @@ export default function Groups() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
-                    {g.canEdit && g.ownerId !== null && g.ownerId !== userId ? (
+                    {g.editableAsLeadership && g.ownerId !== null ? (
+                      <span
+                        className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+                        title={`Als Jugendleitung bearbeitbar – Gruppenleitung: ${g.ownerName ?? "unbekannt"}`}
+                      >
+                        Jugendleitung ({g.ownerName ?? "unbekannt"})
+                      </span>
+                    ) : g.canEdit && g.ownerId !== null && g.ownerId !== userId ? (
                       <span
                         className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
                         title={`Mit-Trainer*in – Gruppenleitung: ${g.ownerName ?? "unbekannt"}`}
