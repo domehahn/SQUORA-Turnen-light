@@ -176,7 +176,9 @@ export default function Utilization() {
                         {group.minAge}–{group.maxAge} Jahre
                       </td>
                       <td className="px-4 py-2">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}>
+                        <span
+                          className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}
+                        >
                           {label}
                           {group.maxChildren != null && group.maxChildren > 0
                             ? ` (${Math.round((count / group.maxChildren) * 100)}%)`

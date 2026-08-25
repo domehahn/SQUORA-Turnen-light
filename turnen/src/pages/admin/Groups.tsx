@@ -425,11 +425,13 @@ export default function Groups() {
                     {g.location && <span className="block text-xs text-slate-400 dark:text-slate-500">{g.location}</span>}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}>
+                    <span
+                      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${CAPACITY_BADGE_CLASSES[level]}`}
+                    >
                       {label}
                     </span>
                     {waitlistForGroup.length > 0 && (
-                      <span className="ml-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                      <span className="ml-1 whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
                         +{waitlistForGroup.length} Warteliste
                       </span>
                     )}
