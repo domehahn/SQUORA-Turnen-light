@@ -95,8 +95,18 @@ export default function Dashboard() {
     load();
   }, [isJugendleiter]);
 
-  const ownGroups = groups.filter((g) => g.canEdit);
-  const activeChildren = children.filter((c) => c.status === "active");
+  // "Eigene Gruppen" meint hier wirklich eigene Gruppen (Besitz oder
+  // Mit-Trainerschaft) - editableAsLeadership ausgeschlossen, sonst würde
+  // die Jugendleitung hier fälschlich alle Vereinsgruppen als "eigene"
+  // gezählt bekommen (canEdit ist für sie jetzt vereinsweit true).
+  const ownGroups = groups.filter((g) => g.canEdit && !g.editableAsLeadership);
+  const ownGroupIds = new Set(ownGroups.map((g) => g.id));
+  const allActiveChildren = children.filter((c) => c.status === "active");
+  // Kinder (aktiv): Jugendleitung sieht die vereinsweite Gesamtzahl (nicht
+  // konsolidiert nach eigenen Gruppen), Turnleiter*innen nur die eigene(n).
+  const activeChildren = isJugendleiter
+    ? allActiveChildren
+    : allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
 
   // Jugendleitung: Kennzahlen je Gruppe des Vereins, statt nur konsolidiert -
   // damit man sieht, WELCHE Gruppe z.B. viele offene Vertretungsanfragen hat,
