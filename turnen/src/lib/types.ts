@@ -309,3 +309,10 @@ export interface SessionLeader {
   ledByName: string | null;
   isSubstitute: boolean;
 }
+
+export interface Holiday {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+}

@@ -3,6 +3,7 @@ import { decodeJwt } from "jose";
 import { api, clearToken, getToken, setToken } from "../lib/api";
 import { AuthContext, type AuthState } from "./auth-context";
 import type { ClubRole } from "../lib/types";
+import { loadCustomHolidays } from "../lib/holidays";
 
 interface TokenPayload {
   sub: string;
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState((prev) =>
         prev.isAuthenticated ? { ...prev, clubId: me.clubId, clubName: me.clubName, clubRole: me.clubRole } : prev
       );
+      await loadCustomHolidays();
     } catch {
       // Netzwerk-/Auth-Fehler beim Nachladen ignorieren wir hier bewusst -
       // die Kernanmeldung basiert allein auf dem JWT im Local Storage.

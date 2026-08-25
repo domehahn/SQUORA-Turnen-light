@@ -14,6 +14,7 @@ import type {
 } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
 import { calculateAgeYears, groupForAge } from "../../lib/age";
+import { capacityLevel } from "../../lib/capacity";
 
 function formatShortDate(iso: string): string {
   const [, month, day] = iso.split("-");
@@ -216,6 +217,21 @@ export default function Dashboard() {
     [allActiveChildren, groups]
   );
 
+  // Kapazitätswarnung: Gruppen, die voll oder überbelegt sind (gleiche
+  // Schwellwerte wie auf der Gruppen-/Auslastungsseite) - Turnleiter*innen
+  // sehen nur die eigene(n) Gruppe(n), Jugendleitung alle Vereinsgruppen.
+  const capacityWarnings = useMemo(() => {
+    const relevantGroups = isJugendleiter ? groups : ownGroups;
+    return relevantGroups
+      .map((group) => {
+        const count = allActiveChildren.filter((c) => c.groupId === group.id).length;
+        return { group, count, level: capacityLevel(count, group.maxChildren) };
+      })
+      .filter((g) => g.level === "warn" || g.level === "over")
+      .sort((a, b) => (b.count / (b.group.maxChildren ?? 1)) - (a.count / (a.group.maxChildren ?? 1)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJugendleiter, groups, ownGroups, allActiveChildren]);
+
   const todos: TodoItem[] = [
     { label: "Verschiebe-Anfragen für deine Gruppen", count: incomingMoveRequests.length, to: "/gruppen", tone: "amber" as const },
     { label: "Kapazitäts-Anfragen für deine Gruppen", count: incomingCapacityRequests.length, to: "/gruppen", tone: "red" as const },
@@ -321,6 +337,35 @@ export default function Dashboard() {
                         }`}
                       >
                         {todo.count}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {capacityWarnings.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+              <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Kapazitätswarnung ({capacityWarnings.length})
+              </h3>
+              <ul className="space-y-1.5">
+                {capacityWarnings.map(({ group, count, level }) => (
+                  <li key={group.id}>
+                    <Link
+                      to="/gruppen"
+                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-amber-900 hover:bg-white/60 dark:text-amber-200 dark:hover:bg-slate-900/40"
+                    >
+                      <span>{group.name}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          level === "over"
+                            ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                            : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                        }`}
+                      >
+                        {count} / {group.maxChildren}
                       </span>
                     </Link>
                   </li>

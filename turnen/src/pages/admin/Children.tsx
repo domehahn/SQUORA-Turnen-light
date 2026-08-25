@@ -39,6 +39,24 @@ const STALE_ATTENDANCE_WEEKS = 4;
 const WAITLIST_PREFIX = "waitlist:";
 const CHILDREN_PAGE_SIZE = 10;
 
+function csvCell(value: string): string {
+  if (/[",\n;]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function downloadCsv(filename: string, lines: string[]) {
+  const csv = "﻿" + lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function isPendingCapacityApproval(value: unknown): value is PendingCapacityApproval {
   return (
     typeof value === "object" &&
@@ -482,6 +500,38 @@ export default function Children() {
 
   function groupName(id: string | null): string {
     return groups.find((g) => g.id === id)?.name ?? "–";
+  }
+
+  // Gleiche Gruppen-Auswahl wie beim Drucken (printGroupIds) - vereinsweit,
+  // nicht auf visibleChildren beschränkt, damit CSV und Druckansicht
+  // dieselben Daten liefern.
+  function exportCsv(mode: "namen" | "notfall") {
+    const selectedGroups = groups.filter((g) => printGroupIds.includes(g.id));
+    const rows = selectedGroups.flatMap((g) =>
+      children
+        .filter((c) => c.groupId === g.id)
+        .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+        .map((c) => ({ group: g, child: c }))
+    );
+    const header =
+      mode === "namen"
+        ? ["Nachname", "Vorname", "Geburtsdatum", "Gruppe"]
+        : ["Name", "Notfallkontakt", "Telefon", "Gesundheitshinweise", "Gruppe"];
+    const lines = [header.map(csvCell).join(";")];
+    for (const { group, child } of rows) {
+      const cells =
+        mode === "namen"
+          ? [child.lastName, child.firstName, child.birthDate, group.name]
+          : [
+              `${child.firstName} ${child.lastName}`,
+              child.emergencyContactName ?? "",
+              child.emergencyContactPhone ?? "",
+              child.healthNotes ?? "",
+              group.name,
+            ];
+      lines.push(cells.map(csvCell).join(";"));
+    }
+    downloadCsv(`${mode === "namen" ? "namensliste" : "notfallliste"}_${new Date().toISOString().slice(0, 10)}.csv`, lines);
   }
 
   const filteredChildren = useMemo(() => {
@@ -975,6 +1025,20 @@ export default function Children() {
             >
               Notfallliste drucken ({printGroupIds.length})
             </a>
+            <button
+              type="button"
+              onClick={() => exportCsv("namen")}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Namensliste als CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => exportCsv("notfall")}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Notfallliste als CSV
+            </button>
           </>
         )}
       </div>

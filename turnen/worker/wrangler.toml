@@ -27,3 +27,8 @@ name = "EMAIL"
 
 [observability]
 enabled = true
+
+[triggers]
+# Täglich 8 Uhr UTC (9/10 Uhr MEZ/MESZ) - erinnert an seit >= 3 Tagen offene
+# Verschiebe-/Kapazitäts-Anfragen, siehe scheduled() in src/index.ts.
+crons = ["0 8 * * *"]

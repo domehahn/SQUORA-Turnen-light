@@ -471,6 +471,60 @@ app.post("/api/club-join-requests/:id/reject", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// --- Ferien/Feiertage (vereinsspezifisch) -----------------------------------
+// Zusätzlich zu den fest im Frontend hinterlegten RLP-Schulferien
+// (src/lib/holidays.ts) - z.B. für bewegliche Ferientage oder Vereine
+// außerhalb Rheinland-Pfalz. Lesend für alle Vereinsmitglieder (wird für die
+// Trainingstermin-Berechnung gebraucht), Anlegen/Löschen nur Jugendleitung.
+app.get("/api/holidays", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listHolidaysForClub(c.env.DB, clubId));
+});
+
+app.post("/api/holidays", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann Ferien pflegen" }, 403);
+
+  const body = await c.req.json().catch(() => null);
+  const label = requiredText(body?.label, 100);
+  const start = validDate(body?.start);
+  const end = validDate(body?.end);
+  if (!label) return c.json({ error: "Bezeichnung fehlt oder ist ungültig" }, 400);
+  if (!start || !end) return c.json({ error: "Ungültiger Zeitraum" }, 400);
+  if (start > end) return c.json({ error: "Beginn muss vor oder gleich dem Ende liegen" }, 400);
+
+  const holiday = await db.createHoliday(c.env.DB, { clubId, label, start, end });
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "holiday.created",
+    targetLabel: `${label} (${start} – ${end})`,
+  });
+  return c.json(holiday, 201);
+});
+
+app.delete("/api/holidays/:id", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const existing = await db.getHolidayRowById(c.env.DB, id);
+  if (!existing) return c.body(null, 204);
+  if (existing.club_id !== c.get("clubId") || c.get("clubRole") !== "jugendleiter") {
+    return c.json({ error: "Nur die Jugendleitung kann Ferien pflegen" }, 403);
+  }
+  await db.deleteHoliday(c.env.DB, id);
+  await db.logAudit(c.env.DB, {
+    clubId: existing.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "holiday.deleted",
+    targetLabel: `${existing.label} (${existing.start_date} – ${existing.end_date})`,
+  });
+  return c.body(null, 204);
+});
+
 // Ein anderes Vereinsmitglied zur Jugendleitung befördern - nur für
 // bestehende Jugendleitungen desselben Vereins.
 app.post("/api/clubs/mine/members/:userId/promote", requireAuth, async (c) => {
@@ -1058,11 +1112,21 @@ app.put("/api/families/:id", requireAuth, async (c) => {
 app.get("/api/audit-log", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
+  // Für Filter/Export im Frontend darf mehr als das Standard-Limit
+  // angefragt werden, gedeckelt auf 1000, damit niemand die ganze Tabelle
+  // auf einmal ziehen kann.
+  const requestedLimit = Number(c.req.query("limit"));
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 1000) : 100;
   return c.json(
-    await db.listAuditLogForClub(c.env.DB, clubId, {
-      userId: c.get("userId"),
-      isJugendleiter: c.get("clubRole") === "jugendleiter",
-    })
+    await db.listAuditLogForClub(
+      c.env.DB,
+      clubId,
+      {
+        userId: c.get("userId"),
+        isJugendleiter: c.get("clubRole") === "jugendleiter",
+      },
+      limit
+    )
   );
 });
 
@@ -2454,4 +2518,74 @@ app.onError((error, c) => {
   return c.json({ error: "Interner Serverfehler" }, 500);
 });
 
-export default app;
+// Erinnert einmalig (siehe reminded_at) an seit mindestens STALE_REQUEST_DAYS
+// offene Verschiebe-/Kapazitäts-Anfragen - läuft täglich per Cron Trigger
+// (siehe [triggers] in wrangler.toml). Reine Zusatz-Benachrichtigung: wird
+// die Anfrage danach doch noch entschieden, bleibt reminded_at einfach
+// gesetzt, es gibt keine zweite Erinnerung für dieselbe Anfrage.
+const STALE_REQUEST_DAYS = 3;
+
+async function remindStaleRequests(env: Env): Promise<void> {
+  const threshold = new Date(Date.now() - STALE_REQUEST_DAYS * 24 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
+
+  const staleMoves = await db.listStaleMoveRequests(env.DB, threshold);
+  for (const request of staleMoves) {
+    const targetGroup = await db.getGroupRowById(env.DB, request.toGroupId);
+    if (targetGroup?.owner_id) {
+      const owner = await db.getUserById(env.DB, targetGroup.owner_id);
+      if (owner) {
+        await notifyUser(env, {
+          userId: owner.id,
+          userEmail: owner.email,
+          userName: owner.name,
+          type: "move_request_reminder",
+          title: `Erinnerung: Verschiebe-Anfrage für „${request.toGroupName}“`,
+          body: `${request.childName} wartet seit ${STALE_REQUEST_DAYS} Tagen auf deine Freigabe für „${request.toGroupName}“.`,
+          link: "/gruppen",
+        });
+      }
+    }
+    if (request.requestedBy) {
+      const requester = await db.getUserById(env.DB, request.requestedBy);
+      if (requester) {
+        await notifyUser(env, {
+          userId: requester.id,
+          userEmail: requester.email,
+          userName: requester.name,
+          type: "move_request_reminder",
+          title: `Erinnerung: Deine Verschiebe-Anfrage wartet noch`,
+          body: `${request.childName} wartet seit ${STALE_REQUEST_DAYS} Tagen auf Freigabe für „${request.toGroupName}“.`,
+          link: "/kinder",
+        });
+      }
+    }
+    await db.markMoveRequestReminded(env.DB, request.id);
+  }
+
+  const staleCapacity = await db.listStaleCapacityRequests(env.DB, threshold);
+  for (const request of staleCapacity) {
+    const group = await db.getGroupRowById(env.DB, request.groupId);
+    if (group?.club_id) {
+      const members = await db.listClubMembers(env.DB, group.club_id);
+      for (const member of members.filter((m) => m.role === "jugendleiter")) {
+        await notifyUser(env, {
+          userId: member.id,
+          userEmail: member.email,
+          userName: member.name,
+          type: "capacity_request_reminder",
+          title: `Erinnerung: Kapazitäts-Anfrage für „${request.groupName}“`,
+          body: `${request.childName} wartet seit ${STALE_REQUEST_DAYS} Tagen auf deine Freigabe für „${request.groupName}“.`,
+          link: "/gruppen",
+        });
+      }
+    }
+    await db.markCapacityRequestReminded(env.DB, request.id);
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(remindStaleRequests(env));
+  },
+} satisfies ExportedHandler<Env>;

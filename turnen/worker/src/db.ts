@@ -15,6 +15,8 @@ import type {
   FamilyRow,
   Group,
   GroupRow,
+  Holiday,
+  HolidayRow,
   MoveRequestDetail,
   MoveRequestRow,
   MoveRequestStatus,
@@ -1058,6 +1060,23 @@ export async function listOutgoingMoveRequests(db: D1Database, userId: string): 
   return results.map(rowToMoveRequestDetail);
 }
 
+// Seit `olderThanIso` offene Anfragen, für die noch keine Erinnerung
+// verschickt wurde - für den täglichen Reminder-Cron (scheduled() in
+// index.ts).
+export async function listStaleMoveRequests(db: D1Database, olderThanIso: string): Promise<MoveRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${MOVE_REQUEST_DETAIL_SELECT} WHERE mr.status = 'pending' AND mr.reminded_at IS NULL AND mr.created_at < ?1 ORDER BY mr.created_at ASC`
+    )
+    .bind(olderThanIso)
+    .all<MoveRequestJoinRow>();
+  return results.map(rowToMoveRequestDetail);
+}
+
+export async function markMoveRequestReminded(db: D1Database, id: string): Promise<void> {
+  await db.prepare("UPDATE move_requests SET reminded_at = datetime('now') WHERE id = ?").bind(id).run();
+}
+
 // --- Kapazitäts-Anfragen ---------------------------------------------------
 
 export async function createCapacityRequest(
@@ -1151,6 +1170,22 @@ export async function listOutgoingCapacityRequests(db: D1Database, userId: strin
     .bind(userId)
     .all<CapacityRequestJoinRow>();
   return results.map(rowToCapacityRequestDetail);
+}
+
+// Seit `olderThanIso` offene Kapazitäts-Anfragen ohne bisherige Erinnerung -
+// für den täglichen Reminder-Cron (scheduled() in index.ts).
+export async function listStaleCapacityRequests(db: D1Database, olderThanIso: string): Promise<CapacityRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${CAPACITY_REQUEST_DETAIL_SELECT} WHERE cr.status = 'pending' AND cr.reminded_at IS NULL AND cr.created_at < ?1 ORDER BY cr.created_at ASC`
+    )
+    .bind(olderThanIso)
+    .all<CapacityRequestJoinRow>();
+  return results.map(rowToCapacityRequestDetail);
+}
+
+export async function markCapacityRequestReminded(db: D1Database, id: string): Promise<void> {
+  await db.prepare("UPDATE capacity_requests SET reminded_at = datetime('now') WHERE id = ?").bind(id).run();
 }
 
 // --- Warteliste --------------------------------------------------------------
@@ -1973,4 +2008,39 @@ export async function getPendingClubJoinRequestForUser(db: D1Database, userId: s
     .bind(userId)
     .first<ClubJoinRequestJoinRow>();
   return row ? rowToClubJoinRequestDetail(row) : null;
+}
+
+// --- Ferien/Feiertage (vereinsspezifisch, zusätzlich zu den fest im
+// Frontend hinterlegten RLP-Schulferien) ------------------------------------
+
+function rowToHoliday(row: HolidayRow): Holiday {
+  return { id: row.id, label: row.label, start: row.start_date, end: row.end_date };
+}
+
+export async function listHolidaysForClub(db: D1Database, clubId: string): Promise<Holiday[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM holidays WHERE club_id = ?1 ORDER BY start_date ASC")
+    .bind(clubId)
+    .all<HolidayRow>();
+  return results.map(rowToHoliday);
+}
+
+export async function createHoliday(
+  db: D1Database,
+  input: { clubId: string; label: string; start: string; end: string }
+): Promise<Holiday> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO holidays (id, club_id, label, start_date, end_date) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, input.clubId, input.label, input.start, input.end)
+    .run();
+  return { id, label: input.label, start: input.start, end: input.end };
+}
+
+export async function getHolidayRowById(db: D1Database, id: string): Promise<HolidayRow | null> {
+  return db.prepare("SELECT * FROM holidays WHERE id = ?").bind(id).first<HolidayRow>();
+}
+
+export async function deleteHoliday(db: D1Database, id: string): Promise<void> {
+  await db.prepare("DELETE FROM holidays WHERE id = ?").bind(id).run();
 }

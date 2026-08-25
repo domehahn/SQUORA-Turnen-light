@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
-import type { Club, ClubJoinRequest, ClubMember } from "../../lib/types";
+import type { Club, ClubJoinRequest, ClubMember, Holiday } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
+import { loadCustomHolidays } from "../../lib/holidays";
 
 interface PendingJoin {
   status: "pending_club_join_approval";
@@ -26,6 +27,10 @@ export default function ClubPage() {
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [myJoinRequest, setMyJoinRequest] = useState<ClubJoinRequest | null>(null);
   const [incomingJoinRequests, setIncomingJoinRequests] = useState<ClubJoinRequest[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [holidayLabel, setHolidayLabel] = useState("");
+  const [holidayStart, setHolidayStart] = useState("");
+  const [holidayEnd, setHolidayEnd] = useState("");
   const [selectedClubId, setSelectedClubId] = useState("");
   const [newClubName, setNewClubName] = useState("");
   const [clubNumberInput, setClubNumberInput] = useState("");
@@ -40,16 +45,18 @@ export default function ClubPage() {
   async function load() {
     setLoading(true);
     try {
-      const [clubList, memberList, mine, incoming] = await Promise.all([
+      const [clubList, memberList, mine, incoming, holidayList] = await Promise.all([
         api.get<Club[]>("/api/clubs"),
         clubId && isJugendleiter ? api.get<ClubMember[]>("/api/clubs/mine/members") : Promise.resolve([]),
         api.get<ClubJoinRequest | null>("/api/club-join-requests/mine"),
         isJugendleiter ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]),
+        clubId ? api.get<Holiday[]>("/api/holidays") : Promise.resolve([]),
       ]);
       setClubs(clubList);
       setMembers(memberList);
       setMyJoinRequest(mine);
       setIncomingJoinRequests(incoming);
+      setHolidays(holidayList);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
     } finally {
@@ -175,6 +182,39 @@ export default function ClubPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Speichern");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAddHoliday(e: FormEvent) {
+    e.preventDefault();
+    if (!holidayLabel.trim() || !holidayStart || !holidayEnd) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post("/api/holidays", { label: holidayLabel.trim(), start: holidayStart, end: holidayEnd });
+      setHolidayLabel("");
+      setHolidayStart("");
+      setHolidayEnd("");
+      await load();
+      await loadCustomHolidays();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Anlegen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteHoliday(id: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.del(`/api/holidays/${id}`);
+      await load();
+      await loadCustomHolidays();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Löschen");
     } finally {
       setBusy(false);
     }
@@ -343,6 +383,56 @@ export default function ClubPage() {
               Die Mitgliederliste sieht nur die Jugendleitung.
             </p>
           )}
+          <div>
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Zusätzliche Ferien/Trainingsausfälle ({holidays.length})
+            </p>
+            <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
+              Ergänzt die fest hinterlegten rheinland-pfälzischen Schulferien - z.B. für bewegliche Ferientage oder
+              Vereine außerhalb RLP. Wirkt sich auf alle Trainingstermin-Berechnungen aus (Anwesenheit, Kalender,
+              Übersicht).
+            </p>
+            {holidays.length > 0 && (
+              <ul className="mb-2 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                {holidays.map((h) => (
+                  <li key={h.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {h.label}: {h.start} – {h.end}
+                    </span>
+                    {isJugendleiter && (
+                      <button
+                        onClick={() => handleDeleteHoliday(h.id)}
+                        disabled={busy}
+                        className="text-xs text-red-600 hover:underline disabled:opacity-50 dark:text-red-400"
+                      >
+                        Löschen
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {isJugendleiter && (
+              <form onSubmit={handleAddHoliday} className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[160px] flex-1">
+                  <FloatingInput label="Bezeichnung" value={holidayLabel} onChange={(e) => setHolidayLabel(e.target.value)} />
+                </div>
+                <div className="w-40">
+                  <FloatingInput label="Von" type="date" value={holidayStart} onChange={(e) => setHolidayStart(e.target.value)} />
+                </div>
+                <div className="w-40">
+                  <FloatingInput label="Bis" type="date" value={holidayEnd} onChange={(e) => setHolidayEnd(e.target.value)} />
+                </div>
+                <button
+                  type="submit"
+                  disabled={busy || !holidayLabel.trim() || !holidayStart || !holidayEnd}
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  Hinzufügen
+                </button>
+              </form>
+            )}
+          </div>
           <button
             onClick={handleLeave}
             disabled={busy}

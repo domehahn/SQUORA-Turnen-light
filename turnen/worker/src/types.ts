@@ -135,6 +135,7 @@ export interface MoveRequestRow {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+  reminded_at: string | null;
 }
 
 export interface MoveRequestDetail {
@@ -166,6 +167,7 @@ export interface CapacityRequestRow {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+  reminded_at: string | null;
 }
 
 export interface CapacityRequestDetail {
@@ -434,4 +436,20 @@ export interface ClubJoinRequestDetail {
   userName: string | null;
   status: ClubJoinRequestStatus;
   createdAt: string;
+}
+
+export interface HolidayRow {
+  id: string;
+  club_id: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+}
+
+export interface Holiday {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
 }

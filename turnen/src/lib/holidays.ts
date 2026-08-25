@@ -1,3 +1,5 @@
+import { api } from "./api";
+
 /**
  * Schulferien Rheinland-Pfalz. Quelle: schulferien.org / schulferien.eu
  * (amtliche Angaben des Bildungsministeriums RLP), Stand August 2026.
@@ -32,9 +34,35 @@ export const RLP_HOLIDAYS: HolidayRange[] = [
   { label: "Weihnachtsferien 2028/29", start: "2028-12-21", end: "2029-01-08" },
 ];
 
+// Vereinsspezifische Ferien-/Ausfallzeiträume aus /api/holidays (siehe
+// src/pages/admin/Club.tsx), zusätzlich zu den festen RLP_HOLIDAYS oben -
+// z.B. bewegliche Ferientage oder Vereine außerhalb Rheinland-Pfalz.
+//
+// Bewusst als Modul-weiter Zwischenspeicher statt über Props/Context
+// durchgereicht: trainingDatesInMonth/-Range in schedule.ts sind an vielen
+// Stellen synchron nutzbar (u.a. in useMemo ohne await), ein vollständig
+// async-fähiger Umbau aller Aufrufer wäre unverhältnismäßig aufwendig für
+// eine Liste, die sich nur selten ändert. loadCustomHolidays() wird einmal
+// beim Login (siehe AuthContext.tsx) sowie nach jeder Änderung auf der
+// Verein-Seite neu aufgerufen.
+let customHolidays: HolidayRange[] = [];
+
+export async function loadCustomHolidays(): Promise<void> {
+  try {
+    const list = await api.get<{ id: string; label: string; start: string; end: string }[]>("/api/holidays");
+    customHolidays = list.map((h) => ({ label: h.label, start: h.start, end: h.end }));
+  } catch {
+    // Kein Verein zugeordnet, nicht eingeloggt, oder Netzwerkfehler - dann
+    // bleiben nur die festen RLP-Ferien wirksam.
+  }
+}
+
 /** Liefert den Ferienzeitraum, in den das Datum (ISO yyyy-mm-dd) fällt, falls vorhanden. */
 export function holidayFor(dateIso: string): HolidayRange | undefined {
-  return RLP_HOLIDAYS.find((h) => dateIso >= h.start && dateIso <= h.end);
+  return (
+    RLP_HOLIDAYS.find((h) => dateIso >= h.start && dateIso <= h.end) ??
+    customHolidays.find((h) => dateIso >= h.start && dateIso <= h.end)
+  );
 }
 
 export function isSchoolHoliday(dateIso: string): boolean {
