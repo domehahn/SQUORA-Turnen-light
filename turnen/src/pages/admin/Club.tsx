@@ -260,6 +260,23 @@ export default function ClubPage() {
 
   const joinableClubs = clubs.filter((c) => c.id !== clubId);
 
+  // Sobald man einem Verein angehört, ist die Verein-Seite (Mitglieder,
+  // Vereinsnummer, Ferien) nur noch für die Jugendleitung sichtbar - "Verein
+  // beitreten" bleibt für alle sichtbar, solange noch keiner zugeordnet ist,
+  // sonst könnten neue Mitglieder nie beitreten.
+  if (clubId && clubRole && !isJugendleiter) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Verein</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Diese Seite (Mitglieder, Vereinsnummer, Ferien) sieht nur die Jugendleitung von {clubName ?? "deinem Verein"}.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -406,6 +423,7 @@ export default function ClubPage() {
               Die Mitgliederliste sieht nur die Jugendleitung.
             </p>
           )}
+          {isJugendleiter && (
           <div>
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Zusätzliche Ferien/Trainingsausfälle ({holidays.length})
@@ -478,6 +496,7 @@ export default function ClubPage() {
               </div>
             )}
           </div>
+          )}
           <button
             onClick={handleLeave}
             disabled={busy}

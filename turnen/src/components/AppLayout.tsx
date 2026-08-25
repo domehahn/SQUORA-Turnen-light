@@ -8,7 +8,7 @@ import SquoraBrand from "./SquoraBrand";
 // Statt einer einzigen, mit 13 Punkten überladenen Zeile: gruppiert nach
 // Basis (Tagesgeschäft jeder Turnleitung), Assistent (Planung/Überblick)
 // und Verein (vereinsweite Verwaltung/Reporting).
-const NAV_GROUPS: { label: string; items: { to: string; label: string; end?: boolean }[] }[] = [
+const NAV_GROUPS: { label: string; items: { to: string; label: string; end?: boolean; jugendleiterOnly?: boolean }[] }[] = [
   {
     label: "Basis",
     items: [
@@ -34,7 +34,9 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; end?: boo
       { to: "/mitgliederstatistik", label: "Statistik" },
       { to: "/export", label: "Export" },
       { to: "/verlauf", label: "Verlauf" },
-      { to: "/verein", label: "Verein" },
+      // "Verein" bewusst nur für die Jugendleitung (siehe AppLayout unten) -
+      // unten aus NAV_GROUPS herausgefiltert statt hier fest eingetragen.
+      { to: "/verein", label: "Verein", jugendleiterOnly: true },
     ],
   },
 ];
@@ -48,25 +50,30 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function AppLayout() {
-  const { userName, userEmail, clubName, signOut } = useAuth();
+  const { userName, userEmail, clubName, clubRole, signOut } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
   const [navOpen, setNavOpen] = useState(false);
 
   const sidebarContent = (
     <>
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="mb-5">
-          <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            {group.label}
-          </p>
-          <div className="space-y-0.5">
-            {group.items.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass} onClick={() => setNavOpen(false)}>
-                {item.label}
-              </NavLink>
-            ))}
+      {NAV_GROUPS.map((group) => {
+        const items = group.items.filter((item) => !item.jugendleiterOnly || isJugendleiter);
+        if (items.length === 0) return null;
+        return (
+          <div key={group.label} className="mb-5">
+            <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              {group.label}
+            </p>
+            <div className="space-y-0.5">
+              {items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass} onClick={() => setNavOpen(false)}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </>
   );
 

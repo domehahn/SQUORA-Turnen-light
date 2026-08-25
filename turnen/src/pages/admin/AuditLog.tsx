@@ -105,7 +105,7 @@ export default function AuditLog() {
         <p className="text-sm text-slate-500 dark:text-slate-400">
           {isJugendleiter
             ? `Nachvollziehbare Änderungen an den gemeinsamen Vereinsdaten von ${clubName ?? "deinem Verein"}.`
-            : "Nachvollziehbare Änderungen an deiner eigenen Gruppe. Die Jugendleitung sieht den Verlauf des gesamten Vereins."}
+            : "Nachvollziehbare Änderungen, die du selbst vorgenommen hast. Die Jugendleitung sieht den Verlauf des gesamten Vereins."}
         </p>
       </div>
 

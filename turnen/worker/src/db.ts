@@ -1467,11 +1467,7 @@ export async function listAuditLogForClub(
         .bind(clubId, limit)
         .all<AuditLogRow>()
     : await db
-        .prepare(
-          `SELECT * FROM audit_log
-           WHERE club_id = ?1 AND group_id IN (SELECT id FROM groups WHERE owner_id = ?2)
-           ORDER BY created_at DESC LIMIT ?3`
-        )
+        .prepare("SELECT * FROM audit_log WHERE club_id = ?1 AND actor_id = ?2 ORDER BY created_at DESC LIMIT ?3")
         .bind(clubId, viewer.userId, limit)
         .all<AuditLogRow>();
   return results.map((row) => ({
