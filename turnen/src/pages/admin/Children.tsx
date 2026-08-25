@@ -1112,7 +1112,8 @@ export default function Children() {
                           if (a.utilization !== b.utilization) return a.utilization - b.utilization;
                           return a.count - b.count;
                         });
-                      const hasOpenRequest = outgoingRequests.some((r) => r.childId === child.id);
+                      const openRequest = outgoingRequests.find((r) => r.childId === child.id);
+                      const hasOpenRequest = Boolean(openRequest);
                       const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
                       const siblings = child.familyId
                         ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id)
@@ -1182,7 +1183,18 @@ export default function Children() {
                             {!child.canEdit ? (
                               <span className="text-xs text-slate-300 dark:text-slate-600">–</span>
                             ) : hasOpenRequest ? (
-                              <span className="text-xs text-amber-600 dark:text-amber-400">wartet auf Freigabe</span>
+                              <span className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                                wartet auf Freigabe
+                                {openRequest && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelRequest(openRequest.id)}
+                                    className="text-slate-500 underline hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                  >
+                                    zurückziehen
+                                  </button>
+                                )}
+                              </span>
                             ) : (
                               <div className="w-40">
                                 <FloatingSelect
