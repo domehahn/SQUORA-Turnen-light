@@ -102,11 +102,11 @@ export default function Dashboard() {
   const ownGroups = groups.filter((g) => g.canEdit && !g.editableAsLeadership);
   const ownGroupIds = new Set(ownGroups.map((g) => g.id));
   const allActiveChildren = children.filter((c) => c.status === "active");
-  // Kinder (aktiv): Jugendleitung sieht die vereinsweite Gesamtzahl (nicht
-  // konsolidiert nach eigenen Gruppen), Turnleiter*innen nur die eigene(n).
-  const activeChildren = isJugendleiter
-    ? allActiveChildren
-    : allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
+  // Kinder (aktiv)-Kachel oben: für alle Rollen nur die eigene(n) Gruppe(n) -
+  // die vereinsweite Gesamtzahl für die Jugendleitung steht separat weiter
+  // unten (konsolidiert, ohne Tabelle) bzw. je Gruppe aufgeschlüsselt in
+  // "Gruppen im Verein im Detail".
+  const activeChildren = allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
 
   // Jugendleitung: Kennzahlen je Gruppe des Vereins, statt nur konsolidiert -
   // damit man sieht, WELCHE Gruppe z.B. viele offene Vertretungsanfragen hat,
@@ -117,11 +117,11 @@ export default function Dashboard() {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.minAge - b.minAge)
       .map((g) => ({
         group: g,
-        activeChildren: activeChildren.filter((c) => c.groupId === g.id).length,
+        activeChildren: allActiveChildren.filter((c) => c.groupId === g.id).length,
         openSubstitutes: openSubstitutes.filter((r) => r.groupId === g.id).length,
         upcomingSubstitutes: upcomingSubstitutes.filter((r) => r.groupId === g.id).length,
       }));
-  }, [isJugendleiter, groups, activeChildren, openSubstitutes, upcomingSubstitutes]);
+  }, [isJugendleiter, groups, allActiveChildren, openSubstitutes, upcomingSubstitutes]);
 
   // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
   // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis.
@@ -207,6 +207,32 @@ export default function Dashboard() {
               <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{upcomingSubstitutes.length}</p>
             </Link>
           </div>
+
+          {isJugendleiter && (
+            <div>
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {clubName ?? "Verein"} gesamt (alle Gruppen)
+              </h3>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Gruppen im Verein</p>
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{groups.length}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Kinder (aktiv)</p>
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{allActiveChildren.length}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Offene Vertretungsanfragen</p>
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{openSubstitutes.length}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Anstehende Vertretungen</p>
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{upcomingSubstitutes.length}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {todos.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
