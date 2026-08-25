@@ -107,6 +107,14 @@ export default function Dashboard() {
   // unten (konsolidiert, ohne Tabelle) bzw. je Gruppe aufgeschlüsselt in
   // "Gruppen im Verein im Detail".
   const activeChildren = allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
+  // Vertretungsbörse/-kalender sind an sich vereinsweit (jede*r kann fremde
+  // offene Anfragen übernehmen) - auf dem Dashboard sollen Turnleiter*innen
+  // hier aber wie bei den übrigen Kacheln nur den eigenen Ausschnitt sehen,
+  // die Jugendleitung weiterhin alles.
+  const visibleOpenSubstitutes = isJugendleiter ? openSubstitutes : openSubstitutes.filter((r) => ownGroupIds.has(r.groupId));
+  const visibleUpcomingSubstitutes = isJugendleiter
+    ? upcomingSubstitutes
+    : upcomingSubstitutes.filter((r) => ownGroupIds.has(r.groupId));
 
   // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
   // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis. Jugendleitung
@@ -182,7 +190,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Offene Vertretungsanfragen
               </p>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{openSubstitutes.length}</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{visibleOpenSubstitutes.length}</p>
             </Link>
             <Link
               to="/kalender"
@@ -191,7 +199,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Anstehende Vertretungen
               </p>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{upcomingSubstitutes.length}</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{visibleUpcomingSubstitutes.length}</p>
             </Link>
           </div>
 
@@ -200,7 +208,7 @@ export default function Dashboard() {
               <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {clubName ?? "Verein"} gesamt (alle Gruppen)
               </h3>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Gruppen im Verein</p>
                   <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{groups.length}</p>
@@ -208,14 +216,6 @@ export default function Dashboard() {
                 <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Kinder (aktiv)</p>
                   <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{allActiveChildren.length}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Offene Vertretungsanfragen</p>
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{openSubstitutes.length}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Anstehende Vertretungen</p>
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{upcomingSubstitutes.length}</p>
                 </div>
               </div>
             </div>
@@ -309,11 +309,11 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          {upcomingSubstitutes.length > 0 && (
+          {visibleUpcomingSubstitutes.length > 0 && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">
               <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">Nächste Vertretungen</h3>
               <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
-                {upcomingSubstitutes.slice(0, 5).map((r) => (
+                {visibleUpcomingSubstitutes.slice(0, 5).map((r) => (
                   <li key={r.id}>
                     {formatShortDate(r.sessionDate)} · {r.groupName} · {r.claimedByName ?? "jemand"} vertritt{" "}
                     {r.requestedByName ?? "jemanden"}
@@ -323,7 +323,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {todos.length === 0 && upcomingSubstitutes.length === 0 && (
+          {todos.length === 0 && visibleUpcomingSubstitutes.length === 0 && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
               Keine offenen Anfragen und keine anstehenden Vertretungen.
             </div>
