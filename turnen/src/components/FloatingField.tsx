@@ -28,10 +28,14 @@ const LABEL_RESTING = "top-1/2 -translate-y-1/2 text-sm";
 
 type FloatingInputProps = InputHTMLAttributes<HTMLInputElement> & { label: string; forceLight?: boolean };
 
-export function FloatingInput({ label, id, forceLight, type, value, onFocus, onBlur, ...props }: FloatingInputProps) {
+export function FloatingInput({ label, id, forceLight, type, value, placeholder, onFocus, onBlur, ...props }: FloatingInputProps) {
   const [focused, setFocused] = useState(false);
   const inputId = id ?? label.toLowerCase().replace(/\s+/g, "-");
-  const floated = focused || hasValue(value) || (typeof type === "string" && ALWAYS_FLOATED_TYPES.has(type));
+  // Ein eigener placeholder zeigt sich im leeren Feld immer selbst an (auch
+  // ohne Fokus) - das Label muss dann ebenfalls oben stehen, sonst
+  // überlagern sich beide mittig im Feld.
+  const floated =
+    focused || hasValue(value) || hasValue(placeholder) || (typeof type === "string" && ALWAYS_FLOATED_TYPES.has(type));
 
   return (
     <div className="relative">
@@ -39,6 +43,7 @@ export function FloatingInput({ label, id, forceLight, type, value, onFocus, onB
         id={inputId}
         type={type}
         value={value}
+        placeholder={placeholder}
         onFocus={(e: FocusEvent<HTMLInputElement>) => {
           setFocused(true);
           onFocus?.(e);

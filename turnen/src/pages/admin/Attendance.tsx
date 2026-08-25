@@ -386,6 +386,11 @@ export default function Attendance() {
           />
           Abweichender Termin (z.B. Turnier) – andere Uhrzeit/Ort als sonst
         </label>
+        {isSpecial && (
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Wird zusammen mit der Anwesenheit über den Button „Anwesenheit speichern“ unten übernommen.
+          </p>
+        )}
         {isSpecial && !isJugendleiter && (
           <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
             Braucht die Freigabe der Jugendleitung, bevor der Termin wirksam wird - die Anwesenheit wird trotzdem
