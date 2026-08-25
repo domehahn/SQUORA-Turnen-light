@@ -1119,6 +1119,14 @@ app.get("/api/substitute-requests/mine", requireAuth, async (c) => {
   return c.json(await db.listMySubstituteRequests(c.env.DB, c.get("userId")));
 });
 
+// Vereinsweiter Verlauf aller Vertretungs-Anfragen (jeder Status) - nur für
+// die Jugendleitung, alle anderen sehen weiterhin nur /mine.
+app.get("/api/substitute-requests/club", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json({ error: "Keine Berechtigung" }, 403);
+  return c.json(await db.listSubstituteRequestsForClub(c.env.DB, clubId));
+});
+
 // Eine offene Vertretungs-Anfrage übernehmen - setzt die Leitung für den
 // Termin direkt, damit die Stunde automatisch im eigenen Stundennachweis
 // landet, sobald die Anwesenheit erfasst wird.
@@ -1175,7 +1183,11 @@ app.post("/api/substitute-requests/:id/cancel", requireAuth, async (c) => {
   const request = await db.getSubstituteRequestRowById(c.env.DB, id);
   if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
   if (request.status !== "open") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
-  if (request.requested_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  const group = await db.getGroupRowById(c.env.DB, request.group_id);
+  const isRequester = request.requested_by === c.get("userId");
+  const isLeadership = Boolean(group?.club_id && group.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter");
+  if (!isRequester && !isLeadership) return c.json({ error: "Keine Berechtigung" }, 403);
 
   await db.setSubstituteRequestStatus(c.env.DB, id, "cancelled");
   return c.json({ ok: true });
@@ -1200,7 +1212,8 @@ app.post("/api/substitute-requests/:id/return", requireAuth, async (c) => {
   const userId = c.get("userId");
   const isSubstitute = request.claimed_by === userId;
   const isOwner = await db.canWriteGroupAsync(c.env.DB, group, userId);
-  if (!isSubstitute && !isOwner) return c.json({ error: "Keine Berechtigung" }, 403);
+  const isLeadership = Boolean(group.club_id && group.club_id === c.get("clubId") && c.get("clubRole") === "jugendleiter");
+  if (!isSubstitute && !isOwner && !isLeadership) return c.json({ error: "Keine Berechtigung" }, 403);
 
   await db.returnSubstituteRequest(c.env.DB, id, request.group_id, request.session_date);
 
@@ -2077,7 +2090,20 @@ app.get("/api/hours-summary", requireAuth, async (c) => {
 
 // Anwesenheit ist – anders als Gruppen/Kinder – nicht vereinsweit lesbar:
 // nur der Besitzer der Gruppe (bzw. bei herrenlosen Alt-Gruppen weiterhin
-// jeder) darf sie sehen oder erfassen.
+// jeder) darf sie sehen oder erfassen. Ausnahme: die Jugendleitung sieht die
+// Anwesenheit aller Gruppen ihres Vereins (Anwesenheitsübersicht "Alle
+// Gruppen").
+async function canReadAttendance(
+  dbEnv: D1Database,
+  group: { id: string; owner_id: string | null; club_id: string | null },
+  requester: { userId: string; clubId: string | null; clubRole: ClubRole }
+): Promise<boolean> {
+  const isLeadership = Boolean(
+    group.club_id && group.club_id === requester.clubId && requester.clubRole === "jugendleiter"
+  );
+  return isLeadership || (await db.canWriteGroupAsync(dbEnv, group, requester.userId));
+}
+
 app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
   const groupId = validId(c.req.param("groupId"));
   const from = validDate(c.req.query("from"));
@@ -2086,7 +2112,8 @@ app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getAttendanceRange(c.env.DB, groupId, from, to));
 });
@@ -2099,7 +2126,8 @@ app.get("/api/attendance-leaders/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getSessionLeaders(c.env.DB, groupId, from, to));
 });
@@ -2112,7 +2140,8 @@ app.get("/api/attendance-cancellations/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getCancelledSessions(c.env.DB, groupId, from, to));
 });

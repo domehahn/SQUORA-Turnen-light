@@ -5,6 +5,11 @@ import { FloatingSelect } from "../../components/FloatingField";
 import { formatShortDate, trainingDatesInMonth } from "../../lib/schedule";
 import { holidayFor } from "../../lib/holidays";
 import { appPath } from "../../lib/paths";
+import { useAuth } from "../../context/useAuth";
+
+// Sentinel-Wert für "Alle Gruppen (gesamt)" im Gruppen-Dropdown - nur für
+// die Jugendleitung sichtbar, siehe unten.
+const ALL_GROUPS = "__all__";
 
 const MONTH_NAMES = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -19,6 +24,8 @@ type CellState = "present" | "absent" | "none-past" | "none-future" | "cancelled
 
 export default function Overview() {
   const now = new Date();
+  const { clubRole } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [groupId, setGroupId] = useState("");
@@ -27,6 +34,7 @@ export default function Overview() {
   const [attendance, setAttendance] = useState<Record<string, AttendanceEntry[]>>({});
   const [leaders, setLeaders] = useState<Record<string, SessionLeader>>({});
   const [cancellations, setCancellations] = useState<Record<string, string | null>>({});
+  const [multiAttendance, setMultiAttendance] = useState<Record<string, Record<string, AttendanceEntry[]>>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +65,10 @@ export default function Overview() {
   }, []);
 
   const writableGroups = useMemo(() => groups.filter((g) => g.canEdit), [groups]);
+  // Die Jugendleitung darf die Anwesenheit aller Vereinsgruppen sehen (siehe
+  // Backend-Änderung an /api/attendance-range & co.), alle anderen weiterhin
+  // nur die eigenen.
+  const selectableGroups = isJugendleiter ? groups : writableGroups;
 
   const trainingDates = useMemo(() => trainingDatesInMonth(year, month), [year, month]);
   const monthStart = `${year}-${pad(month)}-01`;
@@ -64,7 +76,7 @@ export default function Overview() {
 
   useEffect(() => {
     async function loadAttendance() {
-      if (!groupId || trainingDates.length === 0) {
+      if (!groupId || groupId === ALL_GROUPS || trainingDates.length === 0) {
         setAttendance({});
         setLeaders({});
         setCancellations({});
@@ -91,6 +103,36 @@ export default function Overview() {
     }
     loadAttendance();
   }, [groupId, trainingDates]);
+
+  // "Alle Gruppen"-Ansicht (nur Jugendleitung): Anwesenheit je Vereinsgruppe
+  // parallel laden, für die Gesamt-/Pro-Gruppen-Zusammenfassung unten.
+  useEffect(() => {
+    async function loadMulti() {
+      if (groupId !== ALL_GROUPS || trainingDates.length === 0) {
+        setMultiAttendance({});
+        return;
+      }
+      setError(null);
+      const from = trainingDates[0];
+      const to = trainingDates[trainingDates.length - 1];
+      try {
+        const entries = await Promise.all(
+          selectableGroups.map(async (g) => {
+            try {
+              const data = await api.get<Record<string, AttendanceEntry[]>>(`/api/attendance-range/${g.id}?from=${from}&to=${to}`);
+              return [g.id, data] as const;
+            } catch {
+              return [g.id, {}] as const;
+            }
+          })
+        );
+        setMultiAttendance(Object.fromEntries(entries));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Fehler beim Laden der Gesamtübersicht");
+      }
+    }
+    loadMulti();
+  }, [groupId, trainingDates, selectableGroups]);
 
   const groupChildren = useMemo(
     () =>
@@ -138,6 +180,48 @@ export default function Overview() {
   const totalRecorded = dateStats.reduce((sum, s) => sum + s.recorded, 0);
   const overallQuote = totalRecorded > 0 ? Math.round((totalPresent / totalRecorded) * 100) : null;
 
+  const childCountByGroup = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of children) {
+      if (c.groupId) map[c.groupId] = (map[c.groupId] ?? 0) + 1;
+    }
+    return map;
+  }, [children]);
+
+  const multiGroupStats = useMemo(
+    () =>
+      selectableGroups.map((g) => {
+        const data = multiAttendance[g.id] ?? {};
+        const perDate = trainingDates.map((d) => {
+          const entries = data[d] ?? [];
+          const present = entries.filter((e) => e.present).length;
+          const recorded = entries.length;
+          return { date: d, present, recorded };
+        });
+        const present = perDate.reduce((sum, x) => sum + x.present, 0);
+        const recorded = perDate.reduce((sum, x) => sum + x.recorded, 0);
+        return {
+          group: g,
+          perDate,
+          present,
+          recorded,
+          quote: recorded > 0 ? Math.round((present / recorded) * 100) : null,
+          childCount: childCountByGroup[g.id] ?? 0,
+        };
+      }),
+    [selectableGroups, multiAttendance, trainingDates, childCountByGroup]
+  );
+
+  const multiDateTotals = trainingDates.map((d, i) => {
+    const present = multiGroupStats.reduce((sum, g) => sum + g.perDate[i].present, 0);
+    const recorded = multiGroupStats.reduce((sum, g) => sum + g.perDate[i].recorded, 0);
+    return { date: d, present, recorded, quote: recorded > 0 ? Math.round((present / recorded) * 100) : null };
+  });
+  const multiTotalChildren = multiGroupStats.reduce((sum, g) => sum + g.childCount, 0);
+  const multiOverallPresent = multiGroupStats.reduce((sum, g) => sum + g.present, 0);
+  const multiOverallRecorded = multiGroupStats.reduce((sum, g) => sum + g.recorded, 0);
+  const multiOverallQuote = multiOverallRecorded > 0 ? Math.round((multiOverallPresent / multiOverallRecorded) * 100) : null;
+
   function childStats(childId: string) {
     let present = 0;
     let recorded = 0;
@@ -164,11 +248,12 @@ export default function Overview() {
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="w-56">
           <FloatingSelect label="Gruppe" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-            {writableGroups.map((g) => (
+            {selectableGroups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name} ({g.minAge}–{g.maxAge} Jahre)
               </option>
             ))}
+            {isJugendleiter && <option value={ALL_GROUPS}>Alle Gruppen (gesamt)</option>}
           </FloatingSelect>
         </div>
 
@@ -194,7 +279,7 @@ export default function Overview() {
           </button>
         </div>
 
-        {groupId && (
+        {groupId && groupId !== ALL_GROUPS && (
           <a
             href={appPath(`/druck/${groupId}?mode=anwesenheit&from=${monthStart}&to=${monthEnd}`)}
             target="_blank"
@@ -253,6 +338,62 @@ export default function Overview() {
       ) : trainingDates.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
           In {MONTH_NAMES[month - 1]} {year} finden aufgrund der Schulferien keine Trainingstermine statt.
+        </div>
+      ) : groupId === ALL_GROUPS ? (
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <table className="text-sm">
+            <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <tr>
+                <th className="sticky left-0 z-10 bg-slate-100 px-4 py-2 text-left font-medium dark:bg-slate-800">Gruppe</th>
+                {trainingDates.map((d) => (
+                  <th key={d} className={`min-w-[64px] px-2 py-2 text-center font-medium ${d === todayIso ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : ""}`}>
+                    {formatShortDate(d)}
+                  </th>
+                ))}
+                <th className="px-4 py-2 text-center font-medium">Quote</th>
+              </tr>
+            </thead>
+            <tbody>
+              {multiGroupStats.map(({ group, perDate, quote, childCount }) => (
+                <tr key={group.id} className="border-t border-slate-100 dark:border-slate-800">
+                  <td className="sticky left-0 z-10 bg-white px-4 py-2 font-medium text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+                    {group.name}
+                  </td>
+                  {perDate.map(({ date, present }) => (
+                    <td key={date} className="px-2 py-2 text-center text-slate-600 dark:text-slate-300">
+                      {present}/{childCount}
+                    </td>
+                  ))}
+                  <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-300">{quote === null ? "–" : `${quote}%`}</td>
+                </tr>
+              ))}
+              {multiGroupStats.length === 0 && (
+                <tr>
+                  <td colSpan={trainingDates.length + 2} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
+                    Keine Gruppen im Verein.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {multiGroupStats.length > 0 && (
+              <tfoot>
+                <tr className="border-t border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
+                  <td className="sticky left-0 z-10 bg-slate-50 px-4 py-2 font-medium dark:bg-slate-800/60">Gesamt</td>
+                  {multiDateTotals.map(({ date, present }) => (
+                    <td key={date} className="px-2 py-2 text-center">
+                      {present}/{multiTotalChildren}
+                    </td>
+                  ))}
+                  <td className="px-4 py-2"></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          {multiGroupStats.length > 0 && trainingDates.length > 0 && (
+            <p className="border-t border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 dark:border-slate-800 dark:text-slate-300">
+              Gesamtquote über alle Gruppen im Zeitraum: {multiOverallQuote === null ? "–" : `${multiOverallQuote}%`}
+            </p>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">

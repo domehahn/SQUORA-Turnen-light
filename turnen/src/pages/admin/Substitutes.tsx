@@ -10,10 +10,12 @@ function formatDate(iso: string): string {
 }
 
 export default function Substitutes() {
-  const { userId } = useAuth();
+  const { userId, clubRole } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
   const [groups, setGroups] = useState<Group[]>([]);
   const [openRequests, setOpenRequests] = useState<SubstituteRequest[]>([]);
   const [myRequests, setMyRequests] = useState<SubstituteRequest[]>([]);
+  const [clubRequests, setClubRequests] = useState<SubstituteRequest[]>([]);
   const [groupId, setGroupId] = useState("");
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
@@ -25,15 +27,17 @@ export default function Substitutes() {
   async function load() {
     setLoading(true);
     try {
-      const [groupList, open, mine] = await Promise.all([
+      const [groupList, open, mine, club] = await Promise.all([
         api.get<Group[]>("/api/groups"),
         api.get<SubstituteRequest[]>("/api/substitute-requests/open"),
         api.get<SubstituteRequest[]>("/api/substitute-requests/mine"),
+        isJugendleiter ? api.get<SubstituteRequest[]>("/api/substitute-requests/club") : Promise.resolve([]),
       ]);
       const writable = groupList.filter((g) => g.canEdit);
       setGroups(writable);
       setOpenRequests(open);
       setMyRequests(mine);
+      setClubRequests(club);
       if (writable.length > 0 && !groupId) setGroupId(writable[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Laden");
@@ -298,6 +302,56 @@ export default function Substitutes() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {isJugendleiter && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Vereinsweiter Verlauf ({clubRequests.length})
+              </h3>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                Als Jugendleitung siehst du alle Vertretungs-Anfragen des Vereins und kannst auch fremde Anfragen
+                zurückziehen bzw. übernommene Vertretungen zurückgeben.
+              </p>
+              {clubRequests.length === 0 ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500">Noch keine Vertretungs-Anfragen im Verein.</p>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {clubRequests.map((r) => (
+                    <li
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <span className="text-slate-700 dark:text-slate-300">
+                        {formatDate(r.sessionDate)} · {r.groupName} · gesucht von {r.requestedByName ?? "unbekannt"}
+                        {r.status === "open" && " · offen"}
+                        {r.status === "claimed" && ` · übernommen von ${r.claimedByName ?? "jemandem"}`}
+                        {r.status === "cancelled" && " · zurückgezogen"}
+                        {r.status === "returned" && " · zurückgegeben"}
+                      </span>
+                      {r.status === "open" && (
+                        <button
+                          onClick={() => handleCancel(r.id)}
+                          disabled={busy}
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Zurückziehen
+                        </button>
+                      )}
+                      {r.status === "claimed" && (
+                        <button
+                          onClick={() => handleReturn(r.id)}
+                          disabled={busy}
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Zurückgeben
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </>

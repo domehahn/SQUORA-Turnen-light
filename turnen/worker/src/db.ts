@@ -1714,6 +1714,17 @@ export async function listUpcomingClaimedSubstituteRequestsForClub(
   return results.map(rowToSubstituteRequestDetail);
 }
 
+// Alle Vertretungs-Anfragen im Verein (jeder Status), neueste zuerst - für
+// den vereinsweiten Verlauf, den nur die Jugendleitung sieht (siehe
+// GET /api/substitute-requests/club).
+export async function listSubstituteRequestsForClub(db: D1Database, clubId: string): Promise<SubstituteRequestDetail[]> {
+  const { results } = await db
+    .prepare(`${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE g.club_id = ?1 ORDER BY sr.created_at DESC LIMIT 100`)
+    .bind(clubId)
+    .all<SubstituteRequestJoinRow>();
+  return results.map(rowToSubstituteRequestDetail);
+}
+
 // Eigene Anfragen (gestellt oder übernommen), neueste zuerst.
 export async function listMySubstituteRequests(db: D1Database, userId: string): Promise<SubstituteRequestDetail[]> {
   const { results } = await db
