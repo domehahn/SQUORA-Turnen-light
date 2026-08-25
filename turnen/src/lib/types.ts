@@ -288,6 +288,7 @@ export interface ClubWaitlistEntry {
     groupName: string;
     proposedByName: string | null;
     createdAt: string;
+    initiatedByOwner: boolean;
   } | null;
 }
 
@@ -302,6 +303,9 @@ export interface PlacementRequest {
   proposedByName: string | null;
   status: PlacementRequestStatus;
   createdAt: string;
+  initiatedByOwner: boolean;
+  reason: string | null;
+  declineReason: string | null;
 }
 
 export interface SessionLeader {

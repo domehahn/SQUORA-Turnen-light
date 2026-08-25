@@ -1821,6 +1821,7 @@ type ClubWaitlistJoinRow = ClubWaitlistRow & {
   proposal_by_name: string | null;
   proposal_by_email: string | null;
   proposal_created_at: string | null;
+  proposal_initiated_by_owner: number | null;
 };
 
 const CLUB_WAITLIST_DETAIL_SELECT = `
@@ -1828,7 +1829,8 @@ const CLUB_WAITLIST_DETAIL_SELECT = `
          c.first_name as child_first_name, c.last_name as child_last_name,
          au.name as added_by_name, au.email as added_by_email,
          pr.id as proposal_id, pr.group_id as proposal_group_id, pg.name as proposal_group_name,
-         pu.name as proposal_by_name, pu.email as proposal_by_email, pr.created_at as proposal_created_at
+         pu.name as proposal_by_name, pu.email as proposal_by_email, pr.created_at as proposal_created_at,
+         pr.initiated_by_owner as proposal_initiated_by_owner
   FROM club_waitlist_entries w
   JOIN children c ON c.id = w.child_id
   LEFT JOIN users au ON au.id = w.added_by
@@ -1854,6 +1856,7 @@ function rowToClubWaitlistDetail(row: ClubWaitlistJoinRow): ClubWaitlistEntryDet
           groupName: row.proposal_group_name as string,
           proposedByName: row.proposal_by_name ?? row.proposal_by_email ?? null,
           createdAt: row.proposal_created_at as string,
+          initiatedByOwner: row.proposal_initiated_by_owner === 1,
         }
       : null,
   };
@@ -1871,12 +1874,14 @@ export async function listClubWaitlist(db: D1Database, clubId: string): Promise<
 
 export async function createPlacementRequest(
   db: D1Database,
-  input: { waitlistEntryId: string; groupId: string; proposedBy: string }
+  input: { waitlistEntryId: string; groupId: string; proposedBy: string; reason?: string | null; initiatedByOwner?: boolean }
 ): Promise<PlacementRequestRow> {
   const id = crypto.randomUUID();
   await db
-    .prepare("INSERT INTO placement_requests (id, waitlist_entry_id, group_id, proposed_by) VALUES (?, ?, ?, ?)")
-    .bind(id, input.waitlistEntryId, input.groupId, input.proposedBy)
+    .prepare(
+      "INSERT INTO placement_requests (id, waitlist_entry_id, group_id, proposed_by, reason, initiated_by_owner) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(id, input.waitlistEntryId, input.groupId, input.proposedBy, input.reason ?? null, input.initiatedByOwner ? 1 : 0)
     .run();
   const row = await db.prepare("SELECT * FROM placement_requests WHERE id = ?").bind(id).first<PlacementRequestRow>();
   return row as PlacementRequestRow;
@@ -1886,10 +1891,17 @@ export async function getPlacementRequestById(db: D1Database, id: string): Promi
   return db.prepare("SELECT * FROM placement_requests WHERE id = ?").bind(id).first<PlacementRequestRow>();
 }
 
-export async function setPlacementRequestStatus(db: D1Database, id: string, status: PlacementRequestStatus): Promise<void> {
+export async function setPlacementRequestStatus(
+  db: D1Database,
+  id: string,
+  status: PlacementRequestStatus,
+  declineReason?: string | null
+): Promise<void> {
   await db
-    .prepare("UPDATE placement_requests SET status = ?, resolved_at = datetime('now') WHERE id = ?")
-    .bind(status, id)
+    .prepare(
+      "UPDATE placement_requests SET status = ?, resolved_at = datetime('now'), decline_reason = COALESCE(?, decline_reason) WHERE id = ?"
+    )
+    .bind(status, declineReason ?? null, id)
     .run();
 }
 
@@ -1927,17 +1939,36 @@ function rowToPlacementRequestDetail(row: PlacementRequestJoinRow): PlacementReq
     proposedByName: row.proposed_by_name ?? row.proposed_by_email ?? null,
     status: row.status,
     createdAt: row.created_at,
+    initiatedByOwner: row.initiated_by_owner === 1,
+    reason: row.reason,
+    declineReason: row.decline_reason,
   };
 }
 
-// Offene Platzvorschläge für Gruppen, die der Nutzer selbst leitet - das
-// muss die Gruppenleitung aktiv bestätigen oder ablehnen.
+// Offene Platzvorschläge der Jugendleitung für Gruppen, die der Nutzer selbst
+// leitet - das muss die Gruppenleitung aktiv bestätigen oder ablehnen.
+// initiated_by_owner = 0 grenzt das von den eigenen Übernahme-Anfragen ab
+// (die bestätigt nicht die Gruppenleitung selbst, sondern die Jugendleitung,
+// siehe listPendingPlacementRequestsForClub).
 export async function listPendingPlacementRequestsForOwner(db: D1Database, userId: string): Promise<PlacementRequestDetail[]> {
   const { results } = await db
     .prepare(
-      `${PLACEMENT_REQUEST_DETAIL_SELECT} WHERE pr.status = 'pending' AND g.owner_id = ?1 ORDER BY pr.created_at ASC`
+      `${PLACEMENT_REQUEST_DETAIL_SELECT} WHERE pr.status = 'pending' AND pr.initiated_by_owner = 0 AND g.owner_id = ?1 ORDER BY pr.created_at ASC`
     )
     .bind(userId)
+    .all<PlacementRequestJoinRow>();
+  return results.map(rowToPlacementRequestDetail);
+}
+
+// Offene Übernahme-Anfragen von Gruppenleitungen (initiated_by_owner = 1)
+// für Gruppen im übergebenen Verein - das muss die Jugendleitung
+// bestätigen oder ablehnen, unabhängig von freier Kapazität.
+export async function listPendingPlacementRequestsForClub(db: D1Database, clubId: string): Promise<PlacementRequestDetail[]> {
+  const { results } = await db
+    .prepare(
+      `${PLACEMENT_REQUEST_DETAIL_SELECT} WHERE pr.status = 'pending' AND pr.initiated_by_owner = 1 AND g.club_id = ?1 ORDER BY pr.created_at ASC`
+    )
+    .bind(clubId)
     .all<PlacementRequestJoinRow>();
   return results.map(rowToPlacementRequestDetail);
 }

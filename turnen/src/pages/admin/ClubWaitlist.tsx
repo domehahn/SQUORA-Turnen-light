@@ -17,6 +17,7 @@ interface GroupFit {
   count: number;
   utilization: number; // 0..1, Gruppen ohne Limit zählen als 0 (am attraktivsten)
   ageFits: boolean;
+  hasSibling: boolean;
 }
 
 export default function ClubWaitlist() {
@@ -33,6 +34,8 @@ export default function ClubWaitlist() {
   const [newLastName, setNewLastName] = useState("");
   const [newBirthDate, setNewBirthDate] = useState("");
   const [proposalGroup, setProposalGroup] = useState<Record<string, string>>({});
+  const [requestGroup, setRequestGroup] = useState<Record<string, string>>({});
+  const [requestReason, setRequestReason] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +66,12 @@ export default function ClubWaitlist() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Eigene (schreibbare) Gruppen - Basis für "Für meine Gruppe anfragen".
+  const myGroups = useMemo(() => groups.filter((g) => g.canEdit), [groups]);
+
   // Vorschlag vorbelegen: die Gruppe, die vom Alter her passt und aktuell
-  // am wenigsten ausgelastet ist - Jugendleitung kann das im Dropdown noch
-  // überschreiben.
+  // am wenigsten ausgelastet ist (bzw. wo bereits ein Geschwisterkind ist) -
+  // Jugendleitung kann das im Dropdown noch überschreiben.
   useEffect(() => {
     if (groups.length === 0 || children.length === 0) return;
     setProposalGroup((prev) => {
@@ -92,30 +98,37 @@ export default function ClubWaitlist() {
 
   // Für jede Gruppe die aktuelle Auslastung (Kinder / Kapazität) - Basis für
   // den automatischen Vorschlag "passt vom Alter und ist am wenigsten voll".
-  const groupFits: GroupFit[] = useMemo(
+  const groupFits: Omit<GroupFit, "ageFits" | "hasSibling">[] = useMemo(
     () =>
       groups.map((group) => {
         const count = children.filter((c) => c.groupId === group.id).length;
-        return {
-          group,
-          count,
-          utilization: group.maxChildren ? count / group.maxChildren : 0,
-          ageFits: false,
-        };
+        return { group, count, utilization: group.maxChildren ? count / group.maxChildren : 0 };
       }),
     [groups, children]
   );
 
-  // Beste passende Gruppe für ein Kind: erst nach Altersgruppe filtern, dann
-  // nach geringster Auslastung sortieren (bei Gleichstand nach absoluter
-  // Kinderzahl, damit sich die Empfehlung nicht willkürlich anfühlt).
+  // Beste passende Gruppe für ein Kind: hat es ein Geschwisterkind in einer
+  // Gruppe, steht die ganz oben (auch wenn das Alter dort nicht perfekt
+  // passt - Geschwister zusammen zu lassen wiegt in der Praxis meist
+  // schwerer als die exakte Altersgruppe). Danach wie gehabt: erst nach
+  // Altersgruppe filtern, dann nach geringster Auslastung sortieren.
   function recommendGroup(childId: string): GroupFit[] {
     const child = children.find((c) => c.id === childId);
     if (!child) return [];
     const age = calculateAgeYears(child.birthDate);
+    const siblingGroupIds = new Set(
+      child.familyId
+        ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id && c.groupId).map((c) => c.groupId)
+        : []
+    );
     return groupFits
-      .map((fit) => ({ ...fit, ageFits: age >= fit.group.minAge && age < fit.group.maxAge }))
+      .map((fit) => ({
+        ...fit,
+        ageFits: age >= fit.group.minAge && age < fit.group.maxAge,
+        hasSibling: siblingGroupIds.has(fit.group.id),
+      }))
       .sort((a, b) => {
+        if (a.hasSibling !== b.hasSibling) return a.hasSibling ? -1 : 1;
         if (a.ageFits !== b.ageFits) return a.ageFits ? -1 : 1;
         if (a.utilization !== b.utilization) return a.utilization - b.utilization;
         return a.count - b.count;
@@ -188,6 +201,24 @@ export default function ClubWaitlist() {
     }
   }
 
+  async function handleRequest(entryId: string) {
+    const groupId = requestGroup[entryId];
+    if (!groupId) return;
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      await api.post(`/api/club-waitlist/${entryId}/request`, { groupId, reason: requestReason[entryId] || null });
+      setInfo("Übernahme-Anfrage an die Jugendleitung geschickt – wartet auf Freigabe.");
+      setRequestReason((prev) => ({ ...prev, [entryId]: "" }));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Anfragen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleConfirm(id: string) {
     setError(null);
     setInfo(null);
@@ -207,10 +238,11 @@ export default function ClubWaitlist() {
   }
 
   async function handleDecline(id: string) {
+    const reason = window.prompt("Grund für die Ablehnung (optional):", "") ?? "";
     setError(null);
     setBusy(true);
     try {
-      await api.post(`/api/placement-requests/${id}/decline`, {});
+      await api.post(`/api/placement-requests/${id}/decline`, { reason: reason.trim() || null });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
@@ -226,15 +258,15 @@ export default function ClubWaitlist() {
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Vereinsweite Liste für Kinder ohne Gruppe.{" "}
           {isJugendleiter
-            ? "Als Jugendleitung siehst du hier die vereinsweite Liste und kannst nach Rücksprache eine Gruppe vorschlagen – die Gruppenleitung muss den Vorschlag noch bestätigen."
-            : "Melde hier ein Kind an, das noch keine Gruppe hat – die Jugendleitung wird automatisch benachrichtigt und verteilt von dort aus. Die Gesamtliste sieht nur die Jugendleitung; Vorschläge für deine eigenen Gruppen musst du hier aktiv bestätigen oder ablehnen."}
+            ? "Als Jugendleitung kannst du eine Gruppe vorschlagen (die Gruppenleitung muss noch bestätigen) und musst umgekehrt Übernahme-Anfragen von Gruppenleitungen freigeben."
+            : "Melde hier ein Kind an, das noch keine Gruppe hat, oder frag direkt an, ob du ein wartendes Kind in deine eigene Gruppe übernehmen kannst – das muss immer die Jugendleitung freigeben, unabhängig von freien Plätzen."}
         </p>
       </div>
 
       {incoming.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
           <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
-            Platzvorschläge für deine Gruppen ({incoming.length})
+            {isJugendleiter ? `Anfragen an dich (${incoming.length})` : `Platzvorschläge für deine Gruppen (${incoming.length})`}
           </h3>
           <ul className="space-y-2">
             {incoming.map((r) => (
@@ -244,7 +276,14 @@ export default function ClubWaitlist() {
               >
                 <span className="text-slate-800 dark:text-slate-100">
                   {r.childName} → {r.groupName}
-                  {r.proposedByName ? ` · vorgeschlagen von ${r.proposedByName}` : ""}
+                  {r.initiatedByOwner
+                    ? r.proposedByName
+                      ? ` · Übernahme-Anfrage von ${r.proposedByName}`
+                      : " · Übernahme-Anfrage"
+                    : r.proposedByName
+                      ? ` · vorgeschlagen von ${r.proposedByName}`
+                      : ""}
+                  {r.reason && <span className="text-slate-500 dark:text-slate-400"> · „{r.reason}“</span>}
                 </span>
                 <span className="flex gap-2">
                   <button
@@ -322,12 +361,7 @@ export default function ClubWaitlist() {
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-emerald-700 dark:text-emerald-400">{info}</p>}
 
-      {!isJugendleiter ? (
-        <p className="rounded-lg border border-slate-200 bg-white p-4 text-xs text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
-          Die vereinsweite Warteliste sieht nur die Jugendleitung – deine Anmeldung wurde ihr per Benachrichtigung
-          gemeldet.
-        </p>
-      ) : loading ? (
+      {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : entries.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
@@ -346,64 +380,101 @@ export default function ClubWaitlist() {
                 <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">seit {formatDate(entry.createdAt)}</span>
                 {entry.pendingProposal && (
                   <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                    Vorschlag: {entry.pendingProposal.groupName} · wartet auf Bestätigung der Gruppenleitung
+                    {entry.pendingProposal.initiatedByOwner
+                      ? `Übernahme-Anfrage für ${entry.pendingProposal.groupName} · wartet auf Freigabe der Jugendleitung`
+                      : `Vorschlag: ${entry.pendingProposal.groupName} · wartet auf Bestätigung der Gruppenleitung`}
                   </div>
                 )}
               </div>
-              <div className="flex flex-col items-end gap-1">
-                {isJugendleiter && !entry.pendingProposal && (
-                  <>
-                    {(() => {
-                      const ranked = recommendGroup(entry.childId);
-                      const best = ranked[0];
-                      return (
-                        <>
-                          {best?.ageFits && (
-                            <span className="text-xs text-emerald-700 dark:text-emerald-400">
-                              Empfehlung: {best.group.name} ({best.count}/{best.group.maxChildren ?? "∞"} Plätze, passt vom
-                              Alter)
-                            </span>
-                          )}
-                          <div className="flex items-end gap-2">
-                            <div className="w-56">
-                              <FloatingSelect
-                                label="Gruppe vorschlagen"
-                                id={`propose-group-${entry.id}`}
-                                value={proposalGroup[entry.id] ?? ""}
-                                onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+              {!entry.pendingProposal && (
+                <div className="flex flex-col items-end gap-2">
+                  {isJugendleiter && (
+                    <>
+                      {(() => {
+                        const ranked = recommendGroup(entry.childId);
+                        const best = ranked[0];
+                        return (
+                          <>
+                            {best && (best.hasSibling || best.ageFits) && (
+                              <span className="text-xs text-emerald-700 dark:text-emerald-400">
+                                Empfehlung: {best.group.name} ({best.count}/{best.group.maxChildren ?? "∞"} Plätze
+                                {best.hasSibling ? ", Geschwisterkind dort" : best.ageFits ? ", passt vom Alter" : ""})
+                              </span>
+                            )}
+                            <div className="flex items-end gap-2">
+                              <div className="w-56">
+                                <FloatingSelect
+                                  label="Gruppe vorschlagen"
+                                  id={`propose-group-${entry.id}`}
+                                  value={proposalGroup[entry.id] ?? ""}
+                                  onChange={(e) => setProposalGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                                >
+                                  <option value="">–</option>
+                                  {ranked.map((fit) => (
+                                    <option key={fit.group.id} value={fit.group.id}>
+                                      {fit.group.name} ({fit.count}/{fit.group.maxChildren ?? "∞"})
+                                      {fit.hasSibling ? " – Geschwisterkind dort" : fit.ageFits ? "" : " – Alter passt nicht"}
+                                    </option>
+                                  ))}
+                                </FloatingSelect>
+                              </div>
+                              <button
+                                onClick={() => handlePropose(entry.id)}
+                                disabled={busy || !proposalGroup[entry.id]}
+                                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                               >
-                                <option value="">–</option>
-                                {ranked.map((fit) => (
-                                  <option key={fit.group.id} value={fit.group.id}>
-                                    {fit.group.name} ({fit.count}/{fit.group.maxChildren ?? "∞"})
-                                    {fit.ageFits ? "" : " – Alter passt nicht"}
-                                  </option>
-                                ))}
-                              </FloatingSelect>
+                                Vorschlagen
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handlePropose(entry.id)}
-                              disabled={busy || !proposalGroup[entry.id]}
-                              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                            >
-                              Vorschlagen
-                            </button>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </>
-                )}
-                {(entry.addedBy === userId || isJugendleiter) && (
-                  <button
-                    onClick={() => handleCancel(entry.id)}
-                    disabled={busy}
-                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                  >
-                    Entfernen
-                  </button>
-                )}
-              </div>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
+                  {myGroups.length > 0 && (
+                    <div className="flex items-end gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+                      <div className="w-44">
+                        <FloatingSelect
+                          label="Für meine Gruppe anfragen"
+                          id={`request-group-${entry.id}`}
+                          value={requestGroup[entry.id] ?? ""}
+                          onChange={(e) => setRequestGroup((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                        >
+                          <option value="">–</option>
+                          {myGroups.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
+                          ))}
+                        </FloatingSelect>
+                      </div>
+                      <div className="w-40">
+                        <FloatingInput
+                          label="Begründung (optional)"
+                          value={requestReason[entry.id] ?? ""}
+                          onChange={(e) => setRequestReason((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleRequest(entry.id)}
+                        disabled={busy || !requestGroup[entry.id]}
+                        className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        Anfragen
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {(entry.addedBy === userId || isJugendleiter) && (
+                <button
+                  onClick={() => handleCancel(entry.id)}
+                  disabled={busy}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Entfernen
+                </button>
+              )}
             </li>
           ))}
         </ul>

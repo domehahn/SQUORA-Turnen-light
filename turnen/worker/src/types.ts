@@ -349,6 +349,12 @@ export interface PlacementRequestRow {
   status: PlacementRequestStatus;
   created_at: string;
   resolved_at: string | null;
+  // 0 = Jugendleitung schlägt der Gruppenleitung ein Kind vor (die
+  // Gruppenleitung bestätigt/lehnt ab); 1 = die Gruppenleitung fragt selbst
+  // an, das Kind zu übernehmen (die Jugendleitung bestätigt/lehnt ab).
+  initiated_by_owner: number;
+  reason: string | null;
+  decline_reason: string | null;
 }
 
 export interface ClubWaitlistEntryDetail {
@@ -366,6 +372,7 @@ export interface ClubWaitlistEntryDetail {
     groupName: string;
     proposedByName: string | null;
     createdAt: string;
+    initiatedByOwner: boolean;
   } | null;
 }
 
@@ -380,6 +387,9 @@ export interface PlacementRequestDetail {
   proposedByName: string | null;
   status: PlacementRequestStatus;
   createdAt: string;
+  initiatedByOwner: boolean;
+  reason: string | null;
+  declineReason: string | null;
 }
 
 // --- Abweichende Termine (Freigabe der Jugendleitung) ---------------------------
