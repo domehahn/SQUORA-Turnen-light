@@ -621,7 +621,12 @@ export default function Groups() {
                           >
                             <option value="">–</option>
                             {clubMembers
-                              .filter((m) => m.id !== userId && !(coLeaders[g.id] ?? []).some((cl) => cl.id === m.id))
+                              .filter(
+                                (m) =>
+                                  m.id !== userId &&
+                                  m.id !== g.ownerId &&
+                                  !(coLeaders[g.id] ?? []).some((cl) => cl.id === m.id)
+                              )
                               .map((m) => (
                                 <option key={m.id} value={m.id}>
                                   {m.name ?? m.email}
