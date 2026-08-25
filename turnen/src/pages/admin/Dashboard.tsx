@@ -27,6 +27,81 @@ interface TodoItem {
   tone: "amber" | "red";
 }
 
+interface MismatchEntry {
+  child: Child;
+  currentGroup: Group;
+  targetGroup: Group | undefined;
+}
+
+function MismatchRow({
+  mismatched,
+  suffix,
+}: {
+  mismatched: { overdue: MismatchEntry[]; tooYoung: MismatchEntry[] };
+  suffix: string;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Link
+        to="/kinder"
+        className={`rounded-lg border p-4 ${
+          mismatched.overdue.length > 0
+            ? "border-red-300 bg-red-50 hover:border-red-400 dark:border-red-800 dark:bg-red-950/50 dark:hover:border-red-700"
+            : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+        }`}
+      >
+        <h3
+          className={`mb-2 text-sm font-semibold ${
+            mismatched.overdue.length > 0 ? "text-red-800 dark:text-red-300" : "text-slate-500 dark:text-slate-400"
+          }`}
+        >
+          Wechsel überfällig{suffix} ({mismatched.overdue.length})
+        </h3>
+        {mismatched.overdue.length > 0 ? (
+          <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
+            {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
+              <li key={child.id}>
+                {child.firstName} {child.lastName}
+                {targetGroup ? ` – gehört eigentlich zu ${targetGroup.name}` : ""} · Gruppe: {currentGroup.name}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell kein überfälliger Wechsel.</p>
+        )}
+      </Link>
+      <Link
+        to="/kinder"
+        className={`rounded-lg border p-4 ${
+          mismatched.tooYoung.length > 0
+            ? "border-purple-300 bg-purple-50 hover:border-purple-400 dark:border-purple-800 dark:bg-purple-950/50 dark:hover:border-purple-700"
+            : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+        }`}
+      >
+        <h3
+          className={`mb-2 text-sm font-semibold ${
+            mismatched.tooYoung.length > 0 ? "text-purple-800 dark:text-purple-300" : "text-slate-500 dark:text-slate-400"
+          }`}
+        >
+          Eigentlich noch zu jung für die Gruppe{suffix} ({mismatched.tooYoung.length})
+        </h3>
+        {mismatched.tooYoung.length > 0 ? (
+          <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
+            {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
+              <li key={child.id}>
+                {child.firstName} {child.lastName}
+                {targetGroup ? ` – passt eher zu ${targetGroup.name}` : ""} · Gruppe: {currentGroup.name}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell kein Kind zu jung für seine Gruppe.</p>
+        )}
+      </Link>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { userName, userEmail, clubName, clubRole } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
@@ -107,22 +182,17 @@ export default function Dashboard() {
   // unten (konsolidiert, ohne Tabelle) bzw. je Gruppe aufgeschlüsselt in
   // "Gruppen im Verein im Detail".
   const activeChildren = allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
-  // Vertretungsbörse/-kalender sind an sich vereinsweit (jede*r kann fremde
-  // offene Anfragen übernehmen) - auf dem Dashboard sollen Turnleiter*innen
-  // hier aber wie bei den übrigen Kacheln nur den eigenen Ausschnitt sehen,
-  // die Jugendleitung weiterhin alles.
-  const visibleOpenSubstitutes = isJugendleiter ? openSubstitutes : openSubstitutes.filter((r) => ownGroupIds.has(r.groupId));
-  const visibleUpcomingSubstitutes = isJugendleiter
-    ? upcomingSubstitutes
-    : upcomingSubstitutes.filter((r) => ownGroupIds.has(r.groupId));
+  // Vertretungsbörse/-kalender sind bewusst vereinsweit für ALLE Rollen -
+  // eine Turnleitung soll hier genauso sehen können, ob sie eine fremde
+  // offene Anfrage übernehmen könnte, nicht nur die eigenen Anfragen.
 
   // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
-  // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis. Jugendleitung
-  // sieht das vereinsweit (alle Gruppen), Turnleiter*innen nur die eigene(n).
-  const mismatched = useMemo(() => {
+  // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis. Zwei
+  // getrennte Auswertungen: eigene Gruppe(n) (für alle Rollen) und
+  // vereinsweit alle Gruppen (nur Jugendleitung).
+  function findMismatches(relevantChildren: Child[]) {
     const overdue: { child: Child; currentGroup: Group; targetGroup: Group | undefined }[] = [];
     const tooYoung: { child: Child; currentGroup: Group; targetGroup: Group | undefined }[] = [];
-    const relevantChildren = isJugendleiter ? allActiveChildren : activeChildren;
     for (const child of relevantChildren) {
       const currentGroup = groups.find((g) => g.id === child.groupId);
       if (!currentGroup) continue;
@@ -134,8 +204,17 @@ export default function Dashboard() {
     overdue.sort(byName);
     tooYoung.sort(byName);
     return { overdue, tooYoung };
+  }
+  const mismatchedOwn = useMemo(
+    () => findMismatches(activeChildren),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isJugendleiter, allActiveChildren, activeChildren, groups]);
+    [activeChildren, groups]
+  );
+  const mismatchedAll = useMemo(
+    () => findMismatches(allActiveChildren),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allActiveChildren, groups]
+  );
 
   const todos: TodoItem[] = [
     { label: "Verschiebe-Anfragen für deine Gruppen", count: incomingMoveRequests.length, to: "/gruppen", tone: "amber" as const },
@@ -190,7 +269,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Offene Vertretungsanfragen
               </p>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{visibleOpenSubstitutes.length}</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{openSubstitutes.length}</p>
             </Link>
             <Link
               to="/kalender"
@@ -199,7 +278,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Anstehende Vertretungen
               </p>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{visibleUpcomingSubstitutes.length}</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{upcomingSubstitutes.length}</p>
             </Link>
           </div>
 
@@ -250,70 +329,15 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Link
-              to="/kinder"
-              className={`rounded-lg border p-4 ${
-                mismatched.overdue.length > 0
-                  ? "border-red-300 bg-red-50 hover:border-red-400 dark:border-red-800 dark:bg-red-950/50 dark:hover:border-red-700"
-                  : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
-              }`}
-            >
-              <h3
-                className={`mb-2 text-sm font-semibold ${
-                  mismatched.overdue.length > 0 ? "text-red-800 dark:text-red-300" : "text-slate-500 dark:text-slate-400"
-                }`}
-              >
-                Wechsel überfällig ({mismatched.overdue.length})
-              </h3>
-              {mismatched.overdue.length > 0 ? (
-                <ul className="space-y-1 text-sm text-red-900 dark:text-red-200">
-                  {mismatched.overdue.map(({ child, currentGroup, targetGroup }) => (
-                    <li key={child.id}>
-                      {child.firstName} {child.lastName}
-                      {targetGroup ? ` – gehört eigentlich zu ${targetGroup.name}` : ""} · Gruppe: {currentGroup.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell kein überfälliger Wechsel.</p>
-              )}
-            </Link>
-            <Link
-              to="/kinder"
-              className={`rounded-lg border p-4 ${
-                mismatched.tooYoung.length > 0
-                  ? "border-purple-300 bg-purple-50 hover:border-purple-400 dark:border-purple-800 dark:bg-purple-950/50 dark:hover:border-purple-700"
-                  : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
-              }`}
-            >
-              <h3
-                className={`mb-2 text-sm font-semibold ${
-                  mismatched.tooYoung.length > 0 ? "text-purple-800 dark:text-purple-300" : "text-slate-500 dark:text-slate-400"
-                }`}
-              >
-                Eigentlich noch zu jung für die Gruppe ({mismatched.tooYoung.length})
-              </h3>
-              {mismatched.tooYoung.length > 0 ? (
-                <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
-                  {mismatched.tooYoung.map(({ child, currentGroup, targetGroup }) => (
-                    <li key={child.id}>
-                      {child.firstName} {child.lastName}
-                      {targetGroup ? ` – passt eher zu ${targetGroup.name}` : ""} · Gruppe: {currentGroup.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell kein Kind zu jung für seine Gruppe.</p>
-              )}
-            </Link>
-          </div>
+          <MismatchRow mismatched={mismatchedOwn} suffix={isJugendleiter ? " (eigene Gruppen)" : ""} />
 
-          {visibleUpcomingSubstitutes.length > 0 && (
+          {isJugendleiter && <MismatchRow mismatched={mismatchedAll} suffix=" (alle Gruppen)" />}
+
+          {upcomingSubstitutes.length > 0 && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">
               <h3 className="mb-2 text-sm font-semibold text-purple-800 dark:text-purple-300">Nächste Vertretungen</h3>
               <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
-                {visibleUpcomingSubstitutes.slice(0, 5).map((r) => (
+                {upcomingSubstitutes.slice(0, 5).map((r) => (
                   <li key={r.id}>
                     {formatShortDate(r.sessionDate)} · {r.groupName} · {r.claimedByName ?? "jemand"} vertritt{" "}
                     {r.requestedByName ?? "jemanden"}
@@ -323,7 +347,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {todos.length === 0 && visibleUpcomingSubstitutes.length === 0 && (
+          {todos.length === 0 && upcomingSubstitutes.length === 0 && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
               Keine offenen Anfragen und keine anstehenden Vertretungen.
             </div>
