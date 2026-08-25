@@ -14,6 +14,19 @@ function today(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+// quarter = 0 steht für "Ganzes Jahr". Liefert Von/Bis als "YYYY-MM-DD" für
+// die Schnellauswahl unten - Von/Bis bleiben trotzdem frei nachbearbeitbar.
+function quarterBounds(year: number, quarter: number): { from: string; to: string } {
+  if (quarter === 0) return { from: `${year}-01-01`, to: `${year}-12-31` };
+  const startMonth = (quarter - 1) * 3 + 1;
+  const endMonth = quarter * 3;
+  const lastDay = new Date(year, endMonth, 0).getDate();
+  return {
+    from: `${year}-${String(startMonth).padStart(2, "0")}-01`,
+    to: `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
 export default function Export() {
   const { clubRole, clubName } = useAuth();
   const [from, setFrom] = useState(firstOfMonth());
@@ -21,6 +34,17 @@ export default function Export() {
   const [scope, setScope] = useState<"own" | "club">("own");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 8 + i);
+  const [quickYear, setQuickYear] = useState(currentYear);
+  const [quickQuarter, setQuickQuarter] = useState(0); // 0 = Ganzes Jahr
+
+  function applyQuarter(year: number, quarter: number) {
+    const bounds = quarterBounds(year, quarter);
+    setFrom(bounds.from);
+    setTo(bounds.to);
+  }
 
   async function handleExport() {
     setError(null);
@@ -61,6 +85,43 @@ export default function Export() {
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="w-28">
+          <FloatingSelect
+            label="Jahr"
+            value={quickYear}
+            onChange={(e) => {
+              const year = Number(e.target.value);
+              setQuickYear(year);
+              applyQuarter(year, quickQuarter);
+            }}
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <div className="w-40">
+          <FloatingSelect
+            label="Quartal"
+            value={quickQuarter}
+            onChange={(e) => {
+              const quarter = Number(e.target.value);
+              setQuickQuarter(quarter);
+              applyQuarter(quickYear, quarter);
+            }}
+          >
+            <option value={0}>Ganzes Jahr</option>
+            {[1, 2, 3, 4].map((q) => (
+              <option key={q} value={q}>
+                Q{q}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <span className="pb-2 text-xs text-slate-400 dark:text-slate-500">füllt Von/Bis aus, beide bleiben frei anpassbar</span>
+        <div className="w-full" />
         <div className="w-44">
           <FloatingInput label="Von" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>

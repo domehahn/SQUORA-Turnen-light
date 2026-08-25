@@ -28,7 +28,7 @@ interface TodoItem {
 }
 
 export default function Dashboard() {
-  const { userName, userEmail, clubName, clubRole } = useAuth();
+  const { userId, userName, userEmail, clubName, clubRole } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
 
   const [groups, setGroups] = useState<Group[]>([]);
@@ -97,6 +97,21 @@ export default function Dashboard() {
 
   const ownGroups = groups.filter((g) => g.canEdit);
   const activeChildren = children.filter((c) => c.status === "active");
+
+  // Jugendleitung: Kennzahlen je Gruppe des Vereins, statt nur konsolidiert -
+  // damit man sieht, WELCHE Gruppe z.B. viele offene Vertretungsanfragen hat,
+  // nicht nur die vereinsweite Summe.
+  const groupBreakdown = useMemo(() => {
+    if (!isJugendleiter) return [];
+    return [...groups]
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.minAge - b.minAge)
+      .map((g) => ({
+        group: g,
+        activeChildren: activeChildren.filter((c) => c.groupId === g.id).length,
+        openSubstitutes: openSubstitutes.filter((r) => r.groupId === g.id).length,
+        upcomingSubstitutes: upcomingSubstitutes.filter((r) => r.groupId === g.id).length,
+      }));
+  }, [isJugendleiter, groups, activeChildren, openSubstitutes, upcomingSubstitutes]);
 
   // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
   // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis.
@@ -282,6 +297,42 @@ export default function Dashboard() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {isJugendleiter && groupBreakdown.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+              <h3 className="px-4 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Gruppen im Verein im Detail
+              </h3>
+              <p className="px-4 pb-2 text-xs text-slate-500 dark:text-slate-400">
+                Kennzahlen je Gruppe, nicht konsolidiert – auch fremde Gruppen deines Vereins.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-slate-500 dark:text-slate-400">
+                    <tr className="border-t border-slate-200 dark:border-slate-800">
+                      <th className="px-4 py-2 text-left font-medium">Gruppe</th>
+                      <th className="px-4 py-2 text-right font-medium">Kinder (aktiv)</th>
+                      <th className="px-4 py-2 text-right font-medium">Offene Vertretungsanfragen</th>
+                      <th className="px-4 py-2 text-right font-medium">Anstehende Vertretungen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupBreakdown.map(({ group, activeChildren: count, openSubstitutes: openCount, upcomingSubstitutes: upcomingCount }) => (
+                      <tr key={group.id} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
+                          {group.name}
+                          {group.ownerId === userId ? "" : <span className="ml-1.5 text-xs font-normal text-slate-400 dark:text-slate-500">(fremd)</span>}
+                        </td>
+                        <td className="px-4 py-2 text-right text-slate-600 dark:text-slate-300">{count}</td>
+                        <td className="px-4 py-2 text-right text-slate-600 dark:text-slate-300">{openCount}</td>
+                        <td className="px-4 py-2 text-right text-slate-600 dark:text-slate-300">{upcomingCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import type { Child, Group } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
+import { FloatingSelect } from "../../components/FloatingField";
 
-const QUARTER_COUNT = 12; // letzte 3 Jahre
+const QUARTER_COUNT = 12; // Default-Zeitraum: letzte 3 Jahre
+const YEAR_RANGE_BACK = 8; // wie weit "Von Jahr" in die Vergangenheit reicht
 
 interface QuarterPoint {
   year: number;
@@ -25,18 +27,35 @@ function quarterEndIso(year: number, quarter: number): string {
   return `${year}-${pad(lastMonth)}-${pad(lastDay)} 23:59:59`;
 }
 
-function buildQuarters(count: number): QuarterPoint[] {
-  const now = new Date();
-  let year = now.getFullYear();
-  let quarter = Math.floor(now.getMonth() / 3) + 1;
+function shiftQuarter(year: number, quarter: number, delta: number): { year: number; quarter: number } {
+  let q = quarter + delta;
+  let y = year;
+  while (q < 1) {
+    q += 4;
+    y -= 1;
+  }
+  while (q > 4) {
+    q -= 4;
+    y += 1;
+  }
+  return { year: y, quarter: q };
+}
+
+// Aufsteigende Liste aller Quartale zwischen (from) und (bis) inklusive. Ist
+// "von" nach "bis", kommt eine leere Liste zurück statt einer Endlosschleife.
+function buildQuarterRange(fromYear: number, fromQuarter: number, toYear: number, toQuarter: number): QuarterPoint[] {
   const points: QuarterPoint[] = [];
-  for (let i = 0; i < count; i++) {
-    points.unshift({ year, quarter, label: `Q${quarter} ${year}`, endIso: quarterEndIso(year, quarter) });
-    quarter -= 1;
-    if (quarter < 1) {
-      quarter = 4;
-      year -= 1;
+  let year = fromYear;
+  let quarter = fromQuarter;
+  let guard = 0;
+  while ((year < toYear || (year === toYear && quarter <= toQuarter)) && guard < 400) {
+    points.push({ year, quarter, label: `Q${quarter} ${year}`, endIso: quarterEndIso(year, quarter) });
+    quarter += 1;
+    if (quarter > 4) {
+      quarter = 1;
+      year += 1;
     }
+    guard += 1;
   }
   return points;
 }
@@ -58,6 +77,19 @@ export default function MemberStats() {
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+  const defaultFrom = shiftQuarter(currentYear, currentQuarter, -(QUARTER_COUNT - 1));
+  const [fromYear, setFromYear] = useState(defaultFrom.year);
+  const [fromQuarter, setFromQuarter] = useState(defaultFrom.quarter);
+  const [toYear, setToYear] = useState(currentYear);
+  const [toQuarter, setToQuarter] = useState(currentQuarter);
+  const yearOptions = useMemo(
+    () => Array.from({ length: YEAR_RANGE_BACK + 2 }, (_, i) => currentYear - YEAR_RANGE_BACK + i),
+    [currentYear]
+  );
 
   useEffect(() => {
     async function load() {
@@ -88,7 +120,10 @@ export default function MemberStats() {
     [groups, clubId, isJugendleiter, userId]
   );
 
-  const quarters = useMemo(() => buildQuarters(QUARTER_COUNT), []);
+  const quarters = useMemo(
+    () => buildQuarterRange(fromYear, fromQuarter, toYear, toQuarter),
+    [fromYear, fromQuarter, toYear, toQuarter]
+  );
 
   // Nutzt die aktuelle Gruppenzuordnung, nicht die historische - ein Kind,
   // das die Gruppe gewechselt hat, taucht rückwirkend überall in seiner
@@ -126,9 +161,53 @@ export default function MemberStats() {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="w-28">
+          <FloatingSelect label="Von Jahr" value={fromYear} onChange={(e) => setFromYear(Number(e.target.value))}>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <div className="w-24">
+          <FloatingSelect label="Quartal" value={fromQuarter} onChange={(e) => setFromQuarter(Number(e.target.value))}>
+            {[1, 2, 3, 4].map((q) => (
+              <option key={q} value={q}>
+                Q{q}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <span className="pb-2 text-sm text-slate-400 dark:text-slate-500">bis</span>
+        <div className="w-28">
+          <FloatingSelect label="Bis Jahr" value={toYear} onChange={(e) => setToYear(Number(e.target.value))}>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+        <div className="w-24">
+          <FloatingSelect label="Quartal" value={toQuarter} onChange={(e) => setToQuarter(Number(e.target.value))}>
+            {[1, 2, 3, 4].map((q) => (
+              <option key={q} value={q}>
+                Q{q}
+              </option>
+            ))}
+          </FloatingSelect>
+        </div>
+      </div>
+
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
 
-      {loading ? (
+      {quarters.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
+„Von“ liegt nach „Bis“ – bitte einen gültigen Zeitraum wählen.
+        </div>
+      ) : loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : visibleGroups.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
