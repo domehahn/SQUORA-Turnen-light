@@ -11,6 +11,7 @@ import type {
   WaitlistEntry,
 } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
+import { useAuth } from "../../context/useAuth";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
 import { appPath } from "../../lib/paths";
 import {
@@ -96,6 +97,9 @@ const URGENCY_SECTIONS: {
 ];
 
 export default function Children() {
+  const { clubRole } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
+
   // Enthält auch ausgetretene (archivierte) Kinder - `children` weiter unten
   // filtert auf aktive, damit der ganze bestehende Code unverändert nur mit
   // aktiven Kindern arbeitet; `archivedChildren` bedient die eigene
@@ -150,6 +154,21 @@ export default function Children() {
 
   const children = useMemo(() => allChildren.filter((c) => c.status === "active"), [allChildren]);
   const archivedChildren = useMemo(() => allChildren.filter((c) => c.status === "archived"), [allChildren]);
+
+  // Sichtbare Liste auf der Kinder-Seite: Turnleiter*innen sehen nur Kinder
+  // der eigenen Gruppe(n), die Jugendleitung alle. `children`/`allChildren`
+  // bleiben bewusst ungefiltert für interne Berechnungen, die vereinsweite
+  // Daten brauchen (Geschwister-Auswahl über Gruppen hinweg, Kapazitäts-
+  // Auslastung von Zielgruppen beim Verschieben).
+  const ownGroupIds = useMemo(() => new Set(groups.filter((g) => g.canEdit).map((g) => g.id)), [groups]);
+  const visibleChildren = useMemo(
+    () => (isJugendleiter ? children : children.filter((c) => c.groupId && ownGroupIds.has(c.groupId))),
+    [isJugendleiter, children, ownGroupIds]
+  );
+  const visibleArchivedChildren = useMemo(
+    () => (isJugendleiter ? archivedChildren : archivedChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId))),
+    [isJugendleiter, archivedChildren, ownGroupIds]
+  );
 
   async function handleArchive(id: string) {
     if (!confirm("Kind austreten lassen? Die Anwesenheitshistorie bleibt erhalten, das Kind kann jederzeit reaktiviert werden.")) return;
@@ -467,13 +486,13 @@ export default function Children() {
 
   const filteredChildren = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return children;
-    return children.filter((child) => {
+    if (!term) return visibleChildren;
+    return visibleChildren.filter((child) => {
       const haystack = `${child.firstName} ${child.lastName} ${groupName(child.groupId)}`.toLowerCase();
       return haystack.includes(term);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [children, groups, search]);
+  }, [visibleChildren, groups, search]);
 
   // Bei neuer Suche wieder bei Seite 1 jedes Abschnitts anfangen, sonst
   // könnte eine vorher gewählte Seite außerhalb der gefilterten Treffer liegen.
@@ -514,7 +533,7 @@ export default function Children() {
       "next-3-months": [],
       "this-year": [],
     };
-    for (const child of children) {
+    for (const child of visibleChildren) {
       const currentGroup = groups.find((g) => g.id === child.groupId);
       if (!currentGroup) continue;
       const switchDate = nextGroupSwitchDate(child.birthDate, currentGroup.maxAge);
@@ -527,7 +546,7 @@ export default function Children() {
       list.sort((a, b) => a.switchDate.getTime() - b.switchDate.getTime());
     }
     return buckets;
-  }, [children, groups]);
+  }, [visibleChildren, groups]);
 
   const hasUpcomingSwitches = URGENCY_SECTIONS.some((s) => upcomingByUrgency[s.urgency].length > 0);
 
@@ -537,7 +556,7 @@ export default function Children() {
   const mismatched = useMemo(() => {
     const overdue: MismatchedChild[] = [];
     const tooYoung: MismatchedChild[] = [];
-    for (const child of children) {
+    for (const child of visibleChildren) {
       const currentGroup = groups.find((g) => g.id === child.groupId);
       if (!currentGroup) continue;
       const age = calculateAgeYears(child.birthDate);
@@ -551,7 +570,7 @@ export default function Children() {
     overdue.sort(byName);
     tooYoung.sort(byName);
     return { overdue, tooYoung };
-  }, [children, groups]);
+  }, [visibleChildren, groups]);
 
   return (
     <div className="space-y-6">
@@ -964,7 +983,7 @@ export default function Children() {
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : groupedFilteredChildren.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
-          {children.length === 0 ? "Noch keine Kinder angelegt." : "Keine Treffer für diese Suche."}
+          {visibleChildren.length === 0 ? "Noch keine Kinder angelegt." : "Keine Treffer für diese Suche."}
         </div>
       ) : (
         <div className="space-y-6">
@@ -1218,7 +1237,7 @@ export default function Children() {
           onClick={() => setShowArchived((prev) => !prev)}
           className="text-sm text-slate-500 hover:underline dark:text-slate-400"
         >
-          {showArchived ? "Ausgetretene Kinder ausblenden" : `Ausgetretene Kinder anzeigen (${archivedChildren.length})`}
+          {showArchived ? "Ausgetretene Kinder ausblenden" : `Ausgetretene Kinder anzeigen (${visibleArchivedChildren.length})`}
         </button>
         {showArchived && (
           <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -1231,7 +1250,7 @@ export default function Children() {
                 </tr>
               </thead>
               <tbody>
-                {archivedChildren.map((child) => (
+                {visibleArchivedChildren.map((child) => (
                   <tr key={child.id} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
                       {child.firstName} {child.lastName}
@@ -1259,7 +1278,7 @@ export default function Children() {
                     </td>
                   </tr>
                 ))}
-                {archivedChildren.length === 0 && (
+                {visibleArchivedChildren.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-4 py-6 text-center text-slate-400 dark:text-slate-500">
                       Keine ausgetretenen Kinder.
