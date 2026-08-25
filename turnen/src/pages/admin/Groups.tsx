@@ -476,12 +476,7 @@ export default function Groups() {
                         unzugeordnet
                       </span>
                     ) : (
-                      <span
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                        title="Nur lesbar – gehört einem anderen Turnleiter im Verein"
-                      >
-                        {g.ownerName ?? "anderer Turnleiter"} · nur lesbar
-                      </span>
+                      <span className="text-slate-600 dark:text-slate-300">{g.ownerName ?? "anderer Turnleiter"}</span>
                     )}
                   </td>
                   <td className="px-4 py-2 text-right">
@@ -511,7 +506,12 @@ export default function Groups() {
                         </button>
                       </>
                     ) : (
-                      <span className="text-sm text-slate-300 dark:text-slate-600">–</span>
+                      <span
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        title="Nur lesbar – gehört einem anderen Turnleiter im Verein"
+                      >
+                        nur lesbar
+                      </span>
                     )}
                   </td>
                 </tr>

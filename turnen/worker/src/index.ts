@@ -1415,17 +1415,24 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
     return c.json({ status: "moved", groupId: toGroupId });
   }
 
+  // Wer eine Verschiebe-Anfrage stellt, muss immer begründen, warum -
+  // die Zielgruppen-Leitung soll nicht nur ein blankes "wechseln möchte"
+  // sehen, sondern eine nachvollziehbare Begründung.
+  const moveReason = requiredText(body?.reason, 300);
+  if (!moveReason) return c.json({ error: "Eine Begründung für die Verschiebe-Anfrage ist erforderlich" }, 400);
+
   const request = await db.createMoveRequest(c.env.DB, {
     childId: id,
     fromGroupId: child.group_id,
     toGroupId,
     requestedBy: c.get("userId"),
+    reason: moveReason,
   });
   if (targetGroup.owner_id) {
     const owner = await db.getUserById(c.env.DB, targetGroup.owner_id);
     if (owner) {
       const fits = db.ageFitsGroup(child.birth_date, targetGroup);
-      const reason = fits
+      const reasonSentence = fits
         ? `möchte in deine Gruppe „${targetGroup.name}“ wechseln`
         : `soll in deine Gruppe „${targetGroup.name}“ wechseln, erfüllt aber die Altersvoraussetzung nicht`;
       await notifyUser(c.env, {
@@ -1434,7 +1441,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
         userName: owner.name,
         type: "move_request",
         title: `Verschiebe-Anfrage für „${targetGroup.name}“`,
-        body: `${child.first_name} ${child.last_name} ${reason} - bitte freigeben oder ablehnen.\n\n${childContactSummary(child)}`,
+        body: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\n${childContactSummary(child)}`,
         link: "/gruppen",
       });
     }
@@ -1539,6 +1546,9 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
 app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const body = await c.req.json().catch(() => null);
+  const rejectReason = requiredText(body?.reason, 300);
+  if (!rejectReason) return c.json({ error: "Eine Begründung für die Ablehnung ist erforderlich" }, 400);
 
   const request = await db.getMoveRequestRowById(c.env.DB, id);
   if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
@@ -1548,7 +1558,7 @@ app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
   if (!targetGroup || targetGroup.owner_id !== c.get("userId"))
     return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
-  await db.setMoveRequestStatus(c.env.DB, id, "rejected", c.get("userId"));
+  await db.setMoveRequestStatus(c.env.DB, id, "rejected", c.get("userId"), rejectReason);
   const rejectedChild = await db.getChildRowById(c.env.DB, request.child_id);
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -1572,7 +1582,7 @@ app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
         userName: oldOwner.name,
         type: "move_request_rejected",
         title: `Verschiebe-Anfrage abgelehnt: „${targetGroup.name}“`,
-        body: `${rejectedChildName} bleibt in „${fromGroup.name}“ - der Wechsel nach „${targetGroup.name}“ wurde abgelehnt.`,
+        body: `${rejectedChildName} bleibt in „${fromGroup.name}“ - der Wechsel nach „${targetGroup.name}“ wurde abgelehnt.\n\nBegründung: ${rejectReason}`,
         link: "/gruppen",
       });
     }
@@ -1586,7 +1596,7 @@ app.post("/api/move-requests/:id/reject", requireAuth, async (c) => {
         userName: requester.name,
         type: "move_request_rejected",
         title: `Deine Verschiebe-Anfrage wurde abgelehnt`,
-        body: `${rejectedChildName} konnte nicht nach „${targetGroup.name}“ wechseln.`,
+        body: `${rejectedChildName} konnte nicht nach „${targetGroup.name}“ wechseln.\n\nBegründung: ${rejectReason}`,
         link: "/gruppen",
       });
     }
@@ -1793,7 +1803,27 @@ app.post("/api/club-waitlist", requireAuth, async (c) => {
 app.get("/api/club-waitlist", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
-  return c.json(await db.listClubWaitlist(c.env.DB, clubId));
+  const entries = await db.listClubWaitlist(c.env.DB, clubId);
+  if (c.get("clubRole") === "jugendleiter") return c.json(entries);
+
+  // Turnleiter*innen sehen nur Kinder, die altersmäßig zu einer eigenen
+  // Gruppe passen würden (damit sich eine Übernahme-Anfrage überhaupt lohnt),
+  // und ohne den Namen der anmeldenden Person - die volle Liste bleibt der
+  // Jugendleitung vorbehalten.
+  const myGroups = (await db.listGroupsForUser(c.env.DB, c.get("userId"), clubId, c.get("clubRole"))).filter(
+    (g) => g.canEdit
+  );
+  if (myGroups.length === 0) return c.json([]);
+
+  const filtered: typeof entries = [];
+  for (const entry of entries) {
+    const child = await db.getChildRowById(c.env.DB, entry.childId);
+    if (!child) continue;
+    const fitsAny = myGroups.some((g) => db.ageFitsGroup(child.birth_date, { min_age: g.minAge, max_age: g.maxAge }));
+    if (!fitsAny) continue;
+    filtered.push({ ...entry, addedByName: null });
+  }
+  return c.json(filtered);
 });
 
 app.post("/api/club-waitlist/:id/cancel", requireAuth, async (c) => {
@@ -1863,9 +1893,9 @@ app.post("/api/club-waitlist/:id/request", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   const body = await c.req.json().catch(() => null);
   const groupId = validId(body?.groupId);
-  const reason = optionalText(body?.reason, 300);
+  const reason = requiredText(body?.reason, 300);
   if (!id || !groupId) return c.json({ error: "Ungültige Anfrage" }, 400);
-  if (reason === undefined) return c.json({ error: "Begründung ist zu lang" }, 400);
+  if (!reason) return c.json({ error: "Eine Begründung für die Übernahme-Anfrage ist erforderlich" }, 400);
 
   const entry = await db.getClubWaitlistEntryById(c.env.DB, id);
   if (!entry) return c.json({ error: "Eintrag nicht gefunden" }, 404);
@@ -2013,8 +2043,8 @@ app.post("/api/placement-requests/:id/decline", requireAuth, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   const body = await c.req.json().catch(() => null);
-  const declineReason = optionalText(body?.reason, 300);
-  if (declineReason === undefined) return c.json({ error: "Begründung ist zu lang" }, 400);
+  const declineReason = requiredText(body?.reason, 300);
+  if (!declineReason) return c.json({ error: "Eine Begründung für die Ablehnung ist erforderlich" }, 400);
 
   const request = await db.getPlacementRequestById(c.env.DB, id);
   if (!request) return c.json({ error: "Vorschlag nicht gefunden" }, 404);

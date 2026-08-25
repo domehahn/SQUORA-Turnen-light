@@ -977,14 +977,14 @@ export async function getMoveRequestRowById(db: D1Database, id: string): Promise
 
 export async function createMoveRequest(
   db: D1Database,
-  input: { childId: string; fromGroupId: string | null; toGroupId: string; requestedBy: string }
+  input: { childId: string; fromGroupId: string | null; toGroupId: string; requestedBy: string; reason: string }
 ): Promise<MoveRequestRow> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO move_requests (id, child_id, from_group_id, to_group_id, requested_by) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO move_requests (id, child_id, from_group_id, to_group_id, requested_by, reason) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .bind(id, input.childId, input.fromGroupId, input.toGroupId, input.requestedBy)
+    .bind(id, input.childId, input.fromGroupId, input.toGroupId, input.requestedBy, input.reason)
     .run();
   const row = await db.prepare("SELECT * FROM move_requests WHERE id = ?").bind(id).first<MoveRequestRow>();
   return row as MoveRequestRow;
@@ -994,11 +994,14 @@ export async function setMoveRequestStatus(
   db: D1Database,
   id: string,
   status: MoveRequestStatus,
-  reviewedBy: string | null
+  reviewedBy: string | null,
+  rejectReason?: string | null
 ): Promise<void> {
   await db
-    .prepare("UPDATE move_requests SET status = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?")
-    .bind(status, reviewedBy, id)
+    .prepare(
+      "UPDATE move_requests SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), reject_reason = COALESCE(?, reject_reason) WHERE id = ?"
+    )
+    .bind(status, reviewedBy, rejectReason ?? null, id)
     .run();
 }
 
@@ -1026,6 +1029,8 @@ function rowToMoveRequestDetail(row: MoveRequestJoinRow): MoveRequestDetail {
     reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at,
     createdAt: row.created_at,
+    reason: row.reason,
+    rejectReason: row.reject_reason,
   };
 }
 

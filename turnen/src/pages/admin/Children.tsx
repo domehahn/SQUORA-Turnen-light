@@ -268,7 +268,22 @@ export default function Children() {
     loadAttendanceSummary();
   }, []);
 
-  async function handleMove(childId: string, toGroupId: string) {
+  // Fremde Gruppe (g.canEdit === false, wie im "Verschieben"-Dropdown schon
+  // markiert) braucht immer eine Begründung, egal ob das Alter passt - null
+  // bedeutet abgebrochen, undefined bedeutet keine Begründung nötig
+  // (eigene/mitgeleitete Gruppe oder Jugendleitung).
+  function promptMoveReason(targetGroup: Group): string | null | undefined {
+    if (targetGroup.canEdit) return undefined;
+    let reason = "";
+    while (!reason.trim()) {
+      const input = window.prompt(`Begründung für die Verschiebe-Anfrage nach „${targetGroup.name}“ (Pflichtfeld):`, reason);
+      if (input === null) return null;
+      reason = input;
+    }
+    return reason.trim();
+  }
+
+  async function handleMove(childId: string, toGroupId: string, reason?: string) {
     if (!toGroupId) return;
     setError(null);
     setInfo(null);
@@ -277,6 +292,7 @@ export default function Children() {
         api.post<MoveChildResponse | PendingCapacityApproval>(`/api/children/${childId}/move`, {
           toGroupId,
           confirmOverCapacity,
+          reason,
         })
       );
       if (res === CAPACITY_CANCELLED) return;
@@ -651,7 +667,11 @@ export default function Children() {
                     </span>
                     {child.canEdit && targetGroup && (
                       <button
-                        onClick={() => handleMove(child.id, targetGroup.id)}
+                        onClick={() => {
+                          const reason = promptMoveReason(targetGroup);
+                          if (reason === null) return;
+                          handleMove(child.id, targetGroup.id, reason ?? undefined);
+                        }}
                         className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
                       >
                         Jetzt verschieben
@@ -1207,7 +1227,13 @@ export default function Children() {
                                     if (value.startsWith(WAITLIST_PREFIX)) {
                                       handleAddToWaitlist(child.id, value.slice(WAITLIST_PREFIX.length));
                                     } else {
-                                      handleMove(child.id, value);
+                                      const targetGroup = groups.find((g) => g.id === value);
+                                      const reason = targetGroup ? promptMoveReason(targetGroup) : undefined;
+                                      if (reason === null) {
+                                        setMoveSelection((prev) => ({ ...prev, [child.id]: "" }));
+                                        return;
+                                      }
+                                      handleMove(child.id, value, reason ?? undefined);
                                     }
                                   }}
                                 >

@@ -136,6 +136,8 @@ export interface MoveRequestRow {
   reviewed_at: string | null;
   created_at: string;
   reminded_at: string | null;
+  reason: string | null;
+  reject_reason: string | null;
 }
 
 export interface MoveRequestDetail {
@@ -152,6 +154,8 @@ export interface MoveRequestDetail {
   reviewedBy: string | null;
   reviewedAt: string | null;
   createdAt: string;
+  reason: string | null;
+  rejectReason: string | null;
 }
 
 export type CapacityRequestAction = "create_child" | "update_child" | "move_child" | "approve_move_request";

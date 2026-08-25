@@ -203,12 +203,13 @@ export default function ClubWaitlist() {
 
   async function handleRequest(entryId: string) {
     const groupId = requestGroup[entryId];
-    if (!groupId) return;
+    const reason = (requestReason[entryId] ?? "").trim();
+    if (!groupId || !reason) return;
     setError(null);
     setInfo(null);
     setBusy(true);
     try {
-      await api.post(`/api/club-waitlist/${entryId}/request`, { groupId, reason: requestReason[entryId] || null });
+      await api.post(`/api/club-waitlist/${entryId}/request`, { groupId, reason });
       setInfo("Übernahme-Anfrage an die Jugendleitung geschickt – wartet auf Freigabe.");
       setRequestReason((prev) => ({ ...prev, [entryId]: "" }));
       await load();
@@ -238,11 +239,16 @@ export default function ClubWaitlist() {
   }
 
   async function handleDecline(id: string) {
-    const reason = window.prompt("Grund für die Ablehnung (optional):", "") ?? "";
+    let reason = "";
+    while (!reason.trim()) {
+      const input = window.prompt("Grund für die Ablehnung (Pflichtfeld):", reason);
+      if (input === null) return; // abgebrochen
+      reason = input;
+    }
     setError(null);
     setBusy(true);
     try {
-      await api.post(`/api/placement-requests/${id}/decline`, { reason: reason.trim() || null });
+      await api.post(`/api/placement-requests/${id}/decline`, { reason: reason.trim() });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Ablehnen");
@@ -450,14 +456,15 @@ export default function ClubWaitlist() {
                       </div>
                       <div className="w-40">
                         <FloatingInput
-                          label="Begründung (optional)"
+                          label="Begründung"
+                          required
                           value={requestReason[entry.id] ?? ""}
                           onChange={(e) => setRequestReason((prev) => ({ ...prev, [entry.id]: e.target.value }))}
                         />
                       </div>
                       <button
                         onClick={() => handleRequest(entry.id)}
-                        disabled={busy || !requestGroup[entry.id]}
+                        disabled={busy || !requestGroup[entry.id] || !(requestReason[entry.id] ?? "").trim()}
                         className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
                         Anfragen
