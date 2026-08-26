@@ -1,6 +1,8 @@
 // Application-Level-Verschlüsselung für besonders sensible Kind-Felder
-// (Gesundheitshinweise, Notfallkontakte) - siehe
-// PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-02.
+// (Notfallkontakte) - siehe PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding
+// PRIV-02. Gesundheitshinweise (health_notes) gab es früher ebenfalls,
+// wurden aber als Feature komplett aus der App entfernt (Migration 0033) -
+// bewusste Datenminimierung statt nur Schutz besonderer Kategorien.
 //
 // Nutzt ausschließlich die native WebCrypto-API des Workers-Runtimes
 // (AES-256-GCM) - keine eigene Kryptographie-Implementierung. Der Schlüssel

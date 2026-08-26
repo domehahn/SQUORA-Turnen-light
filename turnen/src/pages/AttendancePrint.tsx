@@ -380,7 +380,6 @@ export default function AttendancePrint() {
                         <th className={`${thClass} text-left`}>Name</th>
                         <th className={`${thClass} text-left`}>Notfallkontakt</th>
                         <th className={`${thClass} text-left`}>Telefon</th>
-                        <th className={`${thClass} text-left`}>Gesundheitshinweise</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -391,12 +390,11 @@ export default function AttendancePrint() {
                           </td>
                           <td className={tdClass}>{child.emergencyContactName || "–"}</td>
                           <td className={tdClass}>{child.emergencyContactPhone || "–"}</td>
-                          <td className={tdClass}>{child.healthNotes || "–"}</td>
                         </tr>
                       ))}
                       {list.length === 0 && (
                         <tr>
-                          <td colSpan={4} className={`${tdClass} py-4 text-center text-slate-500`}>
+                          <td colSpan={3} className={`${tdClass} py-4 text-center text-slate-500`}>
                             Keine Kinder in dieser Gruppe.
                           </td>
                         </tr>

@@ -2,7 +2,7 @@ export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
   // AES-256-GCM-Schlüssel (32 Byte Hex) für die Verschlüsselung von
-  // Gesundheitshinweisen/Notfallkontakten - siehe worker/src/crypto.ts und
+  // Notfallkontakten - siehe worker/src/crypto.ts und
   // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-02.
   ENCRYPTION_KEY: string;
   FRONTEND_URL: string;
@@ -97,7 +97,6 @@ export interface Child {
   notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  healthNotes: string | null;
   familyId: string | null;
   status: ChildStatus;
   archivedAt: string | null;
@@ -114,7 +113,6 @@ export interface ChildRow {
   notes: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
-  health_notes: string | null;
   family_id: string | null;
   status: ChildStatus;
   archived_at: string | null;

@@ -32,7 +32,6 @@ export interface Child {
   notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  healthNotes: string | null;
   familyId: string | null;
   status: ChildStatus;
   archivedAt: string | null;

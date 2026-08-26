@@ -33,7 +33,6 @@ const emptyForm = {
   notes: "",
   emergencyContactName: "",
   emergencyContactPhone: "",
-  healthNotes: "",
 };
 
 const STALE_ATTENDANCE_WEEKS = 4;
@@ -415,7 +414,6 @@ export default function Children() {
       notes: child.notes ?? "",
       emergencyContactName: child.emergencyContactName ?? "",
       emergencyContactPhone: child.emergencyContactPhone ?? "",
-      healthNotes: child.healthNotes ?? "",
     });
     setOriginalFamilyId(child.familyId);
     setSiblingIds(
@@ -491,7 +489,6 @@ export default function Children() {
           notes: form.notes || null,
           emergencyContactName: form.emergencyContactName || null,
           emergencyContactPhone: form.emergencyContactPhone || null,
-          healthNotes: form.healthNotes || null,
           confirmOverCapacity,
         };
         return editingId
@@ -540,7 +537,7 @@ export default function Children() {
     const header =
       mode === "namen"
         ? ["Nachname", "Vorname", "Geburtsdatum", "Gruppe"]
-        : ["Name", "Notfallkontakt", "Telefon", "Gesundheitshinweise", "Gruppe"];
+        : ["Name", "Notfallkontakt", "Telefon", "Gruppe"];
     const lines = [header.map(csvCell).join(";")];
     for (const { group, child } of rows) {
       const cells =
@@ -550,7 +547,6 @@ export default function Children() {
               `${child.firstName} ${child.lastName}`,
               child.emergencyContactName ?? "",
               child.emergencyContactPhone ?? "",
-              child.healthNotes ?? "",
               group.name,
             ];
       lines.push(cells.map(csvCell).join(";"));
@@ -933,13 +929,6 @@ export default function Children() {
             onChange={(e) => setForm({ ...form, emergencyContactPhone: e.target.value })}
           />
         </div>
-        <div className="flex-1 min-w-[200px]">
-          <FloatingInput
-            label="Gesundheitshinweise, z.B. Allergien (optional)"
-            value={form.healthNotes}
-            onChange={(e) => setForm({ ...form, healthNotes: e.target.value })}
-          />
-        </div>
         <div className="w-full border-t border-slate-100 pt-3 dark:border-slate-800">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
             Geschwister (optional) – gleiche oder andere Gruppe, auch bei anderen Übungsleiter*innen im Verein
@@ -1138,7 +1127,7 @@ export default function Children() {
                         });
                       const openRequest = outgoingRequests.find((r) => r.childId === child.id);
                       const hasOpenRequest = Boolean(openRequest);
-                      const hasHealthInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone || child.healthNotes);
+                      const hasContactInfo = Boolean(child.emergencyContactName || child.emergencyContactPhone);
                       const siblings = child.familyId
                         ? children.filter((c) => c.familyId === child.familyId && c.id !== child.id)
                         : [];
@@ -1168,7 +1157,7 @@ export default function Children() {
                             >
                               {child.firstName} {child.lastName}
                             </button>
-                            {hasHealthInfo && <span className="ml-1.5">⚕️</span>}
+                            {hasContactInfo && <span className="ml-1.5">📞</span>}
                             {siblings.length > 0 && <span className="ml-1.5">👨‍👩‍👧</span>}
                             {mismatch && (
                               <span
@@ -1449,12 +1438,6 @@ export default function Children() {
                         "–"
                       )}
                     </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                      Gesundheitshinweise
-                    </dt>
-                    <dd className="text-slate-700 dark:text-slate-300">{detailChild.healthNotes || "–"}</dd>
                   </div>
                   {detailChild.notes && (
                     <div>

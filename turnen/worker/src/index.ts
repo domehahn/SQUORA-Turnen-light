@@ -554,19 +554,19 @@ app.get("/api/admin/audit-log", requireAuth, requireAdmin, async (c) => {
   return c.json(await db.listAuditLogSystemWide(c.env.DB, limit));
 });
 
-// Einmaliger Backfill: verschlüsselt Gesundheitsdaten/Notfallkontakte, die
-// noch aus der Zeit vor Einführung der Feld-Verschlüsselung im Klartext
-// vorliegen (Finding PRIV-02). Idempotent - überspringt bereits
-// verschlüsselte Werte (erkennbar am "v1:"-Präfix), daher gefahrlos mehrfach
-// aufrufbar. Nur für die Admin-Rolle.
+// Einmaliger Backfill: verschlüsselt Notfallkontakte, die noch aus der Zeit
+// vor Einführung der Feld-Verschlüsselung im Klartext vorliegen (Finding
+// PRIV-02). Idempotent - überspringt bereits verschlüsselte Werte
+// (erkennbar am "v1:"-Präfix), daher gefahrlos mehrfach aufrufbar. Nur für
+// die Admin-Rolle. (health_notes gibt es nicht mehr, siehe Migration 0033 -
+// Gesundheitshinweise wurden als Feature komplett aus der App entfernt.)
 app.post("/api/admin/backfill-health-encryption", requireAuth, requireAdmin, async (c) => {
   const rows = await db.listAllChildRowsForBackfill(c.env.DB);
   let updated = 0;
   for (const row of rows) {
     const needsName = row.emergency_contact_name !== null && !row.emergency_contact_name.startsWith("v1:");
     const needsPhone = row.emergency_contact_phone !== null && !row.emergency_contact_phone.startsWith("v1:");
-    const needsHealth = row.health_notes !== null && !row.health_notes.startsWith("v1:");
-    if (!needsName && !needsPhone && !needsHealth) continue;
+    if (!needsName && !needsPhone) continue;
 
     await db.updateChildEncryptedFieldsRaw(c.env.DB, row.id, {
       emergencyContactName: needsName
@@ -575,7 +575,6 @@ app.post("/api/admin/backfill-health-encryption", requireAuth, requireAdmin, asy
       emergencyContactPhone: needsPhone
         ? await encryptField(row.emergency_contact_phone, c.env.ENCRYPTION_KEY)
         : row.emergency_contact_phone,
-      healthNotes: needsHealth ? await encryptField(row.health_notes, c.env.ENCRYPTION_KEY) : row.health_notes,
     });
     updated++;
   }
@@ -1222,14 +1221,13 @@ async function decryptChild<T extends Child | null>(child: T, encryptionKey: str
     ...child,
     emergencyContactName: await decryptField(child.emergencyContactName, encryptionKey),
     emergencyContactPhone: await decryptField(child.emergencyContactPhone, encryptionKey),
-    healthNotes: await decryptField(child.healthNotes, encryptionKey),
   };
 }
 
-// Formatiert Geburtsdatum, Notfallkontakt und Gesundheitshinweise eines
-// Kindes für Benachrichtigungs-E-Mails an eine (neue) Gruppenleitung - die
-// Daten sind zwar ohnehin vereinsweit über die Kinderliste einsehbar, aber
-// direkt in der Mail sollen sie sofort verfügbar sein, ohne erst in der App
+// Formatiert Geburtsdatum und Notfallkontakt eines Kindes für
+// Benachrichtigungs-E-Mails an eine (neue) Gruppenleitung - die Daten sind
+// zwar ohnehin vereinsweit über die Kinderliste einsehbar, aber direkt in
+// der Mail sollen sie sofort verfügbar sein, ohne erst in der App
 // nachschauen zu müssen.
 async function childContactSummary(child: ChildRow, encryptionKey: string): Promise<string> {
   const [year, month, day] = child.birth_date.split("-");
@@ -1238,8 +1236,6 @@ async function childContactSummary(child: ChildRow, encryptionKey: string): Prom
   const contactPhone = await decryptField(child.emergency_contact_phone, encryptionKey);
   const contact = [contactName, contactPhone].filter(Boolean).join(", ");
   if (contact) lines.push(`Notfallkontakt: ${contact}`);
-  const healthNotes = await decryptField(child.health_notes, encryptionKey);
-  if (healthNotes) lines.push(`Gesundheitshinweise: ${healthNotes}`);
   return lines.join("\n");
 }
 
@@ -1274,7 +1270,6 @@ app.post("/api/children", requireAuth, async (c) => {
   const notes = optionalText(body?.notes, 500);
   const emergencyContactName = optionalText(body?.emergencyContactName, 100);
   const emergencyContactPhone = optionalText(body?.emergencyContactPhone, 40);
-  const healthNotes = optionalText(body?.healthNotes, 1000);
   const familyId = optionalId(body?.familyId);
   if (!firstName) return c.json({ error: "Vorname fehlt oder ist ungültig" }, 400);
   if (!lastName) return c.json({ error: "Nachname fehlt oder ist ungültig" }, 400);
@@ -1283,12 +1278,11 @@ app.post("/api/children", requireAuth, async (c) => {
   if (notes === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
   if (emergencyContactName === undefined) return c.json({ error: "Notfallkontakt (Name) ist zu lang" }, 400);
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
-  if (healthNotes === undefined) return c.json({ error: "Gesundheitshinweise sind zu lang" }, 400);
   if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
-  // Gesundheitshinweise/Notfallkontakte verschlüsselt ablegen (auch im
-  // Kapazitäts-Anfrage-Payload, falls diese Aktion erst nach Freigabe
-  // ausgeführt wird) - siehe worker/src/crypto.ts, Finding PRIV-02.
+  // Notfallkontakte verschlüsselt ablegen (auch im Kapazitäts-Anfrage-
+  // Payload, falls diese Aktion erst nach Freigabe ausgeführt wird) - siehe
+  // worker/src/crypto.ts, Finding PRIV-02.
   const childInput = {
     firstName,
     lastName,
@@ -1297,7 +1291,6 @@ app.post("/api/children", requireAuth, async (c) => {
     notes,
     emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
     emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
-    healthNotes: await encryptField(healthNotes, c.env.ENCRYPTION_KEY),
     familyId,
   };
 
@@ -1349,7 +1342,6 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   const notes = optionalText(body?.notes, 500);
   const emergencyContactName = optionalText(body?.emergencyContactName, 100);
   const emergencyContactPhone = optionalText(body?.emergencyContactPhone, 40);
-  const healthNotes = optionalText(body?.healthNotes, 1000);
   const familyId = optionalId(body?.familyId);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!firstName) return c.json({ error: "Vorname fehlt oder ist ungültig" }, 400);
@@ -1359,7 +1351,6 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (notes === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
   if (emergencyContactName === undefined) return c.json({ error: "Notfallkontakt (Name) ist zu lang" }, 400);
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
-  if (healthNotes === undefined) return c.json({ error: "Gesundheitshinweise sind zu lang" }, 400);
   if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
   const existing = await db.getChildRowById(c.env.DB, id);
@@ -1375,7 +1366,6 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     notes,
     emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
     emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
-    healthNotes: await encryptField(healthNotes, c.env.ENCRYPTION_KEY),
     familyId,
   };
 
@@ -1895,7 +1885,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
         // nicht per Klartext-E-Mail an ein externes Postfach - siehe
         // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-01.
         body: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\n${await childContactSummary(child, c.env.ENCRYPTION_KEY)}`,
-        emailBody: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\nDetails (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
+        emailBody: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\nDetails (Notfallkontakt) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
         childId: id,
       });
@@ -2498,7 +2488,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
         // nicht per Klartext-E-Mail an ein externes Postfach - siehe
         // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-01.
         body: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen.\n\n${await childContactSummary(child, c.env.ENCRYPTION_KEY)}`,
-        emailBody: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen. Details (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
+        emailBody: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen. Details (Notfallkontakt) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
         childId: child.id,
       });

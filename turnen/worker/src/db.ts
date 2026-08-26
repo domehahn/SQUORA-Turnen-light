@@ -169,7 +169,6 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
     notes: row.notes,
     emergencyContactName: row.emergency_contact_name,
     emergencyContactPhone: row.emergency_contact_phone,
-    healthNotes: row.health_notes,
     familyId: row.family_id,
     status: row.status,
     archivedAt: row.archived_at,
@@ -578,11 +577,11 @@ export async function listAllChildRowsForBackfill(db: D1Database): Promise<Child
 export async function updateChildEncryptedFieldsRaw(
   db: D1Database,
   id: string,
-  input: { emergencyContactName: string | null; emergencyContactPhone: string | null; healthNotes: string | null }
+  input: { emergencyContactName: string | null; emergencyContactPhone: string | null }
 ): Promise<void> {
   await db
-    .prepare("UPDATE children SET emergency_contact_name = ?, emergency_contact_phone = ?, health_notes = ? WHERE id = ?")
-    .bind(input.emergencyContactName, input.emergencyContactPhone, input.healthNotes, id)
+    .prepare("UPDATE children SET emergency_contact_name = ?, emergency_contact_phone = ? WHERE id = ?")
+    .bind(input.emergencyContactName, input.emergencyContactPhone, id)
     .run();
 }
 
@@ -636,7 +635,6 @@ export interface ChildInput {
   notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  healthNotes: string | null;
   familyId: string | null;
 }
 
@@ -645,8 +643,8 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
   await db
     .prepare(
       `INSERT INTO children
-         (id, first_name, last_name, birth_date, group_id, notes, emergency_contact_name, emergency_contact_phone, health_notes, family_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (id, first_name, last_name, birth_date, group_id, notes, emergency_contact_name, emergency_contact_phone, family_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -657,7 +655,6 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
       input.notes,
       input.emergencyContactName,
       input.emergencyContactPhone,
-      input.healthNotes,
       input.familyId
     )
     .run();
@@ -669,7 +666,7 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
   await db
     .prepare(
       `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, notes = ?,
-              emergency_contact_name = ?, emergency_contact_phone = ?, health_notes = ?, family_id = ? WHERE id = ?`
+              emergency_contact_name = ?, emergency_contact_phone = ?, family_id = ? WHERE id = ?`
     )
     .bind(
       input.firstName,
@@ -679,7 +676,6 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
       input.notes,
       input.emergencyContactName,
       input.emergencyContactPhone,
-      input.healthNotes,
       input.familyId,
       id
     )

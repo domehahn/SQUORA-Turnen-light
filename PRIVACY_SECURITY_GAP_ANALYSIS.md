@@ -13,6 +13,24 @@ Begleitdokumente:
 - `scripts/privacy-check.ts` — automatisiertes, lesendes Prüfskript (getestet, siehe unten)
 - weitere `docs/privacy/*.md` gemäß Abschnitt 22 der Anfrage (Data Inventory, Data Flow, TOMs, Retention, Consent, Data Subject Rights, Third Parties, DPIA-Entwurf) sowie `docs/security/threat-model.md` und `docs/security/privacy-incident-response.md`
 
+## Nachtrag: Gesundheitshinweise als Feature entfernt (2026-08-26)
+
+Auf ausdrücklichen Wunsch wurde `children.health_notes` (freies Textfeld für
+Allergien/Erkrankungen/Medikamente) **komplett aus der App entfernt**, statt
+nur geschützt zu werden - konsequente Datenminimierung (Art. 5(1)(c) DSGVO):
+Formularfeld, Datenbankspalte (Migration 0033, `DROP COLUMN`, nach Backfill
+und mit vorher deployter Code-Version, die die Spalte nicht mehr braucht),
+Anzeige in der Kinder-Detailansicht, Notfallliste (CSV-Export und
+Druckansicht) und die entsprechende Erwähnung in Benachrichtigungs-E-Mails.
+Notfallkontakte (Name/Telefon) bleiben bestehen und weiterhin verschlüsselt
+(PRIV-02). Live verifiziert: API antwortet nach dem Drop weiterhin normal.
+
+Das reduziert den Schutzbedarf der App spürbar - `children` enthält damit
+keine besonderen Kategorien nach Art. 9 DSGVO mehr. **Wichtig für die
+weiteren Dokumente** (`data-inventory.md`, `dpia-draft.md` etc., noch
+ausstehend): Sie sollten diesen Stand (kein `health_notes` mehr) von Anfang
+an berücksichtigen, nicht nachträglich korrigiert werden.
+
 ## Kontext
 
 Die App verwaltet Kinderturngruppen für einen Verein (aktuell: TuS
