@@ -4,7 +4,7 @@ import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
 
 export default function Profile() {
-  const { userName, userEmail, clubName, clubRole, applyProfileToken } = useAuth();
+  const { userName, userEmail, clubName, clubRole, isAdmin, applyProfileToken } = useAuth();
 
   const [name, setName] = useState(userName ?? "");
   const [email, setEmail] = useState(userEmail ?? "");
@@ -62,6 +62,11 @@ export default function Profile() {
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Profil</h2>
+          {isAdmin && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+              Admin
+            </span>
+          )}
           {clubRole && (
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ${

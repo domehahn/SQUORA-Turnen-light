@@ -12,7 +12,7 @@ function initials(name: string | null, email: string | null): string {
 }
 
 export function UserMenu() {
-  const { userName, userEmail, clubName, clubRole, signOut } = useAuth();
+  const { userName, userEmail, clubName, clubRole, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -50,6 +50,7 @@ export function UserMenu() {
           <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
             <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{userName ?? "Ohne Namen"}</p>
             <p className="truncate text-xs text-slate-500 dark:text-slate-400">{userEmail}</p>
+            {isAdmin && <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400">Admin</p>}
             {clubName && (
               <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                 {clubName} · {clubRole === "jugendleiter" ? "Jugendleitung" : "Turnleiter*in"}
