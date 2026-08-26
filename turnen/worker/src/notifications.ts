@@ -1,5 +1,6 @@
 import * as db from "./db";
 import type { Env } from "./types";
+import { redactError } from "./log-redaction";
 
 // Legt eine In-App-Benachrichtigung an und verschickt sie best effort per
 // E-Mail. Das Postfach in der App ist die verlässliche Quelle - schlägt der
@@ -54,7 +55,28 @@ export async function notifyUser(
       html: `<p>${escapeHtml(emailText).replace(/\n/g, "<br>")}</p>${input.link ? `<p><a href="${env.FRONTEND_URL}${input.link}">In der App ansehen</a></p>` : ""}`,
     });
   } catch (err) {
-    console.error("E-Mail-Versand fehlgeschlagen:", err);
+    console.error("E-Mail-Versand fehlgeschlagen:", redactError(err));
+  }
+}
+
+// Reiner E-Mail-Versand OHNE In-App-Notification (Finding SEC-07) - für den
+// Passwort-Reset-Link, der ein 30 Minuten gültiges Bearer-Token enthält.
+// notifyUser() legt immer zusätzlich eine In-App-Benachrichtigung in D1 an;
+// für dieses Token wäre das ein unnötiges, dauerhaftes Klartext-Artefakt in
+// der Datenbank. Best effort wie notifyUser() - schlägt der Versand fehl,
+// wird das nur geloggt, nie geworfen.
+export async function sendEmailOnly(env: Env, input: { to: string; toName: string | null; subject: string; text: string }): Promise<void> {
+  if (!env.EMAIL || !env.EMAIL_FROM_ADDRESS) return;
+  try {
+    await env.EMAIL.send({
+      to: { email: input.to, name: input.toName ?? input.to },
+      from: { email: env.EMAIL_FROM_ADDRESS, name: "Turnen" },
+      subject: input.subject,
+      text: input.text,
+      html: `<p>${escapeHtml(input.text).replace(/\n/g, "<br>")}</p>`,
+    });
+  } catch (err) {
+    console.error("E-Mail-Versand fehlgeschlagen:", redactError(err));
   }
 }
 

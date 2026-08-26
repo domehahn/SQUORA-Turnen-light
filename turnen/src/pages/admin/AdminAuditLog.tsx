@@ -37,6 +37,7 @@ const ACTION_LABELS: Record<string, string> = {
   "admin.user_created": "Admin: Nutzer*in angelegt",
   "profile.updated": "Profil bearbeitet",
   "profile.password_changed": "Passwort geändert",
+  "profile.password_reset_via_email": "Passwort per E-Mail-Link zurückgesetzt",
   "club.created": "Verein angelegt",
   "club.number_updated": "Vereinsnummer geändert",
   "club.joined": "Verein beigetreten",

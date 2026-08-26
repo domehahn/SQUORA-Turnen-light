@@ -200,6 +200,12 @@ export default function AttendancePrint() {
             Drucken
           </button>
         </div>
+        {mode === "notfall" && (
+          <p className="mb-4 text-xs text-slate-400 print:hidden">
+            Enthält personenbezogene Daten (Notfallkontakte) - Ausdrucke bitte sicher verwahren und nach Gebrauch
+            datenschutzgerecht entsorgen.
+          </p>
+        )}
 
         {mode === "anwesenheit" ? (
           <>

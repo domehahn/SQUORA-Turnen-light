@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -126,6 +126,9 @@ export default function Login() {
         >
           {submitting ? "Anmelden…" : "Anmelden"}
         </button>
+        <Link to="/passwort-zuruecksetzen" className="block text-center text-sm text-slate-500 hover:underline dark:text-slate-400">
+          Passwort vergessen?
+        </Link>
       </form>
     </div>
   );

@@ -20,6 +20,7 @@ interface MeResponse {
   clubName: string | null;
   clubRole: ClubRole;
   isAdmin: boolean;
+  mfaSetupRequired: boolean;
 }
 
 const EMPTY_STATE: AuthState = {
@@ -31,6 +32,7 @@ const EMPTY_STATE: AuthState = {
   clubName: null,
   clubRole: null,
   isAdmin: false,
+  mfaSetupRequired: false,
 };
 
 function readState(token: string | null): AuthState {
@@ -47,6 +49,7 @@ function readState(token: string | null): AuthState {
       clubName: null,
       clubRole: null,
       isAdmin: false,
+      mfaSetupRequired: false,
     };
   } catch {
     return EMPTY_STATE;
@@ -62,7 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await api.get<MeResponse>("/api/me");
       setState((prev) =>
         prev.isAuthenticated
-          ? { ...prev, clubId: me.clubId, clubName: me.clubName, clubRole: me.clubRole, isAdmin: me.isAdmin }
+          ? {
+              ...prev,
+              clubId: me.clubId,
+              clubName: me.clubName,
+              clubRole: me.clubRole,
+              isAdmin: me.isAdmin,
+              mfaSetupRequired: me.mfaSetupRequired,
+            }
           : prev
       );
       await loadCustomHolidays();

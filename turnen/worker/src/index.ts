@@ -5,15 +5,19 @@ import * as db from "./db";
 import {
   TOKEN_REFRESH_THRESHOLD_SECONDS,
   hashPassword,
+  isPasswordPwned,
   signMfaPendingToken,
+  signPasswordResetToken,
   signToken,
   verifyMfaPendingToken,
   verifyPassword,
+  verifyPasswordResetToken,
   verifyToken,
 } from "./auth";
-import { notifyUser } from "./notifications";
+import { notifyUser, sendEmailOnly } from "./notifications";
 import { encryptField, decryptField } from "./crypto";
 import { base32Decode, base32Encode, generateBackupCodes, generateTotpSecret, totpAuthUri, verifyTotp } from "./totp";
+import { redactError } from "./log-redaction";
 import {
   normalizedEmail,
   optionalId,
@@ -547,6 +551,8 @@ app.post("/api/me/mfa/disable", requireAuth, async (c) => {
 app.get("/api/me", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   const club = clubId ? await db.getClubById(c.env.DB, clubId) : null;
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  const mfaEnabled = Boolean(userRow?.totp_enabled);
   return c.json({
     id: c.get("userId"),
     email: c.get("email"),
@@ -555,6 +561,13 @@ app.get("/api/me", requireAuth, async (c) => {
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
     isAdmin: c.get("isAdmin"),
+    mfaEnabled,
+    // Finding SEC-02 Folgearbeit: verpflichtende MFA für Rollen mit
+    // vereinsweitem/-übergreifendem Zugriff. Durchgesetzt auf UI-Ebene
+    // (blockierendes Setup-Overlay, siehe AppLayout.tsx) statt eines
+    // API-seitigen Hard-Blocks - ein Fehler bei der TOTP-Einrichtung darf
+    // niemand vollständig aus dem eigenen Account aussperren.
+    mfaSetupRequired: !mfaEnabled && (c.get("isAdmin") || c.get("clubRole") === "jugendleiter"),
   });
 });
 
@@ -670,6 +683,9 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   if (!email) return c.json({ error: "E-Mail fehlt oder ist ungültig" }, 400);
   if (name === undefined) return c.json({ error: "Name ist zu lang" }, 400);
   if (!password) return c.json({ error: "Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  if (await isPasswordPwned(password)) {
+    return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
+  }
   if (await db.getUserByEmail(c.env.DB, email)) return c.json({ error: "E-Mail bereits vergeben" }, 409);
 
   let clubId: string | null = null;
@@ -738,6 +754,9 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
   const newPassword = validPassword(body?.newPassword);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  if (await isPasswordPwned(newPassword)) {
+    return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
+  }
   const targetUser = await db.getUserById(c.env.DB, id);
   const { hash, salt } = await hashPassword(newPassword);
   await db.updateUserPassword(c.env.DB, id, { hash, salt });
@@ -854,6 +873,10 @@ app.put("/api/me/password", requireAuth, async (c) => {
   const valid = await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt);
   if (!valid) return c.json({ error: "Aktuelles Passwort ist falsch" }, 401);
 
+  if (await isPasswordPwned(newPassword)) {
+    return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
+  }
+
   const { hash, salt } = await hashPassword(newPassword);
   await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
   await db.logAudit(c.env.DB, {
@@ -862,6 +885,63 @@ app.put("/api/me/password", requireAuth, async (c) => {
     actorName: c.get("name"),
     action: "profile.password_changed",
     targetLabel: c.get("email"),
+  });
+  return c.json({ ok: true });
+});
+
+// Self-Service "Passwort vergessen" (Finding SEC-07) - vorher war ein
+// blockierter Account nur durch die Admin-Rolle wiederherstellbar. Antwort
+// bewusst IMMER identisch (200, generische Nachricht), unabhängig davon, ob
+// die E-Mail-Adresse existiert - sonst ließen sich Accounts per Timing/
+// Statuscode aufzählen (Account Enumeration).
+app.post("/api/password-reset/request", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const email = normalizedEmail(body?.email);
+  const genericResponse = c.json({ ok: true, message: "Falls diese E-Mail-Adresse registriert ist, wurde eine Zurücksetzen-Mail verschickt." });
+  if (!email) return genericResponse;
+
+  const userRow = await db.getUserByEmail(c.env.DB, email);
+  if (!userRow) return genericResponse;
+
+  const resetToken = await signPasswordResetToken(userRow.id, c.env.JWT_SECRET);
+  await sendEmailOnly(c.env, {
+    to: userRow.email,
+    toName: userRow.name,
+    subject: "Passwort zurücksetzen",
+    text: `Zum Zurücksetzen deines Passworts: ${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${resetToken}\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail.`,
+  });
+  return genericResponse;
+});
+
+app.post("/api/password-reset/confirm", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const token = typeof body?.token === "string" ? body.token : null;
+  const newPassword = validPassword(body?.newPassword);
+  if (!token) return c.json({ error: "Token fehlt" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
+
+  let userId: string;
+  try {
+    userId = await verifyPasswordResetToken(token, c.env.JWT_SECRET);
+  } catch {
+    return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
+  }
+
+  const userRow = await db.getUserById(c.env.DB, userId);
+  if (!userRow) return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
+
+  if (await isPasswordPwned(newPassword)) {
+    return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
+  }
+
+  const { hash, salt } = await hashPassword(newPassword);
+  await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
+  await db.logAudit(c.env.DB, {
+    clubId: userRow.clubId,
+    actorId: userRow.id,
+    actorName: userRow.name,
+    action: "profile.password_reset_via_email",
+    targetLabel: userRow.email,
   });
   return c.json({ ok: true });
 });
@@ -3579,7 +3659,7 @@ app.post("/api/attendance/:groupId/:date/uncancel", requireAuth, async (c) => {
 });
 
 app.onError((error, c) => {
-  console.error("Unbehandelter API-Fehler:", error);
+  console.error("Unbehandelter API-Fehler:", redactError(error));
   if (error instanceof SyntaxError) return c.json({ error: "Ungültiger JSON-Request" }, 400);
   return c.json({ error: "Interner Serverfehler" }, 500);
 });

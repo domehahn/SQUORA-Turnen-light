@@ -26,6 +26,7 @@ const ACTION_LABELS: Record<string, string> = {
   "family.updated": "Familie bearbeitet",
   "profile.updated": "Profil bearbeitet",
   "profile.password_changed": "Passwort geändert",
+  "profile.password_reset_via_email": "Passwort per E-Mail-Link zurückgesetzt",
   "club.number_updated": "Vereinsnummer geändert",
   "group.co_leader_removed": "Co-Leitung entfernt",
   "substitute_request.created": "Vertretung gesucht",

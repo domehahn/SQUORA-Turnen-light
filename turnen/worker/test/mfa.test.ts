@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { authHeaders, ensureMigrated, login, seedUser } from "./helpers";
+import { authHeaders, ensureMigrated, login, seedClub, seedUser } from "./helpers";
 import { base32Decode, generateTotp } from "../src/totp";
 
 beforeAll(async () => {
@@ -152,5 +152,41 @@ describe("MFA (TOTP)", () => {
     const body = (await loginRes.json()) as { token?: string; mfaRequired?: boolean };
     expect(body.mfaRequired).toBeUndefined();
     expect(body.token).toBeTruthy();
+  });
+
+  it("mfaSetupRequired ist true für Jugendleitung ohne MFA und false nach Aktivierung (SEC-02 Durchsetzung)", async () => {
+    const club = await seedClub("Verein MFA-Pflicht");
+    await seedUser({
+      email: "mfa-required@test.local",
+      password: "password-123",
+      clubId: club.id,
+      clubRole: "jugendleiter",
+    });
+    const token = await login(SELF, "mfa-required@test.local", "password-123");
+
+    const meBefore = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
+    const bodyBefore = (await meBefore.json()) as { mfaSetupRequired: boolean };
+    expect(bodyBefore.mfaSetupRequired).toBe(true);
+
+    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(token) });
+    const { secret } = (await setupRes.json()) as { secret: string };
+    const code = await generateTotp(base32Decode(secret));
+    await SELF.fetch("https://example.test/api/me/mfa/confirm", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ code }),
+    });
+
+    const meAfter = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
+    const bodyAfter = (await meAfter.json()) as { mfaSetupRequired: boolean };
+    expect(bodyAfter.mfaSetupRequired).toBe(false);
+  });
+
+  it("mfaSetupRequired ist false für normale Mitglieder ohne MFA", async () => {
+    await seedUser({ email: "mfa-not-required@test.local", password: "password-123" });
+    const token = await login(SELF, "mfa-not-required@test.local", "password-123");
+    const res = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
+    const body = (await res.json()) as { mfaSetupRequired: boolean };
+    expect(body.mfaSetupRequired).toBe(false);
   });
 });

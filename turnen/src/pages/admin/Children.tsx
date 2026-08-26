@@ -1066,6 +1066,12 @@ export default function Children() {
             </button>
           </div>
         )}
+        {printGroupIds.length > 0 && (
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            Notfalllisten enthalten personenbezogene Daten (Notfallkontakte) - Ausdrucke/Downloads bitte sicher
+            verwahren und nach Gebrauch datenschutzgerecht entsorgen bzw. löschen.
+          </p>
+        )}
       </div>
 
       {loading ? (

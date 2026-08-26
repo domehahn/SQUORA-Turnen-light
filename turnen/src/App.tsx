@@ -3,6 +3,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { RequireAuth } from "./components/ProtectedRoute";
 import { AppLayout } from "./components/AppLayout";
 import Login from "./pages/Login";
+import PasswordReset from "./pages/PasswordReset";
 import Groups from "./pages/admin/Groups";
 import Children from "./pages/admin/Children";
 import Attendance from "./pages/admin/Attendance";
@@ -36,6 +37,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/passwort-zuruecksetzen" element={<PasswordReset />} />
 
           <Route element={<RequireAuth />}>
             <Route path="druck/:groupId?" element={<AttendancePrint />} />

@@ -38,6 +38,32 @@ export async function hashPassword(password: string): Promise<{ hash: string; sa
   return { hash: toHex(derived), salt: toHex(salt) };
 }
 
+// Have-I-Been-Pwned-Abgleich per k-Anonymity-API (Finding SEC-07, OWASP
+// ASVS V2.1): das volle Passwort verlässt nie den Worker, nur die ersten 5
+// Zeichen des SHA-1-Hex-Hashes werden an die API geschickt - der Abgleich
+// mit den zurückgegebenen Suffixen passiert lokal. Best effort: schlägt
+// die externe API fehl (Timeout/Netzwerk/Rate-Limit), wird das Passwort
+// NICHT blockiert - ein Drittanbieter-Ausfall darf Login/Registrierung
+// nicht lahmlegen.
+export async function isPasswordPwned(password: string): Promise<boolean> {
+  try {
+    const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(password));
+    const hashHex = toHex(digest).toUpperCase();
+    const prefix = hashHex.slice(0, 5);
+    const suffix = hashHex.slice(5);
+
+    const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+      headers: { "Add-Padding": "true" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return false;
+    const body = await res.text();
+    return body.split("\n").some((line) => line.split(":")[0]?.trim() === suffix);
+  } catch {
+    return false;
+  }
+}
+
 export async function verifyPassword(password: string, hash: string, salt: string): Promise<boolean> {
   const derived = await derive(password, fromHex(salt));
   const expected = fromHex(hash);
@@ -112,5 +138,26 @@ export async function signMfaPendingToken(userId: string, secret: string): Promi
 export async function verifyMfaPendingToken(token: string, secret: string): Promise<string> {
   const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
   if (payload.typ !== "mfa_pending") throw new Error("Kein MFA-Zwischen-Token");
+  return payload.sub as string;
+}
+
+// Self-Service-Passwort-Reset (Finding SEC-07) - kurzlebiges, signiertes
+// Token statt einer DB-Tabelle: einfacher, und die 30-Minuten-Gültigkeit
+// macht eine Revocation-Liste für den Regelfall entbehrlich (dasselbe
+// Prinzip wie beim MFA-Zwischen-Token oben).
+const PASSWORD_RESET_LIFETIME_SECONDS = 30 * 60;
+
+export async function signPasswordResetToken(userId: string, secret: string): Promise<string> {
+  return new SignJWT({ typ: "password_reset" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime(`${PASSWORD_RESET_LIFETIME_SECONDS}s`)
+    .sign(new TextEncoder().encode(secret));
+}
+
+export async function verifyPasswordResetToken(token: string, secret: string): Promise<string> {
+  const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+  if (payload.typ !== "password_reset") throw new Error("Kein Passwort-Reset-Token");
   return payload.sub as string;
 }
