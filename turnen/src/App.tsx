@@ -21,6 +21,8 @@ import ClubWaitlist from "./pages/admin/ClubWaitlist";
 import Dashboard from "./pages/admin/Dashboard";
 import MemberStats from "./pages/admin/MemberStats";
 import AdminClubs from "./pages/admin/AdminClubs";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminAuditLog from "./pages/admin/AdminAuditLog";
 import Profile from "./pages/Profile";
 
 // "/" lokal, "/turnen-light" im Produktions-Build (BASE_URL endet auf "/",
@@ -56,6 +58,8 @@ export default function App() {
               <Route path="warteliste" element={<ClubWaitlist />} />
               <Route path="verein" element={<ClubPage />} />
               <Route path="admin/vereine" element={<AdminClubs />} />
+              <Route path="admin/nutzer" element={<AdminUsers />} />
+              <Route path="admin/verlauf" element={<AdminAuditLog />} />
               <Route path="profil" element={<Profile />} />
             </Route>
           </Route>

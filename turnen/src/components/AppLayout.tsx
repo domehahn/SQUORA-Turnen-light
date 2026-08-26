@@ -5,6 +5,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
 import { GlobalSearch } from "./GlobalSearch";
+import { AdminClubSwitcher } from "./AdminClubSwitcher";
 import SquoraBrand from "./SquoraBrand";
 
 // Statt einer einzigen, mit 13 Punkten überladenen Zeile: gruppiert nach
@@ -46,7 +47,11 @@ const NAV_GROUPS: {
   },
   {
     label: "Plattform",
-    items: [{ to: "/admin/vereine", label: "Admin: Vereine", adminOnly: true }],
+    items: [
+      { to: "/admin/vereine", label: "Admin: Vereine", adminOnly: true },
+      { to: "/admin/nutzer", label: "Admin: Nutzer*innen", adminOnly: true },
+      { to: "/admin/verlauf", label: "Admin: Verlauf", adminOnly: true },
+    ],
   },
 ];
 
@@ -106,6 +111,7 @@ export function AppLayout() {
             <SquoraBrand />
           </div>
           <div className="flex items-center gap-2">
+            {isAdmin && <AdminClubSwitcher />}
             <GlobalSearch />
             <NotificationBell />
             <ThemeToggle />

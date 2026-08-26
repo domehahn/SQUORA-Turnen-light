@@ -373,6 +373,91 @@ app.post("/api/admin/switch-club", requireAuth, requireAdmin, async (c) => {
   return c.json({ clubId, clubName: club.name });
 });
 
+app.post("/api/admin/clubs", requireAuth, requireAdmin, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const name = requiredText(body?.name, 100);
+  if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
+  if (await db.getClubByName(c.env.DB, name)) return c.json({ error: "Verein mit diesem Namen existiert bereits" }, 409);
+  const club = await db.createClub(c.env.DB, name);
+  return c.json(club, 201);
+});
+
+app.put("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const name = requiredText(body?.name, 100);
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
+  const club = await db.getClubById(c.env.DB, id);
+  if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
+  await db.renameClub(c.env.DB, id, name);
+  return c.json({ ...club, name });
+});
+
+// Mitglieder/Gruppen des Vereins werden nicht mitgelöscht, sondern
+// vereinslos (ON DELETE SET NULL) - siehe migrations/0002_clubs.sql.
+app.delete("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  await db.deleteClub(c.env.DB, id);
+  return c.body(null, 204);
+});
+
+// Alle Nutzer*innen vereinsübergreifend - für die Admin-Nutzerverwaltung.
+app.get("/api/admin/users", requireAuth, requireAdmin, async (c) => {
+  return c.json(await db.listAllUsersForAdmin(c.env.DB));
+});
+
+app.put("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const input: { clubId?: string | null; clubRole?: ClubRole; isAdmin?: boolean } = {};
+  if ("clubId" in (body ?? {})) {
+    const clubId = optionalId(body.clubId);
+    if (clubId === undefined) return c.json({ error: "Ungültige Vereins-ID" }, 400);
+    input.clubId = clubId;
+  }
+  if ("clubRole" in (body ?? {})) {
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter") return c.json({ error: "Ungültige Rolle" }, 400);
+    input.clubRole = body.clubRole;
+  }
+  if ("isAdmin" in (body ?? {})) {
+    const isAdmin = validBool(body.isAdmin);
+    if (isAdmin === undefined) return c.json({ error: "Ungültiger Admin-Status" }, 400);
+    input.isAdmin = isAdmin;
+  }
+  await db.adminUpdateUser(c.env.DB, id, input);
+  return c.json({ ok: true });
+});
+
+app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) => {
+  const id = validId(c.req.param("id"));
+  const body = await c.req.json().catch(() => null);
+  const newPassword = validPassword(body?.newPassword);
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  const { hash, salt } = await hashPassword(newPassword);
+  await db.updateUserPassword(c.env.DB, id, { hash, salt });
+  return c.json({ ok: true });
+});
+
+app.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (id === c.get("userId")) return c.json({ error: "Eigenen Account nicht selbst löschen" }, 400);
+  await db.deleteUser(c.env.DB, id);
+  return c.body(null, 204);
+});
+
+// Systemweiter Verlauf über alle Vereine hinweg.
+app.get("/api/admin/audit-log", requireAuth, requireAdmin, async (c) => {
+  const requestedLimit = Number(c.req.query("limit"));
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 1000) : 200;
+  return c.json(await db.listAuditLogSystemWide(c.env.DB, limit));
+});
+
 // Name/E-Mail des eigenen Accounts ändern. Ändert sich einer der beiden
 // Werte, steckt das alte JWT noch die alten Werte fest (signToken schreibt
 // email/name mit rein) - deshalb wird hier immer ein frisches Token

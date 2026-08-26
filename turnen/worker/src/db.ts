@@ -275,6 +275,16 @@ export async function setClubNumber(db: D1Database, clubId: string, clubNumber: 
   await db.prepare("UPDATE clubs SET club_number = ? WHERE id = ?").bind(clubNumber, clubId).run();
 }
 
+export async function renameClub(db: D1Database, clubId: string, name: string): Promise<void> {
+  await db.prepare("UPDATE clubs SET name = ? WHERE id = ?").bind(name, clubId).run();
+}
+
+// Mitglieder/Gruppen werden per ON DELETE SET NULL nicht mitgelöscht,
+// sondern vereinslos - siehe migrations/0002_clubs.sql.
+export async function deleteClub(db: D1Database, clubId: string): Promise<void> {
+  await db.prepare("DELETE FROM clubs WHERE id = ?").bind(clubId).run();
+}
+
 export async function setUserClub(
   db: D1Database,
   userId: string,
@@ -1541,6 +1551,78 @@ export async function listAuditLogForClub(
     action: row.action,
     targetLabel: row.target_label,
     createdAt: row.created_at,
+  }));
+}
+
+// --- Vereinsübergreifende Administration ------------------------------------
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  name: string | null;
+  clubId: string | null;
+  clubName: string | null;
+  clubRole: ClubRole;
+  isAdmin: number;
+  lastLoginAt: string | null;
+}
+
+export async function listAllUsersForAdmin(db: D1Database): Promise<AdminUserRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT u.id, u.email, u.name, u.club_id as clubId, c.name as clubName, u.club_role as clubRole,
+              u.is_admin as isAdmin, u.last_login_at as lastLoginAt
+       FROM users u
+       LEFT JOIN clubs c ON c.id = u.club_id
+       ORDER BY c.name ASC, u.name ASC, u.email ASC`
+    )
+    .all<AdminUserRow>();
+  return results;
+}
+
+export async function adminUpdateUser(
+  db: D1Database,
+  userId: string,
+  input: { clubId?: string | null; clubRole?: ClubRole; isAdmin?: boolean }
+): Promise<void> {
+  if (input.clubId !== undefined) {
+    await db.prepare("UPDATE users SET club_id = ? WHERE id = ?").bind(input.clubId, userId).run();
+  }
+  if (input.clubRole !== undefined) {
+    await db.prepare("UPDATE users SET club_role = ? WHERE id = ?").bind(input.clubRole, userId).run();
+  }
+  if (input.isAdmin !== undefined) {
+    await db.prepare("UPDATE users SET is_admin = ? WHERE id = ?").bind(input.isAdmin ? 1 : 0, userId).run();
+  }
+}
+
+export async function deleteUser(db: D1Database, userId: string): Promise<void> {
+  await db.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
+}
+
+export interface SystemAuditLogEntry extends AuditLogEntry {
+  clubName: string | null;
+}
+
+// Systemweiter Verlauf über alle Vereine hinweg - nur für die Admin-Rolle.
+export async function listAuditLogSystemWide(db: D1Database, limit = 200): Promise<SystemAuditLogEntry[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT al.id, al.actor_name, al.action, al.target_label, al.created_at, c.name as club_name
+       FROM audit_log al
+       LEFT JOIN clubs c ON c.id = al.club_id
+       ORDER BY al.created_at DESC
+       LIMIT ?1`
+    )
+    .bind(limit)
+    .all<{ id: string; actor_name: string | null; action: string; target_label: string; created_at: string; club_name: string | null }>();
+  return results.map((row) => ({
+    id: row.id,
+    actorName: row.actor_name,
+    action: row.action,
+    targetLabel: row.target_label,
+    createdAt: row.created_at,
+    clubName: row.club_name,
   }));
 }
 

@@ -1,29 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import type { Club } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
+import { FloatingInput } from "../../components/FloatingField";
 
 // Nur für die vereinsübergreifende Admin-Rolle (users.is_admin) sichtbar -
-// siehe App.tsx (Route-Guard) und AppLayout.tsx (Nav-Filter). Wechselt den
-// eigenen Account in einen Verein, statt eigene Admin-Ansichten für jede
-// Seite der App nachzubauen: die komplette bestehende App funktioniert
-// danach unverändert für den gewählten Verein.
+// siehe App.tsx (Route-Guard) und AppLayout.tsx (Nav-Filter). Wechseln setzt
+// den eigenen Account als Jugendleitung des gewählten Vereins, statt eigene
+// Admin-Ansichten für jede Seite der App nachzubauen: die komplette
+// bestehende App funktioniert danach unverändert für den gewählten Verein.
 export default function AdminClubs() {
   const { clubId, clubName, isAdmin, refreshClub } = useAuth();
   const navigate = useNavigate();
   const [clubs, setClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(true);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function load() {
+    setLoading(true);
+    try {
+      setClubs(await api.get<Club[]>("/api/admin/clubs"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Laden");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    if (!isAdmin) return;
-    api
-      .get<Club[]>("/api/admin/clubs")
-      .then(setClubs)
-      .catch((err) => setError(err instanceof Error ? err.message : "Fehler beim Laden"))
-      .finally(() => setLoading(false));
+    if (isAdmin) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
   // Client-seitig nur ein Hinweis - die eigentliche Absicherung übernimmt
@@ -50,6 +62,54 @@ export default function AdminClubs() {
     }
   }
 
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post("/api/admin/clubs", { name: newName.trim() });
+      setNewName("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Anlegen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRename(id: string) {
+    if (!editName.trim()) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.put(`/api/admin/clubs/${id}`, { name: editName.trim() });
+      setEditingId(null);
+      await load();
+      if (id === clubId) await refreshClub();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Umbenennen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(club: Club) {
+    if (!confirm(`Verein „${club.name}“ wirklich löschen? Mitglieder und Gruppen bleiben erhalten, aber vereinslos.`))
+      return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.del(`/api/admin/clubs/${club.id}`);
+      await load();
+      if (club.id === clubId) await refreshClub();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Löschen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -60,6 +120,22 @@ export default function AdminClubs() {
           {clubName ? <span className="font-medium text-slate-700 dark:text-slate-300">{clubName}</span> : "kein Verein"}.
         </p>
       </div>
+
+      <form
+        onSubmit={handleCreate}
+        className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+      >
+        <div className="min-w-[200px] flex-1">
+          <FloatingInput label="Neuer Verein" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        </div>
+        <button
+          type="submit"
+          disabled={busy || !newName.trim()}
+          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+        >
+          Anlegen
+        </button>
+      </form>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
 
@@ -84,27 +160,64 @@ export default function AdminClubs() {
               {clubs.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
-                    {c.name}
-                    {c.id === clubId && (
-                      <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                        aktuell
-                      </span>
+                    {editingId === c.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          autoFocus
+                        />
+                        <button onClick={() => handleRename(c.id)} className="text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                          Speichern
+                        </button>
+                        <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline dark:text-slate-400">
+                          Abbrechen
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {c.name}
+                        {c.id === clubId && (
+                          <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                            aktuell
+                          </span>
+                        )}
+                      </>
                     )}
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">{c.clubNumber ?? "–"}</td>
                   <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-300">{c.memberCount}</td>
-                  <td className="px-4 py-2 text-right">
-                    {c.id === clubId ? (
-                      <span className="text-xs text-slate-400 dark:text-slate-500">Bereits aktiv</span>
-                    ) : (
+                  <td className="px-4 py-2">
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {c.id !== clubId && (
+                        <button
+                          onClick={() => handleSwitch(c)}
+                          disabled={switchingId === c.id}
+                          className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900"
+                        >
+                          {switchingId === c.id ? "Wechselt…" : "Wechseln"}
+                        </button>
+                      )}
+                      {editingId !== c.id && (
+                        <button
+                          onClick={() => {
+                            setEditingId(c.id);
+                            setEditName(c.name);
+                          }}
+                          className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        >
+                          Umbenennen
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleSwitch(c)}
-                        disabled={switchingId === c.id}
-                        className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900"
+                        onClick={() => handleDelete(c)}
+                        disabled={busy}
+                        className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
                       >
-                        {switchingId === c.id ? "Wechselt…" : "Wechseln"}
+                        Löschen
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}
