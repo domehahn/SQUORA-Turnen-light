@@ -1722,7 +1722,11 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
         userName: owner.name,
         type: "move_request",
         title: `Verschiebe-Anfrage für „${targetGroup.name}“`,
+        // Gesundheitsdaten/Notfallkontakte nur im In-App-Postfach (body),
+        // nicht per Klartext-E-Mail an ein externes Postfach - siehe
+        // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-01.
         body: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\n${childContactSummary(child)}`,
+        emailBody: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\nDetails (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
       });
     }
@@ -2317,7 +2321,11 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
         userName: newOwner.name,
         type: "placement_confirmed",
         title: `Neues Kind in deiner Gruppe „${group.name}“`,
+        // Gesundheitsdaten/Notfallkontakte nur im In-App-Postfach (body),
+        // nicht per Klartext-E-Mail an ein externes Postfach - siehe
+        // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-01.
         body: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen.\n\n${childContactSummary(child)}`,
+        emailBody: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen. Details (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
       });
     }
