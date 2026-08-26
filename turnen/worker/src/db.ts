@@ -1659,6 +1659,31 @@ export async function deleteUser(db: D1Database, userId: string): Promise<void> 
   await db.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
 }
 
+// Admin legt einen neuen Account direkt an (statt wie bisher nur per
+// manuellem SQL-Insert über scripts/create-admin.mjs).
+export async function createUserAdmin(
+  db: D1Database,
+  input: {
+    email: string;
+    name: string | null;
+    hash: string;
+    salt: string;
+    clubId: string | null;
+    clubRole: ClubRole;
+    isAdmin: boolean;
+  }
+): Promise<{ id: string }> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO users (id, email, name, password_hash, password_salt, club_id, club_role, is_admin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(id, input.email, input.name, input.hash, input.salt, input.clubId, input.clubRole, input.isAdmin ? 1 : 0)
+    .run();
+  return { id };
+}
+
 export interface SystemAuditLogEntry extends AuditLogEntry {
   clubName: string | null;
 }
