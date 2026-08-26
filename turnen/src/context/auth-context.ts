@@ -9,6 +9,7 @@ export interface AuthState {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole | null;
+  isAdmin: boolean;
 }
 
 export interface AuthContextValue extends AuthState {

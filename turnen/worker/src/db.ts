@@ -185,6 +185,7 @@ function rowToUser(row: UserRow): User {
     name: row.name,
     clubId: row.club_id,
     clubRole: row.club_role,
+    isAdmin: Boolean(row.is_admin),
     createdAt: row.created_at,
   };
 }

@@ -20,6 +20,7 @@ import Substitutes from "./pages/admin/Substitutes";
 import ClubWaitlist from "./pages/admin/ClubWaitlist";
 import Dashboard from "./pages/admin/Dashboard";
 import MemberStats from "./pages/admin/MemberStats";
+import AdminClubs from "./pages/admin/AdminClubs";
 import Profile from "./pages/Profile";
 
 // "/" lokal, "/turnen-light" im Produktions-Build (BASE_URL endet auf "/",
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="vertretungen" element={<Substitutes />} />
               <Route path="warteliste" element={<ClubWaitlist />} />
               <Route path="verein" element={<ClubPage />} />
+              <Route path="admin/vereine" element={<AdminClubs />} />
               <Route path="profil" element={<Profile />} />
             </Route>
           </Route>

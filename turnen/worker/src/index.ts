@@ -30,6 +30,7 @@ type Variables = {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isAdmin: boolean;
 };
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -71,9 +72,17 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("name", user.name);
     c.set("clubId", user.clubId);
     c.set("clubRole", user.clubRole);
+    c.set("isAdmin", user.isAdmin);
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
   }
+  await next();
+};
+
+// Vereinsübergreifende Admin-Rolle (users.is_admin) - unabhängig von
+// club_role/club_id, für /api/admin/*-Routen. Immer nach requireAuth.
+const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (!c.get("isAdmin")) return c.json({ error: "Keine Berechtigung" }, 403);
   await next();
 };
 
@@ -336,7 +345,32 @@ app.get("/api/me", requireAuth, async (c) => {
     clubId,
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
+    isAdmin: c.get("isAdmin"),
   });
+});
+
+// --- Vereinsübergreifende Administration -----------------------------------
+
+// Alle Vereine mit Mitgliederzahl - Übersicht für die Admin-Rolle, um zu
+// entscheiden, in welchen Verein gewechselt werden soll.
+app.get("/api/admin/clubs", requireAuth, requireAdmin, async (c) => {
+  return c.json(await db.listClubs(c.env.DB));
+});
+
+// Wechselt den eigenen Account in einen anderen Verein, als dessen
+// Jugendleitung - danach funktioniert die komplette bestehende App
+// unverändert für diesen Verein, ohne eigene Admin-Seiten für jede Ansicht
+// nachbauen zu müssen. Der bisherige Verein geht dabei verloren, lässt sich
+// aber genauso zurückwechseln.
+app.post("/api/admin/switch-club", requireAuth, requireAdmin, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const clubId = validId(body?.clubId);
+  if (!clubId) return c.json({ error: "Ungültige Vereins-ID" }, 400);
+  const club = await db.getClubById(c.env.DB, clubId);
+  if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
+
+  await db.setUserClub(c.env.DB, c.get("userId"), clubId, "jugendleiter");
+  return c.json({ clubId, clubName: club.name });
 });
 
 // Name/E-Mail des eigenen Accounts ändern. Ändert sich einer der beiden

@@ -14,6 +14,7 @@ export interface User {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isAdmin: boolean;
   createdAt: string;
 }
 
@@ -25,6 +26,7 @@ export interface UserRow {
   password_salt: string;
   club_id: string | null;
   club_role: ClubRole;
+  is_admin: number;
   created_at: string;
 }
 
