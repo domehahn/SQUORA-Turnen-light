@@ -9,17 +9,18 @@
     "db:migrate:local": "wrangler d1 migrations apply turnen --local",
     "db:migrate:remote": "wrangler d1 migrations apply turnen --remote",
     "create-admin": "node scripts/create-admin.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "hono": "^4.12.30",
     "jose": "^6.2.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/vitest-pool-workers": "^0.8.71",
     "@cloudflare/workers-types": "^5.20260718.1",
     "typescript": "^5.7.3",
-    "vitest": "^4.1.11",
+    "vitest": "^3.2.7",
     "wrangler": "^4.112.0"
   }
 }
