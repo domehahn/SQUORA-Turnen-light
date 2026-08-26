@@ -86,3 +86,13 @@ export function validTime(value: unknown): string | null | undefined {
   if (typeof value !== "string" || !TIME_RE.test(value)) return undefined;
   return value;
 }
+
+// Feste Palette statt Freitext (Hex etc.) - muss mit GROUP_COLORS im
+// Frontend (src/lib/groupColors.ts) übereinstimmen.
+const GROUP_COLOR_KEYS = new Set(["emerald", "blue", "purple", "amber", "pink", "teal", "orange", "red", "cyan", "slate"]);
+
+export function validGroupColor(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string" || !GROUP_COLOR_KEYS.has(value)) return undefined;
+  return value;
+}

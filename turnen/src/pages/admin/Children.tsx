@@ -1005,15 +1005,15 @@ export default function Children() {
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-amber-700 dark:text-amber-400">{info}</p>}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="max-w-xs flex-1">
+      <div className="space-y-3">
+        <div className="max-w-xs">
           <FloatingInput
             label="Suche nach Name oder Gruppe"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex flex-1 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Namensliste für Gruppe(n):</span>
           {groups.map((g) => {
             const selected = printGroupIds.includes(g.id);
@@ -1036,7 +1036,7 @@ export default function Children() {
           })}
         </div>
         {printGroupIds.length > 0 && (
-          <>
+          <div className="flex flex-wrap gap-2">
             <a
               href={appPath(`/druck?mode=namen&groupIds=${printGroupIds.join(",")}`)}
               target="_blank"
@@ -1067,7 +1067,7 @@ export default function Children() {
             >
               Notfallliste als CSV
             </button>
-          </>
+          </div>
         )}
       </div>
 

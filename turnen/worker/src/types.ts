@@ -59,6 +59,7 @@ export interface Group {
   clubId: string | null;
   canEdit: boolean;
   editableAsLeadership: boolean;
+  color: string | null;
   createdAt: string;
 }
 
@@ -75,6 +76,7 @@ export interface GroupRow {
   location: string | null;
   owner_id: string | null;
   club_id: string | null;
+  color: string | null;
   created_at: string;
 }
 

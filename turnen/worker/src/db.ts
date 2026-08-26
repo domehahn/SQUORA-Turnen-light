@@ -154,6 +154,7 @@ function rowToGroup(
     // löschen, nicht nur eigene - siehe PUT/DELETE /api/groups/:id.
     canEdit: canWriteGroup(row, ctx.userId) || Boolean(ctx.isCoLeader) || Boolean(ctx.isLeadership),
     editableAsLeadership: Boolean(ctx.isLeadership) && !canWriteGroup(row, ctx.userId) && !ctx.isCoLeader,
+    color: row.color,
     createdAt: row.created_at,
   };
 }
@@ -392,13 +393,14 @@ export async function createGroup(
     ownerId: string;
     ownerName: string | null;
     clubId: string | null;
+    color: string | null;
   }
 ): Promise<Group> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO groups (id, name, min_age, max_age, sort_order, max_children, weekday, start_time, end_time, location, owner_id, club_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO groups (id, name, min_age, max_age, sort_order, max_children, weekday, start_time, end_time, location, owner_id, club_id, color)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -412,7 +414,8 @@ export async function createGroup(
       input.endTime,
       input.location,
       input.ownerId,
-      input.clubId
+      input.clubId,
+      input.color
     )
     .run();
   const row = await db.prepare("SELECT * FROM groups WHERE id = ?").bind(id).first<GroupRow>();
@@ -432,13 +435,14 @@ export async function updateGroup(
     startTime: string | null;
     endTime: string | null;
     location: string | null;
+    color: string | null;
   },
   ctx: { userId: string; ownerName: string | null }
 ): Promise<Group | null> {
   await db
     .prepare(
       `UPDATE groups SET name = ?, min_age = ?, max_age = ?, sort_order = ?, max_children = ?,
-              weekday = ?, start_time = ?, end_time = ?, location = ? WHERE id = ?`
+              weekday = ?, start_time = ?, end_time = ?, location = ?, color = ? WHERE id = ?`
     )
     .bind(
       input.name,
@@ -450,6 +454,7 @@ export async function updateGroup(
       input.startTime,
       input.endTime,
       input.location,
+      input.color,
       id
     )
     .run();
