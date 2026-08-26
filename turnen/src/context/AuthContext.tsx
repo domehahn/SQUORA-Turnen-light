@@ -100,6 +100,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut() {
         clearToken();
+        // Aufräumen eines evtl. noch vorhandenen alten "api-cache" (vor der
+        // Entfernung des Workbox-runtimeCaching für /api/* konnten dort bis
+        // zu 24h personenbezogene Daten liegen, s. vite.config.ts).
+        if (typeof caches !== "undefined") {
+          caches.delete("api-cache").catch(() => {});
+        }
         setState(readState(null));
       },
       refreshClub: loadClub,

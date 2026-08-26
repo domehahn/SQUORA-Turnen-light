@@ -61,7 +61,7 @@ function csvCell(value: string): string {
 }
 
 export default function AuditLog() {
-  const { clubId, clubName, clubRole } = useAuth();
+  const { clubId, clubName, clubRole, isAdmin } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +73,7 @@ export default function AuditLog() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    if (!isAdmin) return;
     async function load() {
       setLoading(true);
       try {
@@ -86,7 +87,15 @@ export default function AuditLog() {
       }
     }
     load();
-  }, []);
+  }, [isAdmin]);
+
+  if (!isAdmin) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+        Diese Seite ist nur für die Admin-Rolle sichtbar.
+      </div>
+    );
+  }
 
   const availableActions = useMemo(() => {
     const set = new Set(entries.map((e) => e.action));

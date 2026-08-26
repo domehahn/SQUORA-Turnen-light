@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { MiddlewareHandler } from "hono";
 import * as db from "./db";
-import { hashPassword, signToken, verifyPassword, verifyToken } from "./auth";
+import { TOKEN_REFRESH_THRESHOLD_SECONDS, hashPassword, signToken, verifyPassword, verifyToken } from "./auth";
 import { notifyUser } from "./notifications";
 import { encryptField, decryptField } from "./crypto";
 import {
@@ -74,6 +74,19 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("clubId", user.clubId);
     c.set("clubRole", user.clubRole);
     c.set("isAdmin", user.isAdmin);
+
+    // Sliding-Refresh: Tokens leben nur noch 24h statt vormals 30 Tage
+    // (Finding aus der DSGVO-Nachprüfung, kürzeres Zeitfenster für ein
+    // gestohlenes Token). Damit aktiv genutzte Sitzungen trotzdem nicht
+    // ständig neu einloggen müssen, wird bei weniger als der halben
+    // Restlaufzeit transparent ein neues Token ausgestellt und über einen
+    // Response-Header mitgegeben; api.ts im Frontend übernimmt es
+    // automatisch. Inaktive Tokens laufen dagegen nach 24h wirklich ab.
+    const remainingSeconds = payload.exp - Math.floor(Date.now() / 1000);
+    if (remainingSeconds < TOKEN_REFRESH_THRESHOLD_SECONDS) {
+      const fresh = await signToken({ sub: user.id, email: user.email, name: user.name }, c.env.JWT_SECRET);
+      c.header("X-Refreshed-Token", fresh);
+    }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
   }
@@ -1371,7 +1384,6 @@ app.post("/api/children", requireAuth, async (c) => {
   const lastName = requiredText(body?.lastName, 100);
   const birthDate = validDate(body?.birthDate);
   const groupId = optionalId(body?.groupId);
-  const notes = optionalText(body?.notes, 500);
   const emergencyContactName = optionalText(body?.emergencyContactName, 100);
   const emergencyContactPhone = optionalText(body?.emergencyContactPhone, 40);
   const familyId = optionalId(body?.familyId);
@@ -1379,20 +1391,21 @@ app.post("/api/children", requireAuth, async (c) => {
   if (!lastName) return c.json({ error: "Nachname fehlt oder ist ungültig" }, 400);
   if (!birthDate) return c.json({ error: "Geburtsdatum ist ungültig (Format JJJJ-MM-TT)" }, 400);
   if (groupId === undefined) return c.json({ error: "Gruppe ist ungültig" }, 400);
-  if (notes === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
   if (emergencyContactName === undefined) return c.json({ error: "Notfallkontakt (Name) ist zu lang" }, 400);
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
   if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
   // Notfallkontakte verschlüsselt ablegen (auch im Kapazitäts-Anfrage-
   // Payload, falls diese Aktion erst nach Freigabe ausgeführt wird) - siehe
-  // worker/src/crypto.ts, Finding PRIV-02.
+  // worker/src/crypto.ts, Finding PRIV-02. Bewusst KEIN Freitext-Notizfeld
+  // mehr (ehemals "notes") - Art.-9-Daten (Diagnosen, Allergien etc.)
+  // lassen sich sonst faktisch trotzdem eintragen, unabhängig vom
+  // Spaltennamen. Siehe auch Entfernung von health_notes.
   const childInput = {
     firstName,
     lastName,
     birthDate,
     groupId,
-    notes,
     emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
     emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
     familyId,
@@ -1446,7 +1459,6 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   const lastName = requiredText(body?.lastName, 100);
   const birthDate = validDate(body?.birthDate);
   const groupId = optionalId(body?.groupId);
-  const notes = optionalText(body?.notes, 500);
   const emergencyContactName = optionalText(body?.emergencyContactName, 100);
   const emergencyContactPhone = optionalText(body?.emergencyContactPhone, 40);
   const familyId = optionalId(body?.familyId);
@@ -1455,7 +1467,6 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (!lastName) return c.json({ error: "Nachname fehlt oder ist ungültig" }, 400);
   if (!birthDate) return c.json({ error: "Geburtsdatum ist ungültig (Format JJJJ-MM-TT)" }, 400);
   if (groupId === undefined) return c.json({ error: "Gruppe ist ungültig" }, 400);
-  if (notes === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
   if (emergencyContactName === undefined) return c.json({ error: "Notfallkontakt (Name) ist zu lang" }, 400);
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
   if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
@@ -1470,7 +1481,6 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     lastName,
     birthDate,
     groupId,
-    notes,
     emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
     emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
     familyId,
@@ -1714,7 +1724,9 @@ app.put("/api/families/:id", requireAuth, async (c) => {
 
 // --- Audit-Log -----------------------------------------------------------------
 
-app.get("/api/audit-log", requireAuth, async (c) => {
+// Nutzerentscheidung: Verlauf (auch clubbezogen) ist nur für die Admin-Rolle
+// sichtbar, nicht mehr für Jugendleitung/normale Mitglieder.
+app.get("/api/audit-log", requireAuth, requireAdmin, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   // Für Filter/Export im Frontend darf mehr als das Standard-Limit

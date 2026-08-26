@@ -42,6 +42,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  // Sliding-Refresh: bei kürzerer Token-Lebensdauer (24h statt vormals 30
+  // Tage) stellt das Backend bei weniger als der halben Restlaufzeit
+  // transparent ein neues Token aus (siehe worker/src/index.ts requireAuth).
+  const refreshed = res.headers.get("X-Refreshed-Token");
+  if (refreshed) setToken(refreshed);
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new ApiError((data as { error?: string } | null)?.error ?? `Fehler ${res.status}`, res.status, data);

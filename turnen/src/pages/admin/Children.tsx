@@ -30,7 +30,6 @@ const emptyForm = {
   lastName: "",
   birthDate: "",
   groupId: "",
-  notes: "",
   emergencyContactName: "",
   emergencyContactPhone: "",
 };
@@ -429,7 +428,6 @@ export default function Children() {
       lastName: child.lastName,
       birthDate: child.birthDate,
       groupId: child.groupId ?? "",
-      notes: child.notes ?? "",
       emergencyContactName: child.emergencyContactName ?? "",
       emergencyContactPhone: child.emergencyContactPhone ?? "",
     });
@@ -504,7 +502,6 @@ export default function Children() {
           lastName: form.lastName,
           birthDate: form.birthDate,
           groupId: form.groupId || null,
-          notes: form.notes || null,
           emergencyContactName: form.emergencyContactName || null,
           emergencyContactPhone: form.emergencyContactPhone || null,
           confirmOverCapacity,
@@ -923,13 +920,6 @@ export default function Children() {
               </option>
             ))}
           </FloatingSelect>
-        </div>
-        <div className="flex-1 min-w-[160px]">
-          <FloatingInput
-            label="Notiz (optional)"
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          />
         </div>
         <div className="w-full border-t border-slate-100 pt-3 dark:border-slate-800" />
         <div className="flex-1 min-w-[160px]">
@@ -1466,12 +1456,6 @@ export default function Children() {
                       )}
                     </dd>
                   </div>
-                  {detailChild.notes && (
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Notiz</dt>
-                      <dd className="text-slate-700 dark:text-slate-300">{detailChild.notes}</dd>
-                    </div>
-                  )}
                   {detailSiblings.length > 0 && (
                     <div>
                       <dt className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">

@@ -166,7 +166,6 @@ function rowToChild(row: ChildRow, canEdit: boolean): Child {
     lastName: row.last_name,
     birthDate: row.birth_date,
     groupId: row.group_id,
-    notes: row.notes,
     emergencyContactName: row.emergency_contact_name,
     emergencyContactPhone: row.emergency_contact_phone,
     familyId: row.family_id,
@@ -632,7 +631,6 @@ export interface ChildInput {
   lastName: string;
   birthDate: string;
   groupId: string | null;
-  notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   familyId: string | null;
@@ -643,8 +641,8 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
   await db
     .prepare(
       `INSERT INTO children
-         (id, first_name, last_name, birth_date, group_id, notes, emergency_contact_name, emergency_contact_phone, family_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (id, first_name, last_name, birth_date, group_id, emergency_contact_name, emergency_contact_phone, family_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -652,7 +650,6 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
       input.lastName,
       input.birthDate,
       input.groupId,
-      input.notes,
       input.emergencyContactName,
       input.emergencyContactPhone,
       input.familyId
@@ -665,7 +662,7 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
 export async function updateChild(db: D1Database, id: string, input: ChildInput): Promise<Child | null> {
   await db
     .prepare(
-      `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, notes = ?,
+      `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?,
               emergency_contact_name = ?, emergency_contact_phone = ?, family_id = ? WHERE id = ?`
     )
     .bind(
@@ -673,7 +670,6 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
       input.lastName,
       input.birthDate,
       input.groupId,
-      input.notes,
       input.emergencyContactName,
       input.emergencyContactPhone,
       input.familyId,

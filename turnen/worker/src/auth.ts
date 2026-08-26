@@ -57,12 +57,21 @@ export interface UserJwtPayload {
   name: string | null;
 }
 
+// Vorher 30 Tage - für eine App mit Kinderdaten ein unangemessen langes
+// Zeitfenster, in dem ein gestohlenes Token verwendbar bliebe (Art. 32
+// DSGVO, Finding aus der DSGVO-Nachprüfung). requireAuth stellt aktiv
+// genutzten Sitzungen unterhalb TOKEN_REFRESH_THRESHOLD_SECONDS
+// transparent ein neues Token aus (siehe unten) - inaktive Tokens laufen
+// dagegen nach TOKEN_LIFETIME_SECONDS wirklich ab.
+export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24; // 24h
+export const TOKEN_REFRESH_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2; // ab 12h Restlaufzeit erneuern
+
 export async function signToken(payload: UserJwtPayload, secret: string): Promise<string> {
   return new SignJWT({ email: payload.email, name: payload.name })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
     .setIssuedAt()
-    .setExpirationTime("30d")
+    .setExpirationTime(`${TOKEN_LIFETIME_SECONDS}s`)
     .sign(new TextEncoder().encode(secret));
 }
 
@@ -70,6 +79,7 @@ export interface TokenPayload {
   sub: string;
   email: string;
   name: string | null;
+  exp: number;
 }
 
 export async function verifyToken(token: string, secret: string): Promise<TokenPayload> {
@@ -78,5 +88,6 @@ export async function verifyToken(token: string, secret: string): Promise<TokenP
     sub: payload.sub as string,
     email: payload.email as string,
     name: (payload.name as string | null) ?? null,
+    exp: payload.exp as number,
   };
 }

@@ -94,7 +94,6 @@ export interface Child {
   lastName: string;
   birthDate: string;
   groupId: string | null;
-  notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   familyId: string | null;
@@ -110,7 +109,6 @@ export interface ChildRow {
   last_name: string;
   birth_date: string;
   group_id: string | null;
-  notes: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   family_id: string | null;

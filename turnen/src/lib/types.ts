@@ -29,7 +29,6 @@ export interface Child {
   lastName: string;
   birthDate: string; // ISO yyyy-mm-dd
   groupId: string | null;
-  notes: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   familyId: string | null;

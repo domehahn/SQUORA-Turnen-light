@@ -39,7 +39,11 @@ const NAV_GROUPS: {
     items: [
       { to: "/mitgliederstatistik", label: "Statistik" },
       { to: "/export", label: "Export" },
-      { to: "/verlauf", label: "Verlauf" },
+      // Bewusst nur für die Admin-Rolle sichtbar (nicht mehr für alle bzw.
+      // Jugendleitung) - explizite Nutzerentscheidung. Zeigt anders als
+      // "Admin: Verlauf" (Plattform-Gruppe, vereinsübergreifend) nur den
+      // Verlauf des aktuell im Header gewählten Vereins.
+      { to: "/verlauf", label: "Verlauf", adminOnly: true },
       // "Verein" bewusst nur für die Jugendleitung (siehe AppLayout unten) -
       // unten aus NAV_GROUPS herausgefiltert statt hier fest eingetragen.
       { to: "/verein", label: "Verein", jugendleiterOnly: true },

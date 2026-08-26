@@ -39,20 +39,15 @@ export default defineConfig(({ mode }) => {
           // unabhängig von globPatterns - navigateFallback: null schaltet
           // das komplett ab, Navigationen gehen dadurch immer ans Netz.
           navigateFallback: null,
-          runtimeCaching: [
-            {
-              // Ohne führendes "^/": funktioniert unabhängig davon, ob die
-              // App am Domain-Root oder unter /turnen-light/ läuft.
-              urlPattern: /\/api\/(children|groups|clubs|move-requests|capacity-requests|notifications)/,
-              method: "GET",
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "api-cache",
-                expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
-                networkTimeoutSeconds: 5,
-              },
-            },
-          ],
+          // Kein runtimeCaching mehr für /api/* (Finding aus der DSGVO-
+          // Nachprüfung: NetworkFirst mit 24h-Cache hielt personenbezogene
+          // Daten - Kindernamen, Notfallkontakte, Gruppenzuordnungen -
+          // unverschlüsselt im Cache Storage des Browsers vor, auch auf
+          // gemeinsam genutzten Geräten/Tablets. Ohne runtimeCaching-Eintrag
+          // gehen API-Requests immer live ans Netz (entspricht NetworkOnly).
+          // Nur App-Shell (JS/CSS/Icons, s. globPatterns) bleibt für echtes
+          // Offline-Öffnen gecacht - das sind keine personenbezogenen Daten.
+          runtimeCaching: [],
         },
         manifest: {
           name: "SQUORA Turnen",
