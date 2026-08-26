@@ -83,3 +83,16 @@ function hashColorFor(groupId: string): GroupColorOption {
 export function groupColorClasses(color: string | null, groupId: string): string {
   return (color ? BY_KEY.get(color) : undefined)?.classes ?? hashColorFor(groupId).classes;
 }
+
+// Nur der helle Teil (kein dark:-Präfix) für Druckseiten, die - unabhängig
+// vom App-Darkmode - immer hell/schwarz auf weiß bleiben müssen (siehe
+// AttendancePrint.tsx/HoursReport.tsx): mit den vollen classes() würde bei
+// aktivem Darkmode via .dark-Klasse auf <html> trotzdem der dunkle Teil
+// greifen.
+export function groupColorClassesLight(color: string | null, groupId: string): string {
+  const full = groupColorClasses(color, groupId);
+  return full
+    .split(" ")
+    .filter((c) => !c.startsWith("dark:"))
+    .join(" ");
+}

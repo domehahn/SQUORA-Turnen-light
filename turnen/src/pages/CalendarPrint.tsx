@@ -2,19 +2,16 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Group } from "../lib/types";
 import SquoraBrand from "../components/SquoraBrand";
+import { groupColorClassesLight } from "../lib/groupColors";
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0]; // Montag ... Sonntag
 const WEEKDAY_NAMES = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 
-// SQUORA-Formularstil (siehe tournament-manager/AufstellungsbogenPdfService):
-// helle blaue Tabellenköpfe statt schlichtem Grau/Schwarz.
-const thClass = "border border-slate-300 bg-blue-100 px-2 py-1.5 text-left font-semibold text-blue-900";
-const tdClass = "border border-slate-300 px-2 py-1.5";
-
-// Eigenständige Druckansicht des Trainingskalenders, analog zu
-// AttendancePrint/HoursReport: immer hell/schwarz auf weiß, unabhängig vom
-// Darkmode der App, da die reguläre Kalender-Seite innerhalb von AppLayout
-// (Sidebar, Header) nicht sinnvoll direkt druckbar ist.
+// Eigenständige Druckansicht des Trainingskalenders im selben Kartenstil wie
+// die reguläre Kalender-Seite (Wochentags-Spalten, farbige Gruppen-Karten) -
+// nur eigenständig statt innerhalb von AppLayout (Sidebar/Header) und immer
+// hell, unabhängig vom Darkmode der App (siehe AttendancePrint.tsx für
+// dieselbe Begründung).
 export default function CalendarPrint() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,13 +25,15 @@ export default function CalendarPrint() {
       .finally(() => setLoading(false));
   }, []);
 
-  const byWeekday = WEEKDAYS.map((day, i) => ({
-    day,
-    label: WEEKDAY_NAMES[i],
-    groups: groups
-      .filter((g) => g.weekday === day)
-      .sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? "")),
-  })).filter((d) => d.groups.length > 0);
+  const byWeekday: Record<number, Group[]> = {};
+  for (const day of WEEKDAYS) byWeekday[day] = [];
+  for (const g of groups) {
+    if (g.weekday === null) continue;
+    byWeekday[g.weekday]?.push(g);
+  }
+  for (const list of Object.values(byWeekday)) {
+    list.sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""));
+  }
 
   if (loading) return <p className="min-h-screen bg-white p-6 text-sm text-slate-500">Lädt…</p>;
   if (error) return <p className="min-h-screen bg-white p-6 text-sm text-red-600">Fehler: {error}</p>;
@@ -44,61 +43,43 @@ export default function CalendarPrint() {
       className="min-h-screen bg-white p-6 text-slate-900"
       style={{ colorScheme: "light", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
     >
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
         <SquoraBrand className="mb-4" />
-        <div className="mb-4 flex items-center justify-between print:hidden">
+        <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">Trainingskalender</h1>
             <p className="text-sm text-slate-600">Alle Trainingszeiten der Woche.</p>
           </div>
           <button
             onClick={() => window.print()}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 print:hidden"
           >
             Drucken
           </button>
         </div>
-        <h1 className="mb-4 hidden text-xl font-semibold print:block">Trainingskalender</h1>
 
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className={thClass}>Wochentag</th>
-              <th className={thClass}>Gruppe</th>
-              <th className={thClass}>Altersspanne</th>
-              <th className={thClass}>Uhrzeit</th>
-              <th className={thClass}>Ort/Halle</th>
-              <th className={thClass}>Turntrainer*in</th>
-            </tr>
-          </thead>
-          <tbody>
-            {byWeekday.map((d) =>
-              d.groups.map((g, i) => (
-                <tr key={g.id}>
-                  {i === 0 && (
-                    <td className={`${tdClass} font-medium`} rowSpan={d.groups.length}>
-                      {d.label}
-                    </td>
-                  )}
-                  <td className={`${tdClass} font-medium`}>{g.name}</td>
-                  <td className={tdClass}>
-                    {g.minAge}–{g.maxAge} Jahre
-                  </td>
-                  <td className={tdClass}>{g.startTime && g.endTime ? `${g.startTime}–${g.endTime}` : "–"}</td>
-                  <td className={tdClass}>{g.location ?? "–"}</td>
-                  <td className={tdClass}>{g.ownerName ?? "–"}</td>
-                </tr>
-              ))
-            )}
-            {byWeekday.length === 0 && (
-              <tr>
-                <td colSpan={6} className={`${tdClass} py-4 text-center text-slate-500`}>
-                  Keine Gruppen mit hinterlegtem Trainingstag.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))]">
+          {WEEKDAYS.map((day, i) => (
+            <div key={day} className="rounded-lg border border-slate-200 bg-white p-3">
+              <h3 className="mb-2 text-sm font-semibold text-slate-700">{WEEKDAY_NAMES[i]}</h3>
+              <div className="space-y-2">
+                {byWeekday[day].map((g) => (
+                  <div key={g.id} className={`overflow-hidden rounded-md border px-2 py-1.5 text-xs ${groupColorClassesLight(g.color, g.id)}`}>
+                    <p className="break-words font-medium">{g.name}</p>
+                    {g.startTime && g.endTime && (
+                      <p>
+                        {g.startTime}–{g.endTime}
+                      </p>
+                    )}
+                    {g.location && <p className="break-words opacity-80">{g.location}</p>}
+                    {g.ownerName && <p className="break-words opacity-80">{g.ownerName}</p>}
+                  </div>
+                ))}
+                {byWeekday[day].length === 0 && <p className="text-xs text-slate-400">–</p>}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
