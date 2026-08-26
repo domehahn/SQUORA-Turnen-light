@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import type { Group, SubstituteRequest } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
+import { groupColorClasses } from "../../lib/groupColors";
 
 function formatShortDate(iso: string): string {
   const [, month, day] = iso.split("-");
@@ -10,24 +11,6 @@ function formatShortDate(iso: string): string {
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0]; // Montag ... Sonntag
 const WEEKDAY_NAMES = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
-
-// Feste, aber unterscheidbare Farbpalette pro Gruppe (Hash auf die ID) -
-// konsistent über Reloads hinweg, ohne Konfiguration.
-const COLOR_CLASSES = [
-  "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-800",
-  "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-800",
-  "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/40 dark:text-purple-200 dark:border-purple-800",
-  "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800",
-  "bg-pink-100 text-pink-800 border-pink-300 dark:bg-pink-900/40 dark:text-pink-200 dark:border-pink-800",
-  "bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-900/40 dark:text-teal-200 dark:border-teal-800",
-  "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/40 dark:text-orange-200 dark:border-orange-800",
-];
-
-function colorFor(groupId: string): string {
-  let hash = 0;
-  for (let i = 0; i < groupId.length; i++) hash = (hash * 31 + groupId.charCodeAt(i)) % COLOR_CLASSES.length;
-  return COLOR_CLASSES[hash];
-}
 
 export default function Calendar() {
   const { userId } = useAuth();
@@ -101,7 +84,7 @@ export default function Calendar() {
                   {byWeekday[day].map((g) => (
                     <div
                       key={g.id}
-                      className={`overflow-hidden rounded-md border px-2 py-1.5 text-xs ${colorFor(g.id)} ${
+                      className={`overflow-hidden rounded-md border px-2 py-1.5 text-xs ${groupColorClasses(g.color, g.id)} ${
                         g.ownerId === userId ? "outline outline-2 outline-offset-1 outline-current" : ""
                       }`}
                     >

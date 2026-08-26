@@ -17,6 +17,7 @@ export interface Group {
   // Jugendleitung des Vereins ist (nicht Besitzer:in oder Mit-Trainer*in) -
   // fürs Frontend-Label, um das von "echter" Mit-Trainerschaft zu unterscheiden.
   editableAsLeadership: boolean;
+  color: string | null;
   createdAt: string;
 }
 

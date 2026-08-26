@@ -4,6 +4,7 @@ import type { CapacityRequest, Child, ClubMember, Group, GroupCoLeader, MoveRequ
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
 import { CAPACITY_CANCELLED, withCapacityConfirm } from "../../lib/capacityConfirm";
+import { GROUP_COLORS } from "../../lib/groupColors";
 
 type CapacityLevel = "unset" | "ok" | "warn" | "over";
 
@@ -75,6 +76,7 @@ export default function Groups() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
+  const [color, setColor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -139,6 +141,7 @@ export default function Groups() {
     setStartTime(g.startTime ?? "");
     setEndTime(g.endTime ?? "");
     setLocation(g.location ?? "");
+    setColor(g.color);
   }
 
   function resetForm() {
@@ -151,6 +154,7 @@ export default function Groups() {
     setStartTime("");
     setEndTime("");
     setLocation("");
+    setColor(null);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -167,6 +171,7 @@ export default function Groups() {
         startTime: startTime || null,
         endTime: endTime || null,
         location: location || null,
+        color,
       };
       if (editingId) await api.put(`/api/groups/${editingId}`, payload);
       else await api.post("/api/groups", payload);
@@ -357,6 +362,36 @@ export default function Groups() {
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
+        </div>
+        <div className="w-full" />
+        <div>
+          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+            Farbe (Kalender/Übersicht, optional)
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setColor(null)}
+              title="Automatisch"
+              className={`h-6 w-6 rounded-full border-2 border-dashed text-[10px] text-slate-400 dark:text-slate-500 ${
+                color === null ? "border-slate-600 dark:border-slate-300" : "border-slate-300 dark:border-slate-700"
+              }`}
+            >
+              –
+            </button>
+            {GROUP_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setColor(c.key)}
+                title={c.label}
+                aria-label={c.label}
+                className={`h-6 w-6 rounded-full ${c.swatch} ${
+                  color === c.key ? "ring-2 ring-offset-2 ring-slate-600 dark:ring-slate-300 dark:ring-offset-slate-900" : ""
+                }`}
+              />
+            ))}
+          </div>
         </div>
         <button type="submit" className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
           {editingId ? "Speichern" : "Anlegen"}

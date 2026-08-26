@@ -12,6 +12,7 @@ import {
   validAgeRange,
   validBool,
   validDate,
+  validGroupColor,
   validId,
   validOptionalCount,
   validPassword,
@@ -700,6 +701,7 @@ app.post("/api/groups", requireAuth, async (c) => {
   const startTime = validTime(body?.startTime);
   const endTime = validTime(body?.endTime);
   const location = optionalText(body?.location, 100);
+  const color = validGroupColor(body?.color);
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
   if (sortOrder === undefined) return c.json({ error: "Sortierung ist ungültig" }, 400);
@@ -711,6 +713,7 @@ app.post("/api/groups", requireAuth, async (c) => {
   if (startTime === null || endTime === null) return c.json({ error: "Von-/Bis-Uhrzeit fehlt" }, 400);
   if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
   if (location === null) return c.json({ error: "Ort/Halle fehlt" }, 400);
+  if (color === undefined) return c.json({ error: "Farbe ist ungültig" }, 400);
 
   const group = await db.createGroup(c.env.DB, {
     name,
@@ -724,6 +727,7 @@ app.post("/api/groups", requireAuth, async (c) => {
     ownerId: c.get("userId"),
     ownerName: c.get("name"),
     clubId: c.get("clubId"),
+    color,
   });
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -747,6 +751,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   const startTime = validTime(body?.startTime);
   const endTime = validTime(body?.endTime);
   const location = optionalText(body?.location, 100);
+  const color = validGroupColor(body?.color);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (!ageRange) return c.json({ error: "Altersspanne ist ungültig (min. Alter muss <= max. Alter sein)" }, 400);
@@ -759,6 +764,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   if (startTime === null || endTime === null) return c.json({ error: "Von-/Bis-Uhrzeit fehlt" }, 400);
   if (location === undefined) return c.json({ error: "Ort ist zu lang" }, 400);
   if (location === null) return c.json({ error: "Ort/Halle fehlt" }, 400);
+  if (color === undefined) return c.json({ error: "Farbe ist ungültig" }, 400);
 
   const existing = await db.getGroupRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Gruppe nicht gefunden" }, 404);
@@ -771,7 +777,7 @@ app.put("/api/groups/:id", requireAuth, async (c) => {
   const group = await db.updateGroup(
     c.env.DB,
     id,
-    { name, ...ageRange, sortOrder, maxChildren, weekday, startTime, endTime, location },
+    { name, ...ageRange, sortOrder, maxChildren, weekday, startTime, endTime, location, color },
     { userId: c.get("userId"), ownerName: c.get("name") }
   );
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
