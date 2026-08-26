@@ -60,6 +60,7 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  isAdmin: number;
   lastLoginAt: string | null;
 }
 

@@ -299,13 +299,14 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  isAdmin: number;
   lastLoginAt: string | null;
 }
 
 export async function listClubMembers(db: D1Database, clubId: string): Promise<ClubMember[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, name, email, club_role as role, last_login_at as lastLoginAt FROM users WHERE club_id = ?
+      `SELECT id, name, email, club_role as role, is_admin as isAdmin, last_login_at as lastLoginAt FROM users WHERE club_id = ?
        ORDER BY CASE club_role WHEN 'jugendleiter' THEN 0 ELSE 1 END, name ASC, email ASC`
     )
     .bind(clubId)
