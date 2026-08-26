@@ -76,7 +76,7 @@ function wasActiveAt(child: Child, endIso: string): boolean {
 }
 
 export default function MemberStats() {
-  const { userId, clubId, clubName, clubRole } = useAuth();
+  const { clubId, clubName, clubRole } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
@@ -116,13 +116,16 @@ export default function MemberStats() {
   }, []);
 
   // Wie bei der Auslastung: Turnleiter*innen sehen nur die eigene(n)
-  // Gruppe(n), die Jugendleitung alle Gruppen des Vereins.
+  // Gruppe(n), die Jugendleitung alle Gruppen des Vereins. canEdit deckt
+  // (anders als der reine ownerId-Vergleich vorher) auch Mit-Trainer*innen
+  // ab, die eine Gruppe nicht selbst besitzen, aber mitleiten - sonst
+  // blieb die Statistik für sie komplett leer.
   const visibleGroups = useMemo(
     () =>
       groups
-        .filter((g) => g.clubId !== null && g.clubId === clubId && (isJugendleiter || g.ownerId === userId))
+        .filter((g) => g.clubId !== null && g.clubId === clubId && g.canEdit)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.minAge - b.minAge),
-    [groups, clubId, isJugendleiter, userId]
+    [groups, clubId]
   );
 
   const quarters = useMemo(

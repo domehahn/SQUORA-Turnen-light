@@ -2331,11 +2331,12 @@ app.get("/api/hours-report", requireAuth, async (c) => {
   const year = Number(c.req.query("year"));
   const quarter = Number(c.req.query("quarter"));
   if (!Number.isInteger(year) || year < 2000 || year > 2100) return c.json({ error: "Ungültiges Jahr" }, 400);
-  if (!Number.isInteger(quarter) || quarter < 1 || quarter > 4) return c.json({ error: "Ungültiges Quartal" }, 400);
+  // 0 = ganzes Jahr statt nur eines Quartals.
+  if (!Number.isInteger(quarter) || quarter < 0 || quarter > 4) return c.json({ error: "Ungültiges Quartal" }, 400);
 
-  const startMonth = (quarter - 1) * 3 + 1;
+  const startMonth = quarter === 0 ? 1 : (quarter - 1) * 3 + 1;
+  const endMonth = quarter === 0 ? 12 : startMonth + 2;
   const from = `${year}-${String(startMonth).padStart(2, "0")}-01`;
-  const endMonth = startMonth + 2;
   const lastDay = new Date(year, endMonth, 0).getDate();
   const to = `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
@@ -2349,7 +2350,8 @@ app.get("/api/hours-report", requireAuth, async (c) => {
   const groupIds = allGroups.map((g) => g.id);
   const rows = await db.listSessionsForExport(c.env.DB, groupIds, from, to, c.get("userId"));
 
-  const months = [startMonth, startMonth + 1, startMonth + 2].map((month) => {
+  const monthNumbers = Array.from({ length: endMonth - startMonth + 1 }, (_, i) => startMonth + i);
+  const months = monthNumbers.map((month) => {
     const monthStr = String(month).padStart(2, "0");
     const sessions = rows
       .filter((r) => r.sessionDate.slice(5, 7) === monthStr)

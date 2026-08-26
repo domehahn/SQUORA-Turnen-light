@@ -13,6 +13,7 @@ import Export from "./pages/admin/Export";
 import Calendar from "./pages/admin/Calendar";
 import AuditLog from "./pages/admin/AuditLog";
 import AttendancePrint from "./pages/AttendancePrint";
+import CalendarPrint from "./pages/CalendarPrint";
 import HoursReportPage from "./pages/HoursReport";
 import Substitutes from "./pages/admin/Substitutes";
 import ClubWaitlist from "./pages/admin/ClubWaitlist";
@@ -34,6 +35,7 @@ export default function App() {
 
           <Route element={<RequireAuth />}>
             <Route path="druck/:groupId?" element={<AttendancePrint />} />
+            <Route path="druck/kalender" element={<CalendarPrint />} />
             <Route path="nachweis" element={<HoursReportPage />} />
 
             <Route element={<AppLayout />}>

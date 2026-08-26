@@ -204,6 +204,7 @@ export default function AttendancePrint() {
         {mode === "anwesenheit" ? (
           <>
             <h1 className="text-xl font-semibold">{group.name}</h1>
+            <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {group.ownerName ?? "–"}</p>
             <p className="mb-4 text-sm text-slate-600">
               {group.minAge}–{group.maxAge} Jahre
               {group.weekday !== null && ` · ${WEEKDAY_NAMES[group.weekday]}`}
@@ -321,6 +322,7 @@ export default function AttendancePrint() {
               return (
                 <div key={g.id} className={i > 0 ? "break-before-page" : ""}>
                   <h1 className="text-xl font-semibold">{g.name}</h1>
+                  <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {g.ownerName ?? "–"}</p>
                   <p className="mb-2 text-sm text-slate-600">
                     {g.minAge}–{g.maxAge} Jahre
                     {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}
@@ -364,6 +366,7 @@ export default function AttendancePrint() {
               return (
                 <div key={g.id} className={i > 0 ? "break-before-page" : ""}>
                   <h1 className="text-xl font-semibold">{g.name}</h1>
+                  <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {g.ownerName ?? "–"}</p>
                   <p className="mb-2 text-sm text-slate-600">
                     {g.minAge}–{g.maxAge} Jahre
                     {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}

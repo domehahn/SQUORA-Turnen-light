@@ -85,10 +85,10 @@ export default function HoursReportPage() {
     // Immer hell/schwarz-auf-weiß, unabhängig vom Darkmode - siehe
     // src/pages/AttendancePrint.tsx für dieselbe Begründung.
     <div
-      className="min-h-screen bg-white p-6 text-slate-900"
+      className="min-h-screen bg-white p-4 text-slate-900 sm:p-6"
       style={{ colorScheme: "light", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
     >
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-5xl">
         <SquoraBrand className="mb-4" />
         <div className="mb-4 print:hidden">
           <h1 className="mb-0.5 text-lg font-semibold text-slate-900">Stundennachweis</h1>
@@ -100,7 +100,7 @@ export default function HoursReportPage() {
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div className="flex flex-wrap items-end gap-3">
-                <div className="w-24">
+                <div className="w-28">
                   <FloatingInput
                     label="Jahr"
                     type="number"
@@ -109,8 +109,9 @@ export default function HoursReportPage() {
                     onChange={(e) => setYear(Number(e.target.value))}
                   />
                 </div>
-                <div className="w-32">
-                  <FloatingSelect label="Quartal" forceLight value={quarter} onChange={(e) => setQuarter(Number(e.target.value))}>
+                <div className="w-40">
+                  <FloatingSelect label="Zeitraum" forceLight value={quarter} onChange={(e) => setQuarter(Number(e.target.value))}>
+                    <option value={0}>Ganzes Jahr</option>
                     <option value={1}>1. Quartal</option>
                     <option value={2}>2. Quartal</option>
                     <option value={3}>3. Quartal</option>
@@ -204,7 +205,8 @@ export default function HoursReportPage() {
             </div>
 
             <p className="mb-2 text-sm">
-              Im {quarter}. Quartal {year} wurden folgende Zahlungen (Brutto) geleistet:
+              {quarter === 0 ? `Im Jahr ${year}` : `Im ${quarter}. Quartal ${year}`} wurden folgende Zahlungen (Brutto)
+              geleistet:
             </p>
             <table className="mb-4 w-full border-collapse text-sm">
               <thead>
