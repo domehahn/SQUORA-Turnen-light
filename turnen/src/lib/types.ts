@@ -186,6 +186,12 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export interface MemberEvent {
+  kind: "created" | "moved" | "left";
+  groupId: string | null;
+  createdAt: string;
+}
+
 export interface HoursReportSession {
   day: number;
   date: string;

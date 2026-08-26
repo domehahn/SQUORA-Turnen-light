@@ -1491,6 +1491,31 @@ export async function logAudit(
     .run();
 }
 
+export interface ChildLifecycleEvent {
+  kind: "created" | "moved" | "left";
+  groupId: string | null;
+  createdAt: string;
+}
+
+// Rohdaten für die Zu-/Abgänge-Aufschlüsselung in der Mitgliederstatistik -
+// die Sichtbarkeitsfilterung nach Gruppe übernimmt das Frontend, genau wie
+// bei den Bestandszahlen (dieselben visibleGroups).
+export async function listChildLifecycleEventsForClub(db: D1Database, clubId: string): Promise<ChildLifecycleEvent[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT action, group_id, created_at FROM audit_log
+       WHERE club_id = ?1 AND action IN ('child.created', 'child.moved', 'move_request.approved', 'child.archived')
+       ORDER BY created_at ASC`
+    )
+    .bind(clubId)
+    .all<{ action: string; group_id: string | null; created_at: string }>();
+  return results.map((row) => ({
+    kind: row.action === "child.created" ? "created" : row.action === "child.archived" ? "left" : "moved",
+    groupId: row.group_id,
+    createdAt: row.created_at,
+  }));
+}
+
 // Verlauf: die Jugendleitung sieht alles im Verein, normale Turnleiter*innen
 // nur Einträge zu ihren eigenen Gruppen (Einträge ohne Gruppenbezug, z.B.
 // Rollenwechsel, sind dann nicht sichtbar).

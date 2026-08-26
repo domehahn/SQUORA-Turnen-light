@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import type { Child, Group } from "../../lib/types";
+import type { Child, Group, MemberEvent } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
 import { FloatingSelect } from "../../components/FloatingField";
 
@@ -11,6 +11,7 @@ interface QuarterPoint {
   year: number;
   quarter: number;
   label: string;
+  startIso: string; // "YYYY-MM-DD HH:MM:SS", Anfang des Quartals
   endIso: string; // "YYYY-MM-DD HH:MM:SS", Ende des Quartals
 }
 
@@ -25,6 +26,11 @@ function quarterEndIso(year: number, quarter: number): string {
   const lastMonth = quarter * 3;
   const lastDay = new Date(year, lastMonth, 0).getDate();
   return `${year}-${pad(lastMonth)}-${pad(lastDay)} 23:59:59`;
+}
+
+function quarterStartIso(year: number, quarter: number): string {
+  const firstMonth = (quarter - 1) * 3 + 1;
+  return `${year}-${pad(firstMonth)}-01 00:00:00`;
 }
 
 function shiftQuarter(year: number, quarter: number, delta: number): { year: number; quarter: number } {
@@ -49,7 +55,13 @@ function buildQuarterRange(fromYear: number, fromQuarter: number, toYear: number
   let quarter = fromQuarter;
   let guard = 0;
   while ((year < toYear || (year === toYear && quarter <= toQuarter)) && guard < 400) {
-    points.push({ year, quarter, label: `Q${quarter} ${year}`, endIso: quarterEndIso(year, quarter) });
+    points.push({
+      year,
+      quarter,
+      label: `Q${quarter} ${year}`,
+      startIso: quarterStartIso(year, quarter),
+      endIso: quarterEndIso(year, quarter),
+    });
     quarter += 1;
     if (quarter > 4) {
       quarter = 1;
@@ -80,6 +92,7 @@ export default function MemberStats() {
   const isJugendleiter = clubRole === "jugendleiter";
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [events, setEvents] = useState<MemberEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,12 +113,14 @@ export default function MemberStats() {
     async function load() {
       setLoading(true);
       try {
-        const [g, c] = await Promise.all([
+        const [g, c, e] = await Promise.all([
           api.get<Group[]>("/api/groups"),
           api.get<Child[]>("/api/children?includeArchived=true"),
+          api.get<MemberEvent[]>("/api/member-events").catch(() => []),
         ]);
         setGroups(g);
         setChildren(c);
+        setEvents(e);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Fehler beim Laden");
       } finally {
@@ -156,11 +171,41 @@ export default function MemberStats() {
 
   const maxTotal = Math.max(1, ...rows.map((r) => r.total));
 
+  // Zu-/Abgänge je Quartal: basiert auf audit_log-Ereignissen (child.created/
+  // child.moved/move_request.approved/child.archived), nach Gruppen-
+  // Sichtbarkeit gefiltert wie der Bestand oben. Ereignisse aus der Zeit vor
+  // Einführung dieser Protokollierung fehlen entsprechend - der Bestand
+  // (oben) bleibt davon unberührt, da er direkt auf den Kind-Datensätzen
+  // beruht statt auf dem Audit-Log.
+  const eventRows = useMemo(() => {
+    const visibleGroupIds = new Set(visibleGroups.map((g) => g.id));
+    const visibleEvents = events.filter((e) => e.groupId && visibleGroupIds.has(e.groupId));
+    return quarters.map((q) => {
+      const inRange = visibleEvents.filter((e) => e.createdAt >= q.startIso && e.createdAt <= q.endIso);
+      return {
+        ...q,
+        created: inRange.filter((e) => e.kind === "created").length,
+        moved: inRange.filter((e) => e.kind === "moved").length,
+        left: inRange.filter((e) => e.kind === "left").length,
+      };
+    });
+  }, [quarters, events, visibleGroups]);
+  const hasAnyEvents = eventRows.some((r) => r.created > 0 || r.moved > 0 || r.left > 0);
+
   function handleExportCsv() {
-    const header = ["Quartal", ...visibleGroups.map((g) => g.name), "Gesamt"];
+    const header = ["Quartal", ...visibleGroups.map((g) => g.name), "Gesamt", "Neu", "Wechsel", "Ausgetreten"];
     const lines = [header.map(csvCell).join(";")];
-    for (const r of rows) {
-      const cells = [r.label, ...visibleGroups.map((g) => String(r.perGroup[g.id] ?? 0)), String(r.total)];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const ev = eventRows[i];
+      const cells = [
+        r.label,
+        ...visibleGroups.map((g) => String(r.perGroup[g.id] ?? 0)),
+        String(r.total),
+        String(ev.created),
+        String(ev.moved),
+        String(ev.left),
+      ];
       lines.push(cells.map(csvCell).join(";"));
     }
     const csv = "﻿" + lines.join("\n");
@@ -298,6 +343,46 @@ export default function MemberStats() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div>
+            <h3 className="mb-1 text-base font-semibold text-slate-900 dark:text-slate-100">Zu- und Abgänge je Quartal</h3>
+            <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+              Neuanmeldungen, interne Gruppenwechsel und Austritte, basierend auf dem Verlauf. Ereignisse von vor
+              Einführung dieser Auswertung fehlen hier entsprechend – der Bestand oben ist davon nicht betroffen.
+            </p>
+            {!hasAnyEvents ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500">
+                Noch keine protokollierten Zu-/Abgänge im gewählten Zeitraum.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <table className="w-full min-w-[480px] text-left text-sm">
+                  <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Quartal</th>
+                      <th className="px-4 py-2 text-center font-medium">Neu</th>
+                      <th className="px-4 py-2 text-center font-medium">Wechsel</th>
+                      <th className="px-4 py-2 text-center font-medium">Ausgetreten</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eventRows.map((r) => (
+                      <tr key={r.label} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{r.label}</td>
+                        <td className="px-4 py-2 text-center text-emerald-700 dark:text-emerald-400">
+                          {r.created > 0 ? `+${r.created}` : "–"}
+                        </td>
+                        <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-300">{r.moved || "–"}</td>
+                        <td className="px-4 py-2 text-center text-red-600 dark:text-red-400">
+                          {r.left > 0 ? `−${r.left}` : "–"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}

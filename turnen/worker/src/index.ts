@@ -192,21 +192,52 @@ async function fileCapacityRequest(
 // Kapazitäts-Anfrage nachträglich aus.
 async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestRow, approvedBy: string): Promise<void> {
   const payload = JSON.parse(request.payload);
+  const group = await db.getGroupRowById(dbEnv, request.group_id);
+  const actor = await db.getUserById(dbEnv, approvedBy);
   switch (request.action) {
-    case "create_child":
-      await db.createChild(dbEnv, payload);
+    case "create_child": {
+      const child = await db.createChild(dbEnv, payload);
+      await db.logAudit(dbEnv, {
+        clubId: group?.club_id ?? null,
+        actorId: approvedBy,
+        actorName: actor?.name ?? null,
+        action: "child.created",
+        targetLabel: `${child.firstName} ${child.lastName}`,
+        groupId: request.group_id,
+      });
       break;
+    }
     case "update_child":
       if (request.child_id) await db.updateChild(dbEnv, request.child_id, payload);
       break;
     case "move_child":
-      if (request.child_id) await db.moveChildToGroup(dbEnv, request.child_id, payload.toGroupId);
+      if (request.child_id) {
+        const child = await db.getChildRowById(dbEnv, request.child_id);
+        await db.moveChildToGroup(dbEnv, request.child_id, payload.toGroupId);
+        await db.logAudit(dbEnv, {
+          clubId: group?.club_id ?? null,
+          actorId: approvedBy,
+          actorName: actor?.name ?? null,
+          action: "child.moved",
+          targetLabel: `${child?.first_name ?? "?"} ${child?.last_name ?? ""} → ${group?.name ?? "?"}`,
+          groupId: request.group_id,
+        });
+      }
       break;
     case "approve_move_request": {
       const moveRequest = await db.getMoveRequestRowById(dbEnv, payload.moveRequestId);
       if (moveRequest && moveRequest.status === "pending") {
+        const child = await db.getChildRowById(dbEnv, moveRequest.child_id);
         await db.moveChildToGroup(dbEnv, moveRequest.child_id, moveRequest.to_group_id);
         await db.setMoveRequestStatus(dbEnv, moveRequest.id, "approved", approvedBy);
+        await db.logAudit(dbEnv, {
+          clubId: group?.club_id ?? null,
+          actorId: approvedBy,
+          actorName: actor?.name ?? null,
+          action: "child.moved",
+          targetLabel: `${child?.first_name ?? "?"} ${child?.last_name ?? ""} → ${group?.name ?? "?"}`,
+          groupId: moveRequest.to_group_id,
+        });
       }
       break;
     }
@@ -1015,6 +1046,14 @@ app.post("/api/children", requireAuth, async (c) => {
   }
 
   const child = await db.createChild(c.env.DB, childInput);
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "child.created",
+    targetLabel: `${firstName} ${lastName}`,
+    groupId,
+  });
   return c.json(child, 201);
 });
 
@@ -1252,6 +1291,15 @@ app.get("/api/audit-log", requireAuth, async (c) => {
       limit
     )
   );
+});
+
+// Rohdaten (Zugang/Wechsel/Austritt-Ereignisse) für die Zu-/Abgänge-Tabelle
+// in der Mitgliederstatistik - Gruppen-Sichtbarkeitsfilterung übernimmt das
+// Frontend wie bei den Bestandszahlen.
+app.get("/api/member-events", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listChildLifecycleEventsForClub(c.env.DB, clubId));
 });
 
 // --- Vertretungsbörse ---------------------------------------------------------
@@ -1501,6 +1549,14 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
     }
     const previousGroupId = child.group_id;
     await db.moveChildToGroup(c.env.DB, id, toGroupId);
+    await db.logAudit(c.env.DB, {
+      clubId: c.get("clubId"),
+      actorId: c.get("userId"),
+      actorName: c.get("name"),
+      action: "child.moved",
+      targetLabel: `${child.first_name} ${child.last_name} → ${targetGroup.name}`,
+      groupId: toGroupId,
+    });
     if (previousGroupId) {
       await promoteWaitlistIfPossible(c, previousGroupId);
       await notifyClubWaitlistOnFreedCapacity(c, previousGroupId);
