@@ -27,6 +27,13 @@ const ACTION_LABELS: Record<string, string> = {
   "move_request.rejected": "Verschiebe-Anfrage abgelehnt",
   "capacity_request.approved": "Kapazitäts-Anfrage freigegeben",
   "capacity_request.rejected": "Kapazitäts-Anfrage abgelehnt",
+  "admin.club_switch": "Admin: Verein gewechselt",
+  "admin.club_created": "Admin: Verein angelegt",
+  "admin.club_renamed": "Admin: Verein umbenannt",
+  "admin.club_deleted": "Admin: Verein gelöscht",
+  "admin.user_updated": "Admin: Nutzer*in geändert",
+  "admin.user_password_reset": "Admin: Passwort zurückgesetzt",
+  "admin.user_deleted": "Admin: Nutzer*in gelöscht",
 };
 
 function withZone(iso: string): string {

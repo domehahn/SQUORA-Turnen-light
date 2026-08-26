@@ -370,6 +370,13 @@ app.post("/api/admin/switch-club", requireAuth, requireAdmin, async (c) => {
   if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
 
   await db.setUserClub(c.env.DB, c.get("userId"), clubId, "jugendleiter");
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.club_switch",
+    targetLabel: club.name,
+  });
   return c.json({ clubId, clubName: club.name });
 });
 
@@ -379,6 +386,13 @@ app.post("/api/admin/clubs", requireAuth, requireAdmin, async (c) => {
   if (!name) return c.json({ error: "Name fehlt oder ist ungültig" }, 400);
   if (await db.getClubByName(c.env.DB, name)) return c.json({ error: "Verein mit diesem Namen existiert bereits" }, 409);
   const club = await db.createClub(c.env.DB, name);
+  await db.logAudit(c.env.DB, {
+    clubId: club.id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.club_created",
+    targetLabel: club.name,
+  });
   return c.json(club, 201);
 });
 
@@ -391,6 +405,13 @@ app.put("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
   const club = await db.getClubById(c.env.DB, id);
   if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
   await db.renameClub(c.env.DB, id, name);
+  await db.logAudit(c.env.DB, {
+    clubId: id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.club_renamed",
+    targetLabel: `${club.name} → ${name}`,
+  });
   return c.json({ ...club, name });
 });
 
@@ -399,6 +420,7 @@ app.put("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
 app.delete("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const club = await db.getClubById(c.env.DB, id);
   // Sicherheitsnetz: ein Verein mit noch zugeordneten Nutzer*innen wird
   // nicht gelöscht (auch wenn die DB das per ON DELETE SET NULL technisch
   // zulassen würde) - erst müssen alle Accounts über die Nutzerverwaltung
@@ -413,6 +435,16 @@ app.delete("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
     );
   }
   await db.deleteClub(c.env.DB, id);
+  // clubId hier bewusst null: der Verein existiert nach dem Löschen nicht
+  // mehr (FK würde sonst ins Leere zeigen) - der Eintrag bleibt trotzdem im
+  // systemweiten Verlauf (/api/admin/audit-log) sichtbar.
+  await db.logAudit(c.env.DB, {
+    clubId: null,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.club_deleted",
+    targetLabel: club?.name ?? id,
+  });
   return c.body(null, 204);
 });
 
@@ -441,7 +473,18 @@ app.put("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
     if (isAdmin === undefined) return c.json({ error: "Ungültiger Admin-Status" }, 400);
     input.isAdmin = isAdmin;
   }
+  const targetUser = await db.getUserById(c.env.DB, id);
   await db.adminUpdateUser(c.env.DB, id, input);
+  // Keine sensiblen Werte (Passwort etc.) im Audit-Log - nur, WAS geändert
+  // wurde (Aktion/Zielfeld), nicht der komplette Payload.
+  const changedFields = Object.keys(input).join(", ");
+  await db.logAudit(c.env.DB, {
+    clubId: null,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.user_updated",
+    targetLabel: `${targetUser?.email ?? id}: ${changedFields}`,
+  });
   return c.json({ ok: true });
 });
 
@@ -451,8 +494,17 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
   const newPassword = validPassword(body?.newPassword);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  const targetUser = await db.getUserById(c.env.DB, id);
   const { hash, salt } = await hashPassword(newPassword);
   await db.updateUserPassword(c.env.DB, id, { hash, salt });
+  // Niemals das neue Passwort selbst loggen - nur, dass ein Reset stattfand.
+  await db.logAudit(c.env.DB, {
+    clubId: null,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.user_password_reset",
+    targetLabel: targetUser?.email ?? id,
+  });
   return c.json({ ok: true });
 });
 
@@ -460,7 +512,15 @@ app.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
   if (id === c.get("userId")) return c.json({ error: "Eigenen Account nicht selbst löschen" }, 400);
+  const targetUser = await db.getUserById(c.env.DB, id);
   await db.deleteUser(c.env.DB, id);
+  await db.logAudit(c.env.DB, {
+    clubId: null,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.user_deleted",
+    targetLabel: targetUser?.email ?? id,
+  });
   return c.body(null, 204);
 });
 
