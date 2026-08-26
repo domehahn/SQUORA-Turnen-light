@@ -213,6 +213,7 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
         action: "child.created",
         targetLabel: `${child.firstName} ${child.lastName}`,
         groupId: request.group_id,
+        childId: child.id,
       });
       break;
     }
@@ -230,6 +231,7 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
           action: "child.moved",
           targetLabel: `${child?.first_name ?? "?"} ${child?.last_name ?? ""} → ${group?.name ?? "?"}`,
           groupId: request.group_id,
+          childId: request.child_id,
         });
       }
       break;
@@ -246,6 +248,7 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
           action: "child.moved",
           targetLabel: `${child?.first_name ?? "?"} ${child?.last_name ?? ""} → ${group?.name ?? "?"}`,
           groupId: moveRequest.to_group_id,
+          childId: moveRequest.child_id,
         });
       }
       break;
@@ -1245,6 +1248,7 @@ app.post("/api/children", requireAuth, async (c) => {
     action: "child.created",
     targetLabel: `${firstName} ${lastName}`,
     groupId,
+    childId: child.id,
   });
   return c.json(child, 201);
 });
@@ -1329,6 +1333,12 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
   if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
+  // Erst Freitext-Spuren (Verlauf/Postfach) anonymisieren/entfernen, dann
+  // den Kind-Datensatz selbst löschen - siehe
+  // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-06 (vorher blieb der
+  // Name/Kontext trotz Löschung unbegrenzt in audit_log/notifications
+  // stehen).
+  await db.redactChildTraces(c.env.DB, id);
   await db.deleteChild(c.env.DB, id);
   if (existing.group_id) {
     await promoteWaitlistIfPossible(c, existing.group_id);
@@ -1361,6 +1371,7 @@ app.post("/api/children/:id/archive", requireAuth, async (c) => {
     action: "child.archived",
     targetLabel: `${existing.first_name} ${existing.last_name}`,
     groupId: existing.group_id,
+    childId: id,
   });
   return c.json(child);
 });
@@ -1382,6 +1393,7 @@ app.post("/api/children/:id/reactivate", requireAuth, async (c) => {
     action: "child.reactivated",
     targetLabel: `${existing.first_name} ${existing.last_name}`,
     groupId: existing.group_id,
+    childId: id,
   });
   return c.json(child);
 });
@@ -1748,6 +1760,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
       action: "child.moved",
       targetLabel: `${child.first_name} ${child.last_name} → ${targetGroup.name}`,
       groupId: toGroupId,
+      childId: id,
     });
     if (previousGroupId) {
       await promoteWaitlistIfPossible(c, previousGroupId);
@@ -1788,6 +1801,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
         body: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\n${childContactSummary(child)}`,
         emailBody: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\nDetails (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
+        childId: id,
       });
     }
   }
@@ -1853,6 +1867,7 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
     action: "move_request.approved",
     targetLabel: movedChild ? `${movedChild.first_name} ${movedChild.last_name} → ${targetGroup.name}` : targetGroup.name,
     groupId: targetGroup.id,
+    childId: request.child_id,
   });
 
   // Alte Gruppenleitung und ursprüngliche Antragsteller*in über den Ausgang
@@ -2352,6 +2367,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
     action: "placement_request.confirmed",
     targetLabel: `${child.first_name} ${child.last_name} → ${group.name}`,
     groupId: group.id,
+    childId: child.id,
   });
 
   if (request.proposed_by) {
@@ -2365,6 +2381,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
         title: `Platzvorschlag bestätigt für „${group.name}“`,
         body: `${c.get("name") ?? c.get("email")} hat ${child.first_name} ${child.last_name} in „${group.name}“ aufgenommen.`,
         link: "/warteliste",
+        childId: child.id,
       });
     }
   }
@@ -2387,6 +2404,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
         body: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen.\n\n${childContactSummary(child)}`,
         emailBody: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen. Details (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
+        childId: child.id,
       });
     }
   }

@@ -1354,15 +1354,30 @@ function rowToNotification(row: NotificationRow): Notification {
 
 export async function createNotification(
   db: D1Database,
-  input: { userId: string; type: string; title: string; body: string; link: string | null }
+  input: { userId: string; type: string; title: string; body: string; link: string | null; childId?: string | null }
 ): Promise<NotificationRow> {
   const id = crypto.randomUUID();
   await db
-    .prepare("INSERT INTO notifications (id, user_id, type, title, body, link) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, input.userId, input.type, input.title, input.body, input.link)
+    .prepare("INSERT INTO notifications (id, user_id, type, title, body, link, child_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, input.userId, input.type, input.title, input.body, input.link, input.childId ?? null)
     .run();
   const row = await db.prepare("SELECT * FROM notifications WHERE id = ?").bind(id).first<NotificationRow>();
   return row as NotificationRow;
+}
+
+// Entfernt bei einer harten Kind-Löschung (DELETE /api/children/:id)
+// verbliebene Freitext-Spuren aus audit_log/notifications, die den Namen
+// bzw. Kontaktdaten/Gesundheitshinweise des Kindes enthalten könnten -
+// sonst blieben die trotz Löschung des children-Datensatzes unbegrenzt
+// bestehen (siehe PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-06).
+// Der audit_log-Eintrag selbst bleibt (Nachvollziehbarkeit, dass etwas
+// passiert ist), nur der Freitext wird anonymisiert.
+export async function redactChildTraces(db: D1Database, childId: string): Promise<void> {
+  await db
+    .prepare("UPDATE audit_log SET target_label = 'Gelöschtes Kind (Daten entfernt)' WHERE child_id = ?")
+    .bind(childId)
+    .run();
+  await db.prepare("DELETE FROM notifications WHERE child_id = ?").bind(childId).run();
 }
 
 export async function listNotificationsForUser(db: D1Database, userId: string, limit = 50): Promise<Notification[]> {
@@ -1492,14 +1507,18 @@ export async function logAudit(
     action: string;
     targetLabel: string;
     groupId?: string | null;
+    // Optional: strukturierte Referenz aufs betroffene Kind, damit bei
+    // einer harten Löschung (redactChildTraces) der Freitext-Bezug
+    // gefunden und anonymisiert werden kann.
+    childId?: string | null;
   }
 ): Promise<void> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO audit_log (id, club_id, actor_id, actor_name, action, target_label, group_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO audit_log (id, club_id, actor_id, actor_name, action, target_label, group_id, child_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(id, input.clubId, input.actorId, input.actorName, input.action, input.targetLabel, input.groupId ?? null)
+    .bind(id, input.clubId, input.actorId, input.actorName, input.action, input.targetLabel, input.groupId ?? null, input.childId ?? null)
     .run();
 }
 

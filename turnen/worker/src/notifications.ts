@@ -26,6 +26,10 @@ export async function notifyUser(
     // Finding PRIV-01).
     emailBody?: string;
     link: string | null;
+    // Strukturierte Referenz aufs betroffene Kind, falls zutreffend - siehe
+    // db.redactChildTraces(), das bei einer harten Kind-Löschung darüber
+    // verbliebene Freitext-Spuren findet und anonymisiert.
+    childId?: string | null;
   }
 ): Promise<void> {
   await db.createNotification(env.DB, {
@@ -34,6 +38,7 @@ export async function notifyUser(
     title: input.title,
     body: input.body,
     link: input.link,
+    childId: input.childId,
   });
 
   if (!env.EMAIL || !env.EMAIL_FROM_ADDRESS) return;
