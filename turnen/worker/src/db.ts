@@ -320,6 +320,30 @@ export async function touchLastLogin(db: D1Database, userId: string): Promise<vo
   await db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").bind(userId).run();
 }
 
+// Rate Limiting/Brute-Force-Schutz für den Login (Finding SEC-01) und
+// LOGIN/FAILED_LOGIN-Audit-Trail (Finding SEC-10).
+export async function recordLoginAttempt(db: D1Database, email: string, success: boolean): Promise<void> {
+  await db
+    .prepare("INSERT INTO login_attempts (id, email, success) VALUES (?, ?, ?)")
+    .bind(crypto.randomUUID(), email, success ? 1 : 0)
+    .run();
+}
+
+// Fehlgeschlagene Versuche für diese E-Mail-Adresse in den letzten
+// `windowMinutes` Minuten - unabhängig davon, ob die Adresse überhaupt
+// einem Account gehört (verhindert auch, dass man per Timing/Statuscode
+// erkennen kann, welche E-Mails registriert sind).
+export async function countRecentFailedLogins(db: D1Database, email: string, windowMinutes: number): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) as n FROM login_attempts
+       WHERE email = ?1 AND success = 0 AND created_at >= datetime('now', ?2)`
+    )
+    .bind(email, `-${windowMinutes} minutes`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 // Anzahl der Jugendleitungen im Verein, optional einen Nutzer ausschließend
 // (z.B. um zu prüfen, ob nach einem Rollenwechsel noch jemand übrig bleibt).
 export async function countClubLeaders(db: D1Database, clubId: string, excludeUserId?: string): Promise<number> {

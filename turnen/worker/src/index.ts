@@ -319,22 +319,41 @@ async function notifyClubWaitlistOnFreedCapacity(c: { env: Env }, groupId: strin
   }
 }
 
+// Rate Limiting/Brute-Force-Schutz: max. LOGIN_MAX_FAILED_ATTEMPTS
+// fehlgeschlagene Versuche je E-Mail-Adresse innerhalb von
+// LOGIN_WINDOW_MINUTES, danach wird die Adresse unabhängig vom Passwort
+// gesperrt, bis das Zeitfenster abläuft (Finding SEC-01). Bewusst pro
+// E-Mail statt pro IP, da Cloudflare-Worker-Requests IPs teilen können und
+// eine E-Mail-basierte Sperre robuster gegen verteilte Versuche ist.
+const LOGIN_MAX_FAILED_ATTEMPTS = 10;
+const LOGIN_WINDOW_MINUTES = 15;
+
 app.post("/api/login", async (c) => {
   const body = await c.req.json().catch(() => null);
   const email = normalizedEmail(body?.email);
   const password = typeof body?.password === "string" ? body.password : undefined;
   if (!email || !password) return c.json({ error: "E-Mail oder Passwort fehlt" }, 400);
 
-  const userRow = await db.getUserByEmail(c.env.DB, email);
-  if (!userRow) return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
+  const recentFailures = await db.countRecentFailedLogins(c.env.DB, email, LOGIN_WINDOW_MINUTES);
+  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+    return c.json(
+      { error: `Zu viele fehlgeschlagene Anmeldeversuche. Bitte in ${LOGIN_WINDOW_MINUTES} Minuten erneut versuchen.` },
+      429
+    );
+  }
 
-  const valid = await verifyPassword(password, userRow.password_hash, userRow.password_salt);
-  if (!valid) return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
+  const userRow = await db.getUserByEmail(c.env.DB, email);
+  const valid = userRow ? await verifyPassword(password, userRow.password_hash, userRow.password_salt) : false;
+  if (!userRow || !valid) {
+    await db.recordLoginAttempt(c.env.DB, email, false);
+    return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
+  }
 
   const token = await signToken(
     { sub: userRow.id, email: userRow.email, name: userRow.name },
     c.env.JWT_SECRET
   );
+  await db.recordLoginAttempt(c.env.DB, email, true);
   await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ token, user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });
