@@ -66,6 +66,7 @@ const ACTION_LABELS: Record<string, string> = {
   "mfa.enabled": "Zwei-Faktor-Authentifizierung aktiviert",
   "mfa.disabled": "Zwei-Faktor-Authentifizierung deaktiviert",
   "mfa.backup_code_used": "MFA-Backup-Code verwendet",
+  "child.retention_deleted": "Automatisch gelöscht (Aufbewahrungsfrist)",
 };
 
 function withZone(iso: string): string {

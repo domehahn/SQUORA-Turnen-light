@@ -19,6 +19,16 @@ FRONTEND_URL = "https://squora.de/turnen-light"
 # zuverlässig im In-App-Postfach.
 EMAIL_FROM_ADDRESS = "no_reply@squora.de"
 
+# Speicherbegrenzung für archivierte (ausgetretene) Kinder (Finding PRIV-05,
+# Art. 5(1)(e) DSGVO) - der tägliche Cron-Job löscht sie endgültig, sobald
+# sie seit mindestens dieser Anzahl Tage archiviert sind. Bewusst
+# AUSKOMMENTIERT/nicht gesetzt: die konkrete Frist ist eine
+# rechtliche/organisatorische Entscheidung (LEGAL/PRIVACY REVIEW REQUIRED,
+# siehe PRIVACY_SECURITY_GAP_ANALYSIS.md, PRIV-05), kein technischer
+# Automatismus, den diese Session eigenmächtig aktivieren darf. Ohne diese
+# Variable läuft KEINE automatische Löschung.
+# ARCHIVED_CHILD_RETENTION_DAYS = "1095"
+
 # JWT_SECRET wird NICHT hier eingetragen, sondern per Secret gesetzt:
 #   wrangler secret put JWT_SECRET
 

@@ -3649,9 +3649,39 @@ async function remindStaleRequests(env: Env): Promise<void> {
   }
 }
 
+// Speicherbegrenzung für archivierte (ausgetretene) Kinder (Finding PRIV-05,
+// Art. 5(1)(e) DSGVO). Läuft täglich per Cron, löscht endgültig (analog
+// zu DELETE /api/children/:id: redactChildTraces() vor deleteChild(), damit
+// auch Audit-Log/Notifications-Reste nicht bestehen bleiben). Ohne
+// gesetzte ARCHIVED_CHILD_RETENTION_DAYS-Variable passiert NICHTS -
+// die konkrete Frist ist eine bewusste Konfigurations-/Rechtsentscheidung,
+// kein hartkodierter Automatismus (siehe types.ts, Env.ARCHIVED_CHILD_RETENTION_DAYS).
+async function deleteStaleArchivedChildren(env: Env): Promise<void> {
+  const retentionDays = Number(env.ARCHIVED_CHILD_RETENTION_DAYS);
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return;
+
+  const stale = await db.listArchivedChildrenOlderThan(env.DB, retentionDays);
+  for (const child of stale) {
+    // actorId bewusst leer statt eines erfundenen "system"-Users - actor_id
+    // hat eine FK-Referenz auf users(id), ein nicht existierender Wert
+    // würde den Insert scheitern lassen.
+    await db.logAudit(env.DB, {
+      clubId: child.club_id,
+      actorId: null,
+      actorName: "Automatische Löschung (Aufbewahrungsfrist)",
+      action: "child.retention_deleted",
+      targetLabel: `Nach ${retentionDays} Tagen Archivierung automatisch gelöscht`,
+      childId: child.id,
+    });
+    await db.redactChildTraces(env.DB, child.id);
+    await db.deleteChild(env.DB, child.id);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(remindStaleRequests(env));
+    ctx.waitUntil(deleteStaleArchivedChildren(env));
   },
 } satisfies ExportedHandler<Env>;

@@ -8,6 +8,15 @@ export interface Env {
   FRONTEND_URL: string;
   EMAIL?: SendEmail;
   EMAIL_FROM_ADDRESS?: string;
+  // Speicherbegrenzung (Finding PRIV-05, Art. 5(1)(e) DSGVO): Anzahl Tage,
+  // die ein archiviertes (ausgetretenes) Kind noch aufbewahrt wird, bevor
+  // der tägliche Cron-Job es endgültig löscht/anonymisiert. Bewusst als
+  // Konfigurationswert statt Code-Konstante - **die konkrete Zahl ist
+  // LEGAL/PRIVACY REVIEW REQUIRED**, der aktuelle Wert in wrangler.toml ist
+  // ein nicht rechtlich geprüfter Platzhalter. Optional, da bestehende
+  // Deployments diese Variable ggf. noch nicht gesetzt haben - dann läuft
+  // KEINE automatische Löschung (sicherer Default als "sofort löschen").
+  ARCHIVED_CHILD_RETENTION_DAYS?: string;
 }
 
 export type ClubRole = "member" | "jugendleiter";

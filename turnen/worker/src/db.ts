@@ -1427,6 +1427,26 @@ export async function createNotification(
 // bestehen (siehe PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-06).
 // Der audit_log-Eintrag selbst bleibt (Nachvollziehbarkeit, dass etwas
 // passiert ist), nur der Freitext wird anonymisiert.
+// PRIV-05 (Retention/Speicherbegrenzung, Art. 5(1)(e) DSGVO): archivierte
+// (ausgetretene) Kinder, die seit mindestens `retentionDays` archiviert
+// sind. Die konkrete Frist ist eine Konfigurationsgröße (siehe
+// ARCHIVED_CHILD_RETENTION_DAYS in wrangler.toml) und bewusst NICHT hier
+// hartkodiert - **die tatsächlich zulässige Frist ist LEGAL/PRIVACY REVIEW
+// REQUIRED**, s. PRIVACY_SECURITY_GAP_ANALYSIS.md.
+export async function listArchivedChildrenOlderThan(db: D1Database, retentionDays: number): Promise<{ id: string; club_id: string | null }[]> {
+  const threshold = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
+  const { results } = await db
+    .prepare(
+      `SELECT c.id, g.club_id
+         FROM children c
+         LEFT JOIN groups g ON g.id = c.group_id
+        WHERE c.status = 'archived' AND c.archived_at IS NOT NULL AND c.archived_at < ?`
+    )
+    .bind(threshold)
+    .all<{ id: string; club_id: string | null }>();
+  return results;
+}
+
 export async function redactChildTraces(db: D1Database, childId: string): Promise<void> {
   await db
     .prepare("UPDATE audit_log SET target_label = 'Gelöschtes Kind (Daten entfernt)' WHERE child_id = ?")
@@ -1557,7 +1577,9 @@ export async function logAudit(
   db: D1Database,
   input: {
     clubId: string | null;
-    actorId: string;
+    // null nur für automatisierte/System-Aktionen ohne handelnden Nutzer
+    // (z.B. Retention-Job) - actor_id hat eine FK-Referenz auf users(id).
+    actorId: string | null;
     actorName: string | null;
     action: string;
     targetLabel: string;
