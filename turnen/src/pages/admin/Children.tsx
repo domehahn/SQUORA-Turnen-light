@@ -114,6 +114,24 @@ const URGENCY_SECTIONS: {
   },
 ];
 
+// Kompakte Badge-Variante derselben drei Dringlichkeitsstufen für die
+// Namensspalte der Kinderliste (wie "Wechsel fällig" für bereits
+// überfällige Wechsel, nur für bevorstehende).
+const URGENCY_BADGE: Record<SwitchUrgency, { label: string; classes: string }> = {
+  "next-month": {
+    label: "Wechsel in <1 Monat",
+    classes: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+  },
+  "next-3-months": {
+    label: "Wechsel in 3 Monaten",
+    classes: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+  },
+  "this-year": {
+    label: "Wechsel dieses Jahr",
+    classes: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  },
+};
+
 export default function Children() {
   const { clubRole } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
@@ -1097,6 +1115,7 @@ export default function Children() {
                       const currentGroup = sectionGroup;
                       const matchingGroup = groupForAge(age, groups);
                       const mismatch = currentGroup ? age < currentGroup.minAge || age >= currentGroup.maxAge : false;
+                      const urgency = currentGroup && !mismatch ? switchUrgency(nextGroupSwitchDate(child.birthDate, currentGroup.maxAge)) : null;
 
                       let switchLabel = "–";
                       if (currentGroup) {
@@ -1165,6 +1184,14 @@ export default function Children() {
                                 title={matchingGroup ? `Alter passt eher zu ${matchingGroup.name}` : "Alter passt zu keiner bestehenden Gruppe mehr"}
                               >
                                 Wechsel fällig
+                              </span>
+                            )}
+                            {!mismatch && urgency && (
+                              <span
+                                className={`ml-2 rounded-full px-1.5 py-0.5 text-xs font-medium ${URGENCY_BADGE[urgency].classes}`}
+                                title={switchLabel}
+                              >
+                                {URGENCY_BADGE[urgency].label}
                               </span>
                             )}
                           </td>

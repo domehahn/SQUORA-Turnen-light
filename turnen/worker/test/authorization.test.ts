@@ -67,7 +67,7 @@ describe("Cross-Tenant-Isolation (Vereine)", () => {
   it("Turnleiter A kann keine Kinder in eine fremde Gruppe aus Verein B anlegen", async () => {
     const clubA = await seedClub("Verein A");
     const clubB = await seedClub("Verein B");
-    const userA = await seedUser({ email: "coach-a@test.local", password: "password-123", clubId: clubA.id, clubRole: "member" });
+    await seedUser({ email: "coach-a@test.local", password: "password-123", clubId: clubA.id, clubRole: "member" });
     const userB = await seedUser({ email: "coach-b@test.local", password: "password-123", clubId: clubB.id, clubRole: "member" });
     const groupB = await seedGroup({ name: "Gruppe B", ownerId: userB.id, clubId: clubB.id });
 
@@ -92,7 +92,7 @@ describe("Cross-Tenant-Isolation (Vereine)", () => {
   it("Turnleiter A sieht keine Gruppe, die einem anderen Verein gehört und ihm nicht zugeordnet ist", async () => {
     const clubA = await seedClub("Verein A2");
     const clubB = await seedClub("Verein B2");
-    const userA = await seedUser({ email: "coach-a2@test.local", password: "password-123", clubId: clubA.id, clubRole: "member" });
+    await seedUser({ email: "coach-a2@test.local", password: "password-123", clubId: clubA.id, clubRole: "member" });
     const userB = await seedUser({ email: "coach-b2@test.local", password: "password-123", clubId: clubB.id, clubRole: "member" });
     const groupB = await seedGroup({ name: "Fremde Gruppe", ownerId: userB.id, clubId: clubB.id });
 
@@ -108,7 +108,7 @@ describe("IDOR/BOLA bei Kindern", () => {
   it("Turnleiter kann ein Kind einer fremden Gruppe nicht bearbeiten (manipulierte ID)", async () => {
     const club = await seedClub("Verein C");
     const owner = await seedUser({ email: "owner-c@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
-    const outsider = await seedUser({ email: "outsider-c@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    await seedUser({ email: "outsider-c@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
     const group = await seedGroup({ name: "Gruppe C", ownerId: owner.id, clubId: club.id });
     const child = await seedChild({ firstName: "Max", lastName: "Mustermann", groupId: group.id });
 
@@ -133,7 +133,7 @@ describe("IDOR/BOLA bei Kindern", () => {
   it("Turnleiter kann ein Kind einer fremden Gruppe nicht löschen (manipulierte ID)", async () => {
     const club = await seedClub("Verein D");
     const owner = await seedUser({ email: "owner-d@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
-    const outsider = await seedUser({ email: "outsider-d@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    await seedUser({ email: "outsider-d@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
     const group = await seedGroup({ name: "Gruppe D", ownerId: owner.id, clubId: club.id });
     const child = await seedChild({ firstName: "Erika", lastName: "Musterfrau", groupId: group.id });
 
@@ -154,7 +154,7 @@ describe("IDOR/BOLA bei Kindern", () => {
   it("Jugendleitung (und damit die Admin-Rolle, die sich als Jugendleitung einwechselt) DARF ein Kind einer fremden Gruppe im selben Verein bearbeiten", async () => {
     const club = await seedClub("Verein E");
     const owner = await seedUser({ email: "owner-e@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
-    const leadership = await seedUser({
+    await seedUser({
       email: "leadership-e@test.local",
       password: "password-123",
       clubId: club.id,
@@ -185,7 +185,7 @@ describe("IDOR/BOLA bei Kindern", () => {
     const clubE = await seedClub("Verein F1");
     const clubOther = await seedClub("Verein F2");
     const owner = await seedUser({ email: "owner-f@test.local", password: "password-123", clubId: clubE.id, clubRole: "member" });
-    const foreignLeadership = await seedUser({
+    await seedUser({
       email: "foreign-leadership-f@test.local",
       password: "password-123",
       clubId: clubOther.id,
@@ -215,7 +215,7 @@ describe("IDOR/BOLA bei Kindern", () => {
 
 describe("Admin-Rolle (Privilege Escalation)", () => {
   it("normaler Nutzer kann keine Admin-Routen aufrufen", async () => {
-    const user = await seedUser({ email: "not-admin@test.local", password: "password-123" });
+    await seedUser({ email: "not-admin@test.local", password: "password-123" });
     const token = await login(SELF, "not-admin@test.local", "password-123");
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
     expect(res.status).toBe(403);
