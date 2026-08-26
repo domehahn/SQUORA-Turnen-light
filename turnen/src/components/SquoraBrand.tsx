@@ -11,8 +11,8 @@ interface SquoraBrandProps {
 // mit Farbverlauf, "Turnen" als App-Namenszusatz darunter.
 export default function SquoraBrand({ size = "xs", layout = "row", className = "" }: SquoraBrandProps) {
   const logoSrc = `${import.meta.env.BASE_URL}squora-logo.png`;
-  const iconSize = size === "lg" ? "h-24 w-24" : "h-9 w-9";
-  const wordmarkSize = size === "lg" ? "text-3xl" : "text-lg";
+  const iconSize = size === "lg" ? "h-24 w-24" : "h-12 w-12";
+  const wordmarkSize = size === "lg" ? "text-3xl" : "text-xl";
 
   const textBlock = (
     <div className={layout === "stack" ? "text-center leading-tight" : "leading-tight"}>
