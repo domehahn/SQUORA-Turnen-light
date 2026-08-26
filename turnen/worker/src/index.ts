@@ -88,12 +88,24 @@ const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 
 // Ein Kind ist bearbeitbar, wenn es keiner Gruppe zugeordnet ist (Alt-Bestand,
-// weiterhin für alle offen) oder wenn die zugehörige Gruppe für den Nutzer
-// beschreibbar ist.
-async function isChildWritable(dbEnv: D1Database, child: { group_id: string | null }, userId: string): Promise<boolean> {
+// weiterhin für alle offen), die zugehörige Gruppe für den Nutzer
+// beschreibbar ist (Besitz/Mit-Trainerschaft), oder der Nutzer Jugendleitung
+// des Vereins ist, dem die Gruppe gehört - die Jugendleitung (und damit auch
+// die vereinsübergreifende Admin-Rolle, die sich als Jugendleitung in einen
+// Verein einwechselt) darf jedes Kind ihres Vereins bearbeiten, nicht nur
+// die eigener Gruppen. Vorher fehlte dieser Bypass hier (anders als bei
+// Gruppen selbst, siehe rowToGroup/canEdit) - Jugendleitung/Admin konnten
+// Gruppen zwar bearbeiten, aber nicht die Kinder darin.
+async function isChildWritable(
+  dbEnv: D1Database,
+  child: { group_id: string | null },
+  userId: string,
+  ctx?: { clubId: string | null; clubRole: string | null }
+): Promise<boolean> {
   if (!child.group_id) return true;
   const group = await db.getGroupRowById(dbEnv, child.group_id);
   if (!group) return true;
+  if (ctx && ctx.clubRole === "jugendleiter" && group.club_id && group.club_id === ctx.clubId) return true;
   return db.canWriteGroupAsync(dbEnv, group, userId);
 }
 
@@ -1297,7 +1309,10 @@ app.post("/api/children", requireAuth, async (c) => {
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-    if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+    const canWriteTarget =
+      (await db.canWriteGroupAsync(c.env.DB, group, c.get("userId"))) ||
+      (c.get("clubRole") === "jugendleiter" && Boolean(group.club_id) && group.club_id === c.get("clubId"));
+    if (!canWriteTarget) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
     const gate = await capacityGate(c.env.DB, group, undefined, {
       userId: c.get("userId"),
@@ -1355,7 +1370,7 @@ app.put("/api/children/:id", requireAuth, async (c) => {
 
   const existing = await db.getChildRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
-  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   const childInput = {
@@ -1372,7 +1387,10 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
     if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-    if (!(await db.canWriteGroupAsync(c.env.DB, group, c.get("userId")))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+    const canWriteTarget =
+      (await db.canWriteGroupAsync(c.env.DB, group, c.get("userId"))) ||
+      (c.get("clubRole") === "jugendleiter" && Boolean(group.club_id) && group.club_id === c.get("clubId"));
+    if (!canWriteTarget) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
     if (groupId !== existing.group_id) {
       const gate = await capacityGate(c.env.DB, group, id, {
@@ -1416,7 +1434,7 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
 
   const existing = await db.getChildRowById(c.env.DB, id);
   if (!existing) return c.body(null, 204);
-  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   // Erst Freitext-Spuren (Verlauf/Postfach) anonymisieren/entfernen, dann
@@ -1442,7 +1460,7 @@ app.post("/api/children/:id/archive", requireAuth, async (c) => {
 
   const existing = await db.getChildRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
-  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   const child = await db.archiveChild(c.env.DB, id);
@@ -1468,7 +1486,7 @@ app.post("/api/children/:id/reactivate", requireAuth, async (c) => {
 
   const existing = await db.getChildRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Kind nicht gefunden" }, 404);
-  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
+  if (!(await isChildWritable(c.env.DB, existing, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   const child = await db.reactivateChild(c.env.DB, id);
@@ -1511,7 +1529,7 @@ app.put("/api/children/:id/family", requireAuth, async (c) => {
   // zusätzlich reicht es, wenn das Kind über eine Vereinsgruppe im selben
   // Verein sichtbar ist - es wird ja nur die Familien-Zuordnung berührt,
   // sonst nichts.
-  let allowed = await isChildWritable(c.env.DB, existing, c.get("userId"));
+  let allowed = await isChildWritable(c.env.DB, existing, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") });
   if (!allowed && existing.group_id) {
     const group = await db.getGroupRowById(c.env.DB, existing.group_id);
     const clubId = c.get("clubId");
@@ -1795,7 +1813,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
 
   const child = await db.getChildRowById(c.env.DB, id);
   if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
-  if (!(await isChildWritable(c.env.DB, child, c.get("userId"))))
+  if (!(await isChildWritable(c.env.DB, child, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
   if (child.group_id === toGroupId) return c.json({ error: "Kind ist bereits in dieser Gruppe" }, 400);
 
@@ -2166,7 +2184,7 @@ app.post("/api/groups/:id/waitlist", requireAuth, async (c) => {
 
   const child = await db.getChildRowById(c.env.DB, childId);
   if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
-  if (!(await isChildWritable(c.env.DB, child, c.get("userId"))))
+  if (!(await isChildWritable(c.env.DB, child, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   const entry = await db.addToWaitlist(c.env.DB, { groupId, childId, requestedBy: c.get("userId") });
@@ -2215,7 +2233,7 @@ app.post("/api/club-waitlist", requireAuth, async (c) => {
 
   const child = await db.getChildRowById(c.env.DB, childId);
   if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
-  const allowed = (await isChildWritable(c.env.DB, child, c.get("userId"))) || c.get("clubRole") === "jugendleiter";
+  const allowed = await isChildWritable(c.env.DB, child, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") });
   if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   let entry;

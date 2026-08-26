@@ -150,6 +150,67 @@ describe("IDOR/BOLA bei Kindern", () => {
     const children = (await listRes.json()) as { id: string }[];
     expect(children.some((c) => c.id === child.id)).toBe(true);
   });
+
+  it("Jugendleitung (und damit die Admin-Rolle, die sich als Jugendleitung einwechselt) DARF ein Kind einer fremden Gruppe im selben Verein bearbeiten", async () => {
+    const club = await seedClub("Verein E");
+    const owner = await seedUser({ email: "owner-e@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    const leadership = await seedUser({
+      email: "leadership-e@test.local",
+      password: "password-123",
+      clubId: club.id,
+      clubRole: "jugendleiter",
+    });
+    const group = await seedGroup({ name: "Gruppe E", ownerId: owner.id, clubId: club.id });
+    const child = await seedChild({ firstName: "Tom", lastName: "Beispiel", groupId: group.id });
+
+    const leadershipToken = await login(SELF, "leadership-e@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/children/${child.id}`, {
+      method: "PUT",
+      headers: authHeaders(leadershipToken),
+      body: JSON.stringify({
+        firstName: "Tom",
+        lastName: "Beispiel-Bearbeitet",
+        birthDate: "2020-01-01",
+        groupId: group.id,
+        notes: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        familyId: null,
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("Jugendleitung eines ANDEREN Vereins darf ein Kind trotzdem nicht bearbeiten (kein pauschaler Jugendleitung-Bypass)", async () => {
+    const clubE = await seedClub("Verein F1");
+    const clubOther = await seedClub("Verein F2");
+    const owner = await seedUser({ email: "owner-f@test.local", password: "password-123", clubId: clubE.id, clubRole: "member" });
+    const foreignLeadership = await seedUser({
+      email: "foreign-leadership-f@test.local",
+      password: "password-123",
+      clubId: clubOther.id,
+      clubRole: "jugendleiter",
+    });
+    const group = await seedGroup({ name: "Gruppe F", ownerId: owner.id, clubId: clubE.id });
+    const child = await seedChild({ firstName: "Nina", lastName: "Beispiel", groupId: group.id });
+
+    const foreignToken = await login(SELF, "foreign-leadership-f@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/children/${child.id}`, {
+      method: "PUT",
+      headers: authHeaders(foreignToken),
+      body: JSON.stringify({
+        firstName: "Manipuliert",
+        lastName: "Beispiel",
+        birthDate: "2020-01-01",
+        groupId: group.id,
+        notes: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        familyId: null,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("Admin-Rolle (Privilege Escalation)", () => {
