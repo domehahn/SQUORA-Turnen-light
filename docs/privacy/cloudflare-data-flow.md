@@ -29,8 +29,8 @@ turnen-web (Cloudflare Worker mit Assets-Binding — KEIN Cloudflare Pages)
                     v
               turnen-api (Cloudflare Worker)
                     |
-                    +---- D1 "turnen" — running_in_region: WEUR,
-                    |     jurisdiction: null  → siehe CF-01 unten
+                    +---- D1 "turnen-eu" — running_in_region: EEUR,
+                    |     jurisdiction: eu  (migriert 2026-08-26, siehe CF-01)
                     |
                     +---- Email Sending Binding ("EMAIL") →
                     |     Cloudflare Email Service → SMTP-Zustellung an
@@ -83,24 +83,24 @@ Cloudflare Access, Turnstile, Workers Analytics Engine, Logpush.
 - **Erforderlich:** Ja, zentrale Komponente.
 - **Finding:** **CF-02 — `CLOUDFLARE_WORKER_GLOBAL_PROCESSING`**, Severity **High** (Gesundheitsdaten Minderjähriger). Siehe Abschnitt "Findings" unten.
 
-### Cloudflare D1 (`turnen`)
+### Cloudflare D1 (`turnen-eu`)
 - **Zweck:** Primäre und einzige persistente Datenbank der App (alle Tabellen, siehe `docs/privacy/data-inventory.md`).
 - **Personenbezogene Daten:** Ja — vollständig (Kinder, Notfallkontakte, Nutzer-Accounts, Audit-Log).
-- **Gesundheitsdaten:** Ja — `children.health_notes` (Art. 9 DSGVO).
-- **Speicherort/Verarbeitungsort:** Live geprüft am 2026-08-26 via `wrangler d1 info turnen`:
+- **Gesundheitsdaten:** **Nein mehr** — `children.health_notes` und das allgemeine Freitextfeld `children.notes` wurden vollständig entfernt (Migrationen `0033`/`0034`).
+- **Speicherort/Verarbeitungsort:** Live geprüft am 2026-08-26 via `wrangler d1 info turnen-eu`:
   ```
-  running_in_region: WEUR
-  jurisdiction: null
+  running_in_region: EEUR
+  jurisdiction: eu
   ```
-  **WEUR ist ein Location Hint, keine Jurisdiktionsbeschränkung.** Cloudflare kann Lesereplikate/Backups dieser Datenbank technisch außerhalb der EU vorhalten, solange `jurisdiction` nicht explizit auf `"eu"` gesetzt ist.
+  **Migriert am 2026-08-26** von der vorherigen Datenbank `turnen` (`jurisdiction: null`, nur Location Hint `WEUR`) auf eine neu angelegte Datenbank mit harter EU-Jurisdiktionsbeschränkung (`wrangler d1 create turnen-eu --jurisdiction eu`). Ablauf: Schema per `wrangler d1 migrations apply turnen-eu --remote` aufgebaut, Daten per `wrangler d1 export turnen --remote --no-schema` exportiert und importiert, Zeilenzahlen aller 21 Tabellen sowie `PRAGMA foreign_key_check` (0 Verletzungen) vor dem Cutover verglichen, `worker/wrangler.toml` auf die neue `database_id` umgestellt, deployt, alte Datenbank `turnen` (inkl. ihrer Time-Travel-Historie) anschließend gelöscht.
 - **Aufbewahrung:** Unbegrenzt (kein Retention-Job implementiert) — siehe `docs/privacy/retention-policy.md`.
 - **Logging:** D1-Query-Metriken (Anzahl Lese-/Schreibzugriffe) bei Cloudflare — Inhalt der Queries wird laut Cloudflare-Dokumentation nicht standardmäßig geloggt; **nicht aus dem Repo verifizierbar** → `VERIFY IN CLOUDFLARE DASHBOARD`.
 - **Caching:** D1 selbst cached nicht; die App liest bei jedem Request live.
-- **Verschlüsselung:** Cloudflare gibt an, D1 „at rest" plattformseitig zu verschlüsseln — das ist eine Infrastruktur-Zusage von Cloudflare, **nicht** im Code verifizierbar und ersetzt keine Application-Level-Verschlüsselung für `health_notes` (siehe PRIV-02 in der Gap-Analyse).
-- **Jurisdiktion konfiguriert:** **Nein.**
+- **Verschlüsselung:** Cloudflare gibt an, D1 „at rest" plattformseitig zu verschlüsseln — das ist eine Infrastruktur-Zusage von Cloudflare, **nicht** im Code verifizierbar. Notfallkontakte sind zusätzlich per Application-Level-Verschlüsselung geschützt (AES-256-GCM, `worker/src/crypto.ts`).
+- **Jurisdiktion konfiguriert:** **Ja, `eu`** (seit 2026-08-26).
 - **Externe Übermittlungen:** Keine über Cloudflares eigene Infrastruktur hinaus.
 - **Erforderlich:** Ja, zentrale Komponente.
-- **Finding:** **CF-01 — `D1_DATABASE_WITHOUT_EU_JURISDICTION`**, Severity **High**. Siehe Migrationsplan unten.
+- **Finding:** **CF-01 — `D1_DATABASE_WITHOUT_EU_JURISDICTION`** — **Behoben am 2026-08-26**, siehe Migrationsprotokoll oben.
 
 ### Cloudflare Email Service (Email Sending Binding `EMAIL`)
 - **Zweck:** Versand von In-App-Benachrichtigungs-E-Mails (`worker/src/notifications.ts`) — z.B. Freigabe-Anfragen, Wartelisten-Rückruf.
@@ -139,40 +139,38 @@ Cloudflare Access, Turnstile, Workers Analytics Engine, Logpush.
 
 ## Findings (Zusammenfassung, Details siehe `PRIVACY_SECURITY_GAP_ANALYSIS.md`)
 
-### CF-01: `D1_DATABASE_WITHOUT_EU_JURISDICTION` — HIGH PRIVACY FINDING
+### CF-01: `D1_DATABASE_WITHOUT_EU_JURISDICTION` — BEHOBEN (2026-08-26)
 
-Die produktive D1-Datenbank `turnen` hat **keine** EU-Jurisdiktionsbeschränkung
-(`jurisdiction: null`), nur den Location Hint `WEUR`. Sie enthält
-Gesundheitsdaten von Kindern.
+Die vorherige produktive D1-Datenbank `turnen` hatte **keine** EU-Jurisdiktionsbeschränkung
+(`jurisdiction: null`), nur den Location Hint `WEUR`.
 
-**Es wurde und wird keine automatische Migration oder Löschung
-vorgenommen.** Sicherer Migrationspfad (nur nach Freigabe auszuführen):
+**Nutzerentscheidung 2026-08-26: sofortige Migration freigegeben** (Datenbank
+war zu diesem Zeitpunkt erst 5 Tage alt, 381 kB, kurze Downtime akzeptiert).
+Durchgeführter Migrationspfad:
 
-1. **LEGAL/PRIVACY REVIEW REQUIRED**: Entscheidung einholen, ob
-   `jurisdiction = "eu"` für D1 erforderlich ist (abhängig von der finalen
-   Bewertung der Rechtsgrundlage/des Schutzbedarfs) und wer den Cutover
-   freigibt.
-2. Neue D1-Datenbank mit `jurisdiction = "eu"` anlegen (`wrangler d1 create
-   turnen-eu --location eu` bzw. per Dashboard mit expliziter
-   Jurisdiktion — genaues CLI-Flag zum Zeitpunkt der Migration in der
-   aktuellen Wrangler-Dokumentation verifizieren).
-3. Vollständigen Export der bestehenden Datenbank erzeugen
-   (`wrangler d1 export turnen --remote --output backup.sql`), Integrität
-   prüfen (Zeilenzahl je Tabelle vergleichen).
-4. Import in die neue EU-Jurisdiktions-Datenbank, alle 30 Migrationen in
-   derselben Reihenfolge anwenden (`wrangler d1 migrations apply
-   turnen-eu --remote`) oder den validierten Export direkt importieren.
-5. **Validierung**: Stichprobenweiser Datenabgleich (Zeilenzahlen,
-   Prüfsummen ausgewählter Tabellen) zwischen alter und neuer Datenbank,
-   bevor die App umgeschaltet wird.
-6. `worker/wrangler.toml` (`database_id`) auf die neue Datenbank umstellen,
-   deployen, Smoke-Test.
-7. Anwendung eine angemessene Übergangszeit parallel beobachten
-   (Fehlerrate, fehlende Daten).
-8. **Erst danach**, und nur nach Freigabe gemäß der geltenden
-   Aufbewahrungsrichtlinie (`docs/privacy/retention-policy.md`), die alte
-   Datenbank löschen (`wrangler d1 delete turnen`) — **nicht automatisiert,
-   nicht ohne expliziten manuellen Freigabe-Schritt.**
+1. Neue D1-Datenbank mit `jurisdiction = "eu"` angelegt:
+   `wrangler d1 create turnen-eu --jurisdiction eu` (Region `EEUR`).
+2. Schema per `wrangler d1 migrations apply turnen-eu --remote` aufgebaut
+   (alle 34 Migrationen, identisch zur Quelldatenbank).
+3. Datenexport aus der alten Datenbank (`wrangler d1 export turnen --remote
+   --no-schema`), `d1_migrations`-Zeilen aus dem Dump entfernt (die neue DB
+   hat ihre eigene Migrationshistorie), Import in `turnen-eu`
+   (`wrangler d1 execute turnen-eu --remote --file=...`).
+   Import mit `PRAGMA foreign_keys=OFF` (D1 wertete die Fremdschlüssel
+   trotz `defer_foreign_keys` beim Bulk-Import sofort statt am
+   Transaktionsende aus) — anschließend `PRAGMA foreign_key_check` auf der
+   Zieldatenbank ausgeführt: **0 Verletzungen**.
+4. **Validierung**: Zeilenzahl je Tabelle (alle 21 Tabellen) zwischen alter
+   und neuer Datenbank verglichen — exakte Übereinstimmung (591 Zeilen
+   gesamt).
+5. `worker/wrangler.toml` (`database_id`) auf `turnen-eu` umgestellt,
+   deployt, Smoke-Test (Login-Endpunkt antwortet korrekt).
+6. Alte Datenbank `turnen` (inkl. ihrer Time-Travel-Historie, die noch
+   Zustände mit den inzwischen entfernten Feldern `health_notes`/`notes`
+   enthalten haben könnte) unmittelbar danach gelöscht
+   (`wrangler d1 delete turnen`) — damit ist auch der in Abschnitt 15 der
+   ursprünglichen Anfrage benannte Time-Travel-Restrisiko-Zeitraum
+   geschlossen.
 
 ### CF-02: `CLOUDFLARE_WORKER_GLOBAL_PROCESSING` — HIGH PRIVACY FINDING
 

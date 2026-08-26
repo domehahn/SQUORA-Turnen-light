@@ -7,8 +7,8 @@ compatibility_date = "2026-07-01"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "turnen"
-database_id = "60c1750c-a2c9-4036-b217-1376ea80f216"
+database_name = "turnen-eu"
+database_id = "da52e146-2dde-47d9-9747-9da8cda1cfdf"
 migrations_dir = "migrations"
 
 [vars]
