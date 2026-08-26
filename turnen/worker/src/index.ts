@@ -399,6 +399,19 @@ app.put("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
 app.delete("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
   const id = validId(c.req.param("id"));
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  // Sicherheitsnetz: ein Verein mit noch zugeordneten Nutzer*innen wird
+  // nicht gelöscht (auch wenn die DB das per ON DELETE SET NULL technisch
+  // zulassen würde) - erst müssen alle Accounts über die Nutzerverwaltung
+  // vom Verein gelöst werden, damit niemand "versehentlich" vereinslos wird.
+  const members = await db.listClubMembers(c.env.DB, id);
+  if (members.length > 0) {
+    return c.json(
+      {
+        error: `Verein hat noch ${members.length} zugeordnete Nutzer*in(nen) - bitte erst über die Nutzerverwaltung vom Verein lösen.`,
+      },
+      409
+    );
+  }
   await db.deleteClub(c.env.DB, id);
   return c.body(null, 204);
 });

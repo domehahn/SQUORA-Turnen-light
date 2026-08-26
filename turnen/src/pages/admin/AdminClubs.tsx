@@ -95,7 +95,13 @@ export default function AdminClubs() {
   }
 
   async function handleDelete(club: Club) {
-    if (!confirm(`Verein „${club.name}“ wirklich löschen? Mitglieder und Gruppen bleiben erhalten, aber vereinslos.`))
+    if (club.memberCount > 0) {
+      alert(
+        `„${club.name}“ hat noch ${club.memberCount} zugeordnete Nutzer*in(nen). Bitte erst über „Admin: Nutzer*innen“ vom Verein lösen, dann kann der Verein gelöscht werden.`
+      );
+      return;
+    }
+    if (!confirm(`Verein „${club.name}“ wirklich unwiderruflich löschen? Gruppen bleiben erhalten, aber vereinslos. Das kann nicht rückgängig gemacht werden.`))
       return;
     setError(null);
     setBusy(true);
@@ -161,17 +167,24 @@ export default function AdminClubs() {
                 <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
                     {editingId === c.id ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           className="rounded-md border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800"
                           autoFocus
                         />
-                        <button onClick={() => handleRename(c.id)} className="text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                        <button
+                          onClick={() => handleRename(c.id)}
+                          disabled={busy || !editName.trim()}
+                          className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-200 disabled:opacity-50 dark:bg-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900"
+                        >
                           Speichern
                         </button>
-                        <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline dark:text-slate-400">
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        >
                           Abbrechen
                         </button>
                       </div>
@@ -213,6 +226,7 @@ export default function AdminClubs() {
                       <button
                         onClick={() => handleDelete(c)}
                         disabled={busy}
+                        title={c.memberCount > 0 ? "Erst Nutzer*innen vom Verein lösen (Admin: Nutzer*innen)" : undefined}
                         className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
                       >
                         Löschen
