@@ -90,12 +90,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...state,
       async signIn(email: string, password: string) {
         try {
-          const res = await api.post<{ token: string }>("/api/login", { email, password });
+          const res = await api.post<{ token?: string; mfaRequired?: boolean; mfaToken?: string }>("/api/login", {
+            email,
+            password,
+          });
+          if (res.mfaRequired && res.mfaToken) return { mfaToken: res.mfaToken };
+          if (!res.token) return { error: "Anmeldung fehlgeschlagen" };
           setToken(res.token);
           setState(readState(res.token));
           return {};
         } catch (err) {
           return { error: err instanceof Error ? err.message : "Anmeldung fehlgeschlagen" };
+        }
+      },
+      async verifyMfa(mfaToken: string, code: string) {
+        try {
+          const res = await api.post<{ token: string }>("/api/login/mfa", { mfaToken, code });
+          setToken(res.token);
+          setState(readState(res.token));
+          return {};
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : "Code ungültig" };
         }
       },
       signOut() {

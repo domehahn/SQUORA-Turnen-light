@@ -67,7 +67,7 @@ export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24; // 24h
 export const TOKEN_REFRESH_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2; // ab 12h Restlaufzeit erneuern
 
 export async function signToken(payload: UserJwtPayload, secret: string): Promise<string> {
-  return new SignJWT({ email: payload.email, name: payload.name })
+  return new SignJWT({ email: payload.email, name: payload.name, typ: "session" })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
     .setIssuedAt()
@@ -82,12 +82,35 @@ export interface TokenPayload {
   exp: number;
 }
 
+// Nur "typ: session"-Tokens sind vollwertige Sitzungen - verhindert, dass
+// ein MFA-Pre-Auth-Token (typ: "mfa_pending", siehe unten) versehentlich
+// requireAuth passiert, bevor der zweite Faktor bestätigt wurde.
 export async function verifyToken(token: string, secret: string): Promise<TokenPayload> {
   const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+  if (payload.typ !== "session") throw new Error("Kein Sitzungs-Token");
   return {
     sub: payload.sub as string,
     email: payload.email as string,
     name: (payload.name as string | null) ?? null,
     exp: payload.exp as number,
   };
+}
+
+// Kurzlebiges Zwischen-Token für den zweiten MFA-Schritt (Finding SEC-02) -
+// beweist nur "Passwort war korrekt", aber KEINE vollständige Sitzung.
+const MFA_PENDING_LIFETIME_SECONDS = 5 * 60;
+
+export async function signMfaPendingToken(userId: string, secret: string): Promise<string> {
+  return new SignJWT({ typ: "mfa_pending" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime(`${MFA_PENDING_LIFETIME_SECONDS}s`)
+    .sign(new TextEncoder().encode(secret));
+}
+
+export async function verifyMfaPendingToken(token: string, secret: string): Promise<string> {
+  const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+  if (payload.typ !== "mfa_pending") throw new Error("Kein MFA-Zwischen-Token");
+  return payload.sub as string;
 }

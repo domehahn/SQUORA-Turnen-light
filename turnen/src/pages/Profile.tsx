@@ -1,10 +1,71 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
 
 export default function Profile() {
   const { userName, userEmail, clubName, clubRole, isAdmin, applyProfileToken } = useAuth();
+
+  const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null);
+  const [mfaSetup, setMfaSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaBackupCodes, setMfaBackupCodes] = useState<string[] | null>(null);
+  const [mfaDisablePassword, setMfaDisablePassword] = useState("");
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ enabled: boolean }>("/api/me/mfa")
+      .then((r) => setMfaEnabled(r.enabled))
+      .catch(() => setMfaEnabled(false));
+  }, []);
+
+  async function handleMfaStart() {
+    setMfaError(null);
+    setMfaBusy(true);
+    try {
+      const res = await api.post<{ secret: string; otpauthUri: string }>("/api/me/mfa/setup", {});
+      setMfaSetup(res);
+    } catch (err) {
+      setMfaError(err instanceof Error ? err.message : "Fehler beim Starten der Einrichtung");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function handleMfaConfirm(e: FormEvent) {
+    e.preventDefault();
+    setMfaError(null);
+    setMfaBusy(true);
+    try {
+      const res = await api.post<{ backupCodes: string[] }>("/api/me/mfa/confirm", { code: mfaCode });
+      setMfaBackupCodes(res.backupCodes);
+      setMfaSetup(null);
+      setMfaCode("");
+      setMfaEnabled(true);
+    } catch (err) {
+      setMfaError(err instanceof Error ? err.message : "Code ungültig");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function handleMfaDisable(e: FormEvent) {
+    e.preventDefault();
+    setMfaError(null);
+    setMfaBusy(true);
+    try {
+      await api.post("/api/me/mfa/disable", { password: mfaDisablePassword });
+      setMfaEnabled(false);
+      setMfaDisablePassword("");
+      setMfaBackupCodes(null);
+    } catch (err) {
+      setMfaError(err instanceof Error ? err.message : "Fehler beim Deaktivieren");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
 
   const [name, setName] = useState(userName ?? "");
   const [email, setEmail] = useState(userEmail ?? "");
@@ -158,6 +219,106 @@ export default function Profile() {
           Passwort ändern
         </button>
       </form>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Zwei-Faktor-Authentifizierung</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Schützt deinen Account zusätzlich mit einem Code aus einer Authenticator-App (z.B. Google Authenticator, Authy),
+          selbst wenn dein Passwort kompromittiert wird.
+          {(isAdmin || clubRole === "jugendleiter") && (
+            <> Für deine Rolle mit vereinsweitem Zugriff empfohlen.</>
+          )}
+        </p>
+
+        {mfaError && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {mfaError}</p>}
+
+        {mfaBackupCodes && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+            <p className="mb-2 font-medium text-amber-800 dark:text-amber-300">
+              Zwei-Faktor-Authentifizierung aktiviert. Backup-Codes (jeweils einmal verwendbar, falls du dein Gerät
+              verlierst) — jetzt notieren, sie werden nicht erneut angezeigt:
+            </p>
+            <div className="grid grid-cols-2 gap-1 font-mono text-xs text-amber-900 dark:text-amber-200">
+              {mfaBackupCodes.map((code) => (
+                <span key={code}>{code}</span>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMfaBackupCodes(null)}
+              className="mt-3 rounded-md border border-amber-400 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900"
+            >
+              Notiert, ausblenden
+            </button>
+          </div>
+        )}
+
+        {mfaEnabled === null ? null : mfaEnabled && !mfaBackupCodes ? (
+          <form onSubmit={handleMfaDisable} className="space-y-2">
+            <p className="text-sm text-emerald-700 dark:text-emerald-400">Aktiv.</p>
+            <div className="max-w-xs">
+              <FloatingInput
+                label="Passwort zur Bestätigung"
+                type="password"
+                required
+                value={mfaDisablePassword}
+                onChange={(e) => setMfaDisablePassword(e.target.value)}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={mfaBusy}
+              className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+            >
+              Deaktivieren
+            </button>
+          </form>
+        ) : !mfaSetup && !mfaBackupCodes ? (
+          <button
+            type="button"
+            onClick={handleMfaStart}
+            disabled={mfaBusy}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+          >
+            Einrichten
+          </button>
+        ) : mfaSetup ? (
+          <form onSubmit={handleMfaConfirm} className="space-y-3">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              In der Authenticator-App den Schlüssel manuell eingeben (kein Scanner nötig):
+            </p>
+            <p className="break-all rounded-md bg-slate-100 p-2 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              {mfaSetup.secret}
+            </p>
+            <div className="max-w-xs">
+              <FloatingInput
+                label="6-stelliger Code zur Bestätigung"
+                type="text"
+                required
+                autoFocus
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={mfaBusy}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+              >
+                Bestätigen
+              </button>
+              <button
+                type="button"
+                onClick={() => setMfaSetup(null)}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </div>
     </div>
   );
 }

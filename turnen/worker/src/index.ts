@@ -2,9 +2,18 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { MiddlewareHandler } from "hono";
 import * as db from "./db";
-import { TOKEN_REFRESH_THRESHOLD_SECONDS, hashPassword, signToken, verifyPassword, verifyToken } from "./auth";
+import {
+  TOKEN_REFRESH_THRESHOLD_SECONDS,
+  hashPassword,
+  signMfaPendingToken,
+  signToken,
+  verifyMfaPendingToken,
+  verifyPassword,
+  verifyToken,
+} from "./auth";
 import { notifyUser } from "./notifications";
 import { encryptField, decryptField } from "./crypto";
+import { base32Decode, base32Encode, generateBackupCodes, generateTotpSecret, totpAuthUri, verifyTotp } from "./totp";
 import {
   normalizedEmail,
   optionalId,
@@ -387,6 +396,15 @@ app.post("/api/login", async (c) => {
     return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
   }
 
+  // Zweiter Faktor (Finding SEC-02): Passwort war korrekt, aber statt der
+  // vollen Sitzung gibt es nur ein kurzlebiges Zwischen-Token für
+  // POST /api/login/mfa. Kein login_attempts-Erfolgseintrag, bevor der
+  // zweite Faktor bestätigt ist.
+  if (userRow.totp_enabled) {
+    const mfaToken = await signMfaPendingToken(userRow.id, c.env.JWT_SECRET);
+    return c.json({ mfaRequired: true, mfaToken });
+  }
+
   const token = await signToken(
     { sub: userRow.id, email: userRow.email, name: userRow.name },
     c.env.JWT_SECRET
@@ -394,6 +412,136 @@ app.post("/api/login", async (c) => {
   await db.recordLoginAttempt(c.env.DB, email, true);
   await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ token, user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+});
+
+app.post("/api/login/mfa", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const mfaToken = typeof body?.mfaToken === "string" ? body.mfaToken : null;
+  const code = typeof body?.code === "string" ? body.code.trim() : "";
+  if (!mfaToken || !code) return c.json({ error: "MFA-Token oder Code fehlt" }, 400);
+
+  let userId: string;
+  try {
+    userId = await verifyMfaPendingToken(mfaToken, c.env.JWT_SECRET);
+  } catch {
+    return c.json({ error: "MFA-Anmeldung abgelaufen, bitte erneut einloggen" }, 401);
+  }
+
+  const userRow = await db.getUserRowById(c.env.DB, userId);
+  if (!userRow || !userRow.totp_enabled || !userRow.totp_secret) {
+    return c.json({ error: "MFA-Anmeldung abgelaufen, bitte erneut einloggen" }, 401);
+  }
+
+  const recentFailures = await db.countRecentFailedLogins(c.env.DB, userRow.email, LOGIN_WINDOW_MINUTES);
+  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+    return c.json(
+      { error: `Zu viele fehlgeschlagene Anmeldeversuche. Bitte in ${LOGIN_WINDOW_MINUTES} Minuten erneut versuchen.` },
+      429
+    );
+  }
+
+  const secretBase32 = await decryptField(userRow.totp_secret, c.env.ENCRYPTION_KEY);
+  if (!secretBase32) return c.json({ error: "MFA-Konfiguration beschädigt, bitte neu einrichten" }, 500);
+  const secretBytes = base32Decode(secretBase32);
+  let ok = await verifyTotp(secretBytes, code);
+
+  // Fallback: Backup-Code statt TOTP-Code (z.B. Authenticator-Gerät
+  // verloren) - einmal verwendbar, wird danach aus der Liste entfernt.
+  if (!ok && userRow.totp_backup_codes) {
+    const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
+    const normalizedCode = code.toUpperCase().replace(/\s/g, "");
+    for (let i = 0; i < hashedCodes.length; i++) {
+      if (await verifyPassword(normalizedCode, hashedCodes[i].hash, hashedCodes[i].salt)) {
+        ok = true;
+        hashedCodes.splice(i, 1);
+        await db.consumeBackupCode(c.env.DB, userRow.id, JSON.stringify(hashedCodes));
+        await db.logAudit(c.env.DB, {
+          clubId: userRow.club_id,
+          actorId: userRow.id,
+          actorName: userRow.name,
+          action: "mfa.backup_code_used",
+          targetLabel: `${hashedCodes.length} Backup-Codes verbleibend`,
+        });
+        break;
+      }
+    }
+  }
+
+  if (!ok) {
+    await db.recordLoginAttempt(c.env.DB, userRow.email, false);
+    return c.json({ error: "Code ungültig" }, 401);
+  }
+
+  const token = await signToken({ sub: userRow.id, email: userRow.email, name: userRow.name }, c.env.JWT_SECRET);
+  await db.recordLoginAttempt(c.env.DB, userRow.email, true);
+  await db.touchLastLogin(c.env.DB, userRow.id);
+  return c.json({ token, user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+});
+
+app.get("/api/me/mfa", requireAuth, async (c) => {
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  return c.json({ enabled: Boolean(userRow?.totp_enabled) });
+});
+
+app.post("/api/me/mfa/setup", requireAuth, async (c) => {
+  const secret = generateTotpSecret();
+  const encrypted = await encryptField(base32Encode(secret), c.env.ENCRYPTION_KEY);
+  if (encrypted === null) return c.json({ error: "Verschlüsselung fehlgeschlagen" }, 500);
+  await db.setPendingTotpSecret(c.env.DB, c.get("userId"), encrypted);
+  return c.json({
+    secret: base32Encode(secret),
+    otpauthUri: totpAuthUri(secret, c.get("email") ?? ""),
+  });
+});
+
+app.post("/api/me/mfa/confirm", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const code = typeof body?.code === "string" ? body.code.trim() : "";
+  if (!code) return c.json({ error: "Code fehlt" }, 400);
+
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  if (!userRow?.totp_secret) return c.json({ error: "Keine MFA-Einrichtung gestartet" }, 400);
+
+  const secretBase32 = await decryptField(userRow.totp_secret, c.env.ENCRYPTION_KEY);
+  if (!secretBase32) return c.json({ error: "MFA-Konfiguration beschädigt, bitte neu einrichten" }, 500);
+  const ok = await verifyTotp(base32Decode(secretBase32), code);
+  if (!ok) return c.json({ error: "Code ungültig" }, 400);
+
+  const backupCodes = generateBackupCodes();
+  const hashedBackupCodes = await Promise.all(
+    backupCodes.map(async (bc) => {
+      const { hash, salt } = await hashPassword(bc);
+      return { hash, salt };
+    })
+  );
+  await db.enableTotp(c.env.DB, c.get("userId"), JSON.stringify(hashedBackupCodes));
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "mfa.enabled",
+    targetLabel: c.get("email") ?? c.get("userId"),
+  });
+  return c.json({ backupCodes });
+});
+
+app.post("/api/me/mfa/disable", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const password = typeof body?.password === "string" ? body.password : "";
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  if (!userRow) return c.json({ error: "Nicht angemeldet" }, 401);
+  if (!(await verifyPassword(password, userRow.password_hash, userRow.password_salt))) {
+    return c.json({ error: "Passwort falsch" }, 403);
+  }
+  await db.disableTotp(c.env.DB, c.get("userId"));
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "mfa.disabled",
+    targetLabel: c.get("email") ?? c.get("userId"),
+  });
+  return c.json({ ok: true });
 });
 
 app.get("/api/me", requireAuth, async (c) => {

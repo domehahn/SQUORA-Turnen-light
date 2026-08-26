@@ -44,6 +44,9 @@ const ACTION_LABELS: Record<string, string> = {
   "session_override_request.cancelled": "Anfrage für abweichenden Termin zurückgezogen",
   "attendance.cancelled": "Termin abgesagt",
   "attendance.uncancelled": "Termin-Absage zurückgenommen",
+  "mfa.enabled": "Zwei-Faktor-Authentifizierung aktiviert",
+  "mfa.disabled": "Zwei-Faktor-Authentifizierung deaktiviert",
+  "mfa.backup_code_used": "MFA-Backup-Code verwendet",
 };
 
 // Backend liefert "YYYY-MM-DD HH:MM:SS" (UTC, SQLite datetime('now')).

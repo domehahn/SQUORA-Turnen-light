@@ -32,6 +32,11 @@ export interface UserRow {
   club_role: ClubRole;
   is_admin: number;
   created_at: string;
+  // TOTP-MFA (Finding SEC-02) - totp_secret AES-256-GCM-verschlüsselt
+  // (crypto.ts), totp_backup_codes JSON-Array von PBKDF2-Hashes.
+  totp_secret: string | null;
+  totp_enabled: number;
+  totp_backup_codes: string | null;
 }
 
 export interface Club {

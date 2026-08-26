@@ -222,6 +222,26 @@ export async function updateUserProfile(
   return getUserById(db, id);
 }
 
+// TOTP-MFA (Finding SEC-02). Setup läuft zweistufig: setPendingTotpSecret
+// legt das Secret ab, OHNE totp_enabled zu setzen (erst nach erfolgreicher
+// Code-Bestätigung aktiv, verhindert versehentliches Aussperren durch eine
+// falsch gescannte/getippte Authenticator-Einrichtung).
+export async function setPendingTotpSecret(db: D1Database, id: string, encryptedSecret: string): Promise<void> {
+  await db.prepare("UPDATE users SET totp_secret = ?, totp_enabled = 0, totp_backup_codes = NULL WHERE id = ?").bind(encryptedSecret, id).run();
+}
+
+export async function enableTotp(db: D1Database, id: string, hashedBackupCodesJson: string): Promise<void> {
+  await db.prepare("UPDATE users SET totp_enabled = 1, totp_backup_codes = ? WHERE id = ?").bind(hashedBackupCodesJson, id).run();
+}
+
+export async function disableTotp(db: D1Database, id: string): Promise<void> {
+  await db.prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL WHERE id = ?").bind(id).run();
+}
+
+export async function consumeBackupCode(db: D1Database, id: string, remainingCodesJson: string): Promise<void> {
+  await db.prepare("UPDATE users SET totp_backup_codes = ? WHERE id = ?").bind(remainingCodesJson, id).run();
+}
+
 export async function updateUserPassword(db: D1Database, id: string, input: { hash: string; salt: string }): Promise<void> {
   await db
     .prepare("UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?")

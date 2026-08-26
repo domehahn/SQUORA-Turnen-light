@@ -22,7 +22,12 @@ export default defineWorkersConfig(async () => {
           miniflare: {
             bindings: {
               JWT_SECRET: "test-only-secret-not-for-production",
-              ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+              // War vorher 62 statt 64 Hex-Zeichen (248 statt 256 Bit) - ein
+              // ungültiger AES-Schlüssel, der erst auffiel, als ein Test
+              // erstmals wirklich einen nicht-leeren Wert verschlüsselte
+              // (vorher immer null/leer, encryptField() kürzt dafür ab und
+              // ruft importKey() gar nicht erst auf).
+              ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
               FRONTEND_URL: "https://example.test",
               TEST_MIGRATIONS: migrations,
             },
