@@ -567,6 +567,25 @@ export async function getChildRowById(db: D1Database, id: string): Promise<Child
   return db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
 }
 
+// Alle Kind-Rohdatensätze (alle Vereine, inkl. archiviert) - nur für den
+// einmaligen Verschlüsselungs-Backfill (Finding PRIV-02), sonst nirgends
+// verwenden (keine Sichtbarkeits-/Vereinsfilterung).
+export async function listAllChildRowsForBackfill(db: D1Database): Promise<ChildRow[]> {
+  const { results } = await db.prepare("SELECT * FROM children").all<ChildRow>();
+  return results;
+}
+
+export async function updateChildEncryptedFieldsRaw(
+  db: D1Database,
+  id: string,
+  input: { emergencyContactName: string | null; emergencyContactPhone: string | null; healthNotes: string | null }
+): Promise<void> {
+  await db
+    .prepare("UPDATE children SET emergency_contact_name = ?, emergency_contact_phone = ?, health_notes = ? WHERE id = ?")
+    .bind(input.emergencyContactName, input.emergencyContactPhone, input.healthNotes, id)
+    .run();
+}
+
 // Nur die Familien-Zuordnung ändern (Geschwister verknüpfen/trennen), ohne
 // den restlichen Datensatz anzufassen.
 export async function setChildFamily(db: D1Database, id: string, familyId: string | null): Promise<Child | null> {

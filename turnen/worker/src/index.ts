@@ -554,6 +554,41 @@ app.get("/api/admin/audit-log", requireAuth, requireAdmin, async (c) => {
   return c.json(await db.listAuditLogSystemWide(c.env.DB, limit));
 });
 
+// Einmaliger Backfill: verschlüsselt Gesundheitsdaten/Notfallkontakte, die
+// noch aus der Zeit vor Einführung der Feld-Verschlüsselung im Klartext
+// vorliegen (Finding PRIV-02). Idempotent - überspringt bereits
+// verschlüsselte Werte (erkennbar am "v1:"-Präfix), daher gefahrlos mehrfach
+// aufrufbar. Nur für die Admin-Rolle.
+app.post("/api/admin/backfill-health-encryption", requireAuth, requireAdmin, async (c) => {
+  const rows = await db.listAllChildRowsForBackfill(c.env.DB);
+  let updated = 0;
+  for (const row of rows) {
+    const needsName = row.emergency_contact_name !== null && !row.emergency_contact_name.startsWith("v1:");
+    const needsPhone = row.emergency_contact_phone !== null && !row.emergency_contact_phone.startsWith("v1:");
+    const needsHealth = row.health_notes !== null && !row.health_notes.startsWith("v1:");
+    if (!needsName && !needsPhone && !needsHealth) continue;
+
+    await db.updateChildEncryptedFieldsRaw(c.env.DB, row.id, {
+      emergencyContactName: needsName
+        ? await encryptField(row.emergency_contact_name, c.env.ENCRYPTION_KEY)
+        : row.emergency_contact_name,
+      emergencyContactPhone: needsPhone
+        ? await encryptField(row.emergency_contact_phone, c.env.ENCRYPTION_KEY)
+        : row.emergency_contact_phone,
+      healthNotes: needsHealth ? await encryptField(row.health_notes, c.env.ENCRYPTION_KEY) : row.health_notes,
+    });
+    updated++;
+  }
+  await db.logAudit(c.env.DB, {
+    clubId: null,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.backfill_encryption",
+    targetLabel: `${updated} von ${rows.length} Kind-Datensätzen verschlüsselt`,
+  });
+  return c.json({ totalChildren: rows.length, updated });
+});
+
 // Name/E-Mail des eigenen Accounts ändern. Ändert sich einer der beiden
 // Werte, steckt das alte JWT noch die alten Werte fest (signToken schreibt
 // email/name mit rein) - deshalb wird hier immer ein frisches Token
