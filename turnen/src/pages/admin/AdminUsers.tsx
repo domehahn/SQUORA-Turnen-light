@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Club, ClubRole } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
@@ -34,6 +34,15 @@ export default function AdminUsers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [createEmail, setCreateEmail] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createClubId, setCreateClubId] = useState("");
+  const [createClubRole, setCreateClubRole] = useState<ClubRole>("member");
+  const [createIsAdmin, setCreateIsAdmin] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -134,15 +143,132 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setCreating(true);
+    try {
+      await api.post("/api/admin/users", {
+        email: createEmail,
+        name: createName || null,
+        password: createPassword,
+        clubId: createClubId || null,
+        clubRole: createClubRole,
+        isAdmin: createIsAdmin,
+      });
+      setInfo(`Account für ${createEmail} angelegt.`);
+      setShowCreate(false);
+      setCreateEmail("");
+      setCreateName("");
+      setCreatePassword("");
+      setCreateClubId("");
+      setCreateClubRole("member");
+      setCreateIsAdmin(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Anlegen");
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Admin – Nutzer*innen</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Alle Accounts vereinsübergreifend: Verein, Rolle und Admin-Status ändern, Passwort zurücksetzen oder
-          Account löschen.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Admin – Nutzer*innen</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Alle Accounts vereinsübergreifend: Verein, Rolle und Admin-Status ändern, Passwort zurücksetzen oder
+            Account löschen.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCreate((v) => !v)}
+          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+        >
+          {showCreate ? "Abbrechen" : "Nutzer*in anlegen"}
+        </button>
       </div>
+
+      {showCreate && (
+        <form
+          onSubmit={handleCreate}
+          className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">E-Mail *</label>
+              <input
+                type="email"
+                required
+                value={createEmail}
+                onChange={(e) => setCreateEmail(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+              <input
+                type="text"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                Passwort * (mind. 8 Zeichen)
+              </label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={createPassword}
+                onChange={(e) => setCreatePassword(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Verein</label>
+              <select
+                value={createClubId}
+                onChange={(e) => setCreateClubId(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
+              >
+                <option value="">– kein Verein –</option>
+                {clubs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Rolle im Verein</label>
+              <select
+                value={createClubRole}
+                onChange={(e) => setCreateClubRole(e.target.value as ClubRole)}
+                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
+              >
+                <option value="member">Turnleiter*in</option>
+                <option value="jugendleiter">Jugendleitung</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-slate-700 dark:text-slate-300">
+              <input type="checkbox" checked={createIsAdmin} onChange={(e) => setCreateIsAdmin(e.target.checked)} />
+              Admin-Rolle (vereinsübergreifend)
+            </label>
+          </div>
+          <button
+            type="submit"
+            disabled={creating}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {creating ? "Wird angelegt…" : "Anlegen"}
+          </button>
+        </form>
+      )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-emerald-700 dark:text-emerald-400">{info}</p>}
