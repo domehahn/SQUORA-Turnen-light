@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import * as db from "./db";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./auth";
 import { notifyUser } from "./notifications";
+import { encryptField, decryptField } from "./crypto";
 import {
   normalizedEmail,
   optionalId,
@@ -20,7 +21,7 @@ import {
   validTime,
   validWeekday,
 } from "./validation";
-import type { CapacityRequestRow, ChildRow, ClubRole, Env } from "./types";
+import type { CapacityRequestRow, Child, ChildRow, ClubRole, Env } from "./types";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -1153,20 +1154,38 @@ app.delete("/api/groups/:id/co-leaders/:userId", requireAuth, async (c) => {
 
 app.get("/api/children", requireAuth, async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
-  return c.json(await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived));
+  const children = await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived);
+  return c.json(await Promise.all(children.map((child) => decryptChild(child, c.env.ENCRYPTION_KEY))));
 });
+
+// Entschlüsselt die verschlüsselt gespeicherten Felder eines Child-Objekts
+// für die API-Antwort - siehe worker/src/crypto.ts, Finding PRIV-02. Das
+// Frontend bekommt weiterhin ganz normalen Klartext, die Verschlüsselung
+// ist rein serverseitig.
+async function decryptChild<T extends Child | null>(child: T, encryptionKey: string): Promise<T> {
+  if (!child) return child;
+  return {
+    ...child,
+    emergencyContactName: await decryptField(child.emergencyContactName, encryptionKey),
+    emergencyContactPhone: await decryptField(child.emergencyContactPhone, encryptionKey),
+    healthNotes: await decryptField(child.healthNotes, encryptionKey),
+  };
+}
 
 // Formatiert Geburtsdatum, Notfallkontakt und Gesundheitshinweise eines
 // Kindes für Benachrichtigungs-E-Mails an eine (neue) Gruppenleitung - die
 // Daten sind zwar ohnehin vereinsweit über die Kinderliste einsehbar, aber
 // direkt in der Mail sollen sie sofort verfügbar sein, ohne erst in der App
 // nachschauen zu müssen.
-function childContactSummary(child: ChildRow): string {
+async function childContactSummary(child: ChildRow, encryptionKey: string): Promise<string> {
   const [year, month, day] = child.birth_date.split("-");
   const lines = [`Geburtsdatum: ${day}.${month}.${year}`];
-  const contact = [child.emergency_contact_name, child.emergency_contact_phone].filter(Boolean).join(", ");
+  const contactName = await decryptField(child.emergency_contact_name, encryptionKey);
+  const contactPhone = await decryptField(child.emergency_contact_phone, encryptionKey);
+  const contact = [contactName, contactPhone].filter(Boolean).join(", ");
   if (contact) lines.push(`Notfallkontakt: ${contact}`);
-  if (child.health_notes) lines.push(`Gesundheitshinweise: ${child.health_notes}`);
+  const healthNotes = await decryptField(child.health_notes, encryptionKey);
+  if (healthNotes) lines.push(`Gesundheitshinweise: ${healthNotes}`);
   return lines.join("\n");
 }
 
@@ -1213,7 +1232,20 @@ app.post("/api/children", requireAuth, async (c) => {
   if (healthNotes === undefined) return c.json({ error: "Gesundheitshinweise sind zu lang" }, 400);
   if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
-  const childInput = { firstName, lastName, birthDate, groupId, notes, emergencyContactName, emergencyContactPhone, healthNotes, familyId };
+  // Gesundheitshinweise/Notfallkontakte verschlüsselt ablegen (auch im
+  // Kapazitäts-Anfrage-Payload, falls diese Aktion erst nach Freigabe
+  // ausgeführt wird) - siehe worker/src/crypto.ts, Finding PRIV-02.
+  const childInput = {
+    firstName,
+    lastName,
+    birthDate,
+    groupId,
+    notes,
+    emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
+    emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
+    healthNotes: await encryptField(healthNotes, c.env.ENCRYPTION_KEY),
+    familyId,
+  };
 
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
@@ -1250,7 +1282,7 @@ app.post("/api/children", requireAuth, async (c) => {
     groupId,
     childId: child.id,
   });
-  return c.json(child, 201);
+  return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY), 201);
 });
 
 app.put("/api/children/:id", requireAuth, async (c) => {
@@ -1281,7 +1313,17 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (!(await isChildWritable(c.env.DB, existing, c.get("userId"))))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
-  const childInput = { firstName, lastName, birthDate, groupId, notes, emergencyContactName, emergencyContactPhone, healthNotes, familyId };
+  const childInput = {
+    firstName,
+    lastName,
+    birthDate,
+    groupId,
+    notes,
+    emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
+    emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
+    healthNotes: await encryptField(healthNotes, c.env.ENCRYPTION_KEY),
+    familyId,
+  };
 
   if (groupId) {
     const group = await db.getGroupRowById(c.env.DB, groupId);
@@ -1321,7 +1363,7 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     await notifyClubWaitlistOnFreedCapacity(c, previousGroupId);
   }
 
-  return c.json(child);
+  return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY));
 });
 
 app.delete("/api/children/:id", requireAuth, async (c) => {
@@ -1373,7 +1415,7 @@ app.post("/api/children/:id/archive", requireAuth, async (c) => {
     groupId: existing.group_id,
     childId: id,
   });
-  return c.json(child);
+  return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY));
 });
 
 app.post("/api/children/:id/reactivate", requireAuth, async (c) => {
@@ -1395,7 +1437,7 @@ app.post("/api/children/:id/reactivate", requireAuth, async (c) => {
     groupId: existing.group_id,
     childId: id,
   });
-  return c.json(child);
+  return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY));
 });
 
 // --- Familien / Geschwister --------------------------------------------------
@@ -1434,7 +1476,7 @@ app.put("/api/children/:id/family", requireAuth, async (c) => {
   if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
   const child = await db.setChildFamily(c.env.DB, id, familyId);
-  return c.json(child);
+  return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY));
 });
 
 app.post("/api/families", requireAuth, async (c) => {
@@ -1798,7 +1840,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
         // Gesundheitsdaten/Notfallkontakte nur im In-App-Postfach (body),
         // nicht per Klartext-E-Mail an ein externes Postfach - siehe
         // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-01.
-        body: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\n${childContactSummary(child)}`,
+        body: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\n${await childContactSummary(child, c.env.ENCRYPTION_KEY)}`,
         emailBody: `${child.first_name} ${child.last_name} ${reasonSentence} - bitte freigeben oder ablehnen.\n\nBegründung: ${moveReason}\n\nDetails (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
         childId: id,
@@ -2401,7 +2443,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
         // Gesundheitsdaten/Notfallkontakte nur im In-App-Postfach (body),
         // nicht per Klartext-E-Mail an ein externes Postfach - siehe
         // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-01.
-        body: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen.\n\n${childContactSummary(child)}`,
+        body: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen.\n\n${await childContactSummary(child, c.env.ENCRYPTION_KEY)}`,
         emailBody: `${child.first_name} ${child.last_name} wurde in deine Gruppe „${group.name}“ aufgenommen. Details (Notfallkontakt, Gesundheitshinweise) siehst du nach dem Anmelden in der App.`,
         link: "/gruppen",
         childId: child.id,

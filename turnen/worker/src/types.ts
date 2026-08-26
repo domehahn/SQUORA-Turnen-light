@@ -1,6 +1,10 @@
 export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
+  // AES-256-GCM-Schlüssel (32 Byte Hex) für die Verschlüsselung von
+  // Gesundheitshinweisen/Notfallkontakten - siehe worker/src/crypto.ts und
+  // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-02.
+  ENCRYPTION_KEY: string;
   FRONTEND_URL: string;
   EMAIL?: SendEmail;
   EMAIL_FROM_ADDRESS?: string;
