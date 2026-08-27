@@ -599,9 +599,20 @@ async function notifyClubWaitlistOnFreedCapacity(c: { env: Env }, groupId: strin
 // fehlgeschlagene Versuche je E-Mail-Adresse innerhalb von
 // LOGIN_WINDOW_MINUTES, danach wird die Adresse unabhängig vom Passwort
 // gesperrt, bis das Zeitfenster abläuft (Finding SEC-01). Bewusst pro
-// E-Mail statt pro IP, da Cloudflare-Worker-Requests IPs teilen können und
-// eine E-Mail-basierte Sperre robuster gegen verteilte Versuche ist.
+// E-Mail statt NUR pro IP, da Cloudflare-Worker-Requests IPs teilen können
+// (NAT/Vereins-WLAN/Firmennetz) und eine E-Mail-basierte Sperre robuster
+// gegen verteilte Versuche gegen EIN Konto ist.
+//
+// CI-17-Härtung (zweiter Production-Readiness-Durchgang 2026-08-27):
+// zusätzliches, unabhängiges IP-basiertes Limit (deutlich höher als das
+// Konto-Limit) schließt die verbleibende Lücke - reines E-Mail-Limit
+// schützt NICHT gegen Credential Stuffing/Password Spraying von einer IP
+// über VIELE verschiedene Konten, solange jedes einzelne Konto unter
+// seinem eigenen Limit bleibt. LOGIN_IP_MAX_FAILED_ATTEMPTS bewusst 3x so
+// hoch wie das Konto-Limit, damit ein geteiltes Netz (mehrere Personen,
+// mehrere echte Fehlversuche) nicht vorschnell komplett gesperrt wird.
 const LOGIN_MAX_FAILED_ATTEMPTS = 10;
+const LOGIN_IP_MAX_FAILED_ATTEMPTS = 30;
 const LOGIN_WINDOW_MINUTES = 15;
 
 app.post("/api/login", async (c) => {
@@ -610,8 +621,12 @@ app.post("/api/login", async (c) => {
   const password = typeof body?.password === "string" ? body.password : undefined;
   if (!email || !password) return c.json({ error: "E-Mail oder Passwort fehlt" }, 400);
 
-  const recentFailures = await db.countRecentFailedLogins(c.env.DB, email, LOGIN_WINDOW_MINUTES);
-  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
+  const [recentFailures, recentFailuresByIp] = await Promise.all([
+    db.countRecentFailedLogins(c.env.DB, email, LOGIN_WINDOW_MINUTES),
+    db.countRecentFailedLoginsByIp(c.env.DB, ip, LOGIN_WINDOW_MINUTES),
+  ]);
+  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS || recentFailuresByIp >= LOGIN_IP_MAX_FAILED_ATTEMPTS) {
     return c.json(
       { error: `Zu viele fehlgeschlagene Anmeldeversuche. Bitte in ${LOGIN_WINDOW_MINUTES} Minuten erneut versuchen.` },
       429
@@ -623,7 +638,7 @@ app.post("/api/login", async (c) => {
     ? await verifyPassword(password, userRow.password_hash, userRow.password_salt, userRow.password_iterations)
     : false;
   if (!userRow || !valid) {
-    await db.recordLoginAttempt(c.env.DB, email, false);
+    await db.recordLoginAttempt(c.env.DB, email, false, ip);
     return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
   }
 
@@ -647,7 +662,7 @@ app.post("/api/login", async (c) => {
 
   const { jwt } = await issueSession(c, userRow.id);
   setSessionCookie(c, jwt);
-  await db.recordLoginAttempt(c.env.DB, email, true);
+  await db.recordLoginAttempt(c.env.DB, email, true, ip);
   await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });
@@ -670,8 +685,12 @@ app.post("/api/login/mfa", async (c) => {
     return c.json({ error: "MFA-Anmeldung abgelaufen, bitte erneut einloggen" }, 401);
   }
 
-  const recentFailures = await db.countRecentFailedLogins(c.env.DB, userRow.email, LOGIN_WINDOW_MINUTES);
-  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
+  const [recentFailures, recentFailuresByIp] = await Promise.all([
+    db.countRecentFailedLogins(c.env.DB, userRow.email, LOGIN_WINDOW_MINUTES),
+    db.countRecentFailedLoginsByIp(c.env.DB, ip, LOGIN_WINDOW_MINUTES),
+  ]);
+  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS || recentFailuresByIp >= LOGIN_IP_MAX_FAILED_ATTEMPTS) {
     return c.json(
       { error: `Zu viele fehlgeschlagene Anmeldeversuche. Bitte in ${LOGIN_WINDOW_MINUTES} Minuten erneut versuchen.` },
       429
@@ -711,13 +730,13 @@ app.post("/api/login/mfa", async (c) => {
   }
 
   if (!ok) {
-    await db.recordLoginAttempt(c.env.DB, userRow.email, false);
+    await db.recordLoginAttempt(c.env.DB, userRow.email, false, ip);
     return c.json({ error: "Code ungültig" }, 401);
   }
 
   const { jwt } = await issueSession(c, userRow.id);
   setSessionCookie(c, jwt);
-  await db.recordLoginAttempt(c.env.DB, userRow.email, true);
+  await db.recordLoginAttempt(c.env.DB, userRow.email, true, ip);
   await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });

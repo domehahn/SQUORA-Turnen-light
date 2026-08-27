@@ -504,11 +504,13 @@ export async function consumePasswordResetJti(db: D1Database, jti: string, expir
 }
 
 // Rate Limiting/Brute-Force-Schutz für den Login (Finding SEC-01) und
-// LOGIN/FAILED_LOGIN-Audit-Trail (Finding SEC-10).
-export async function recordLoginAttempt(db: D1Database, email: string, success: boolean): Promise<void> {
+// LOGIN/FAILED_LOGIN-Audit-Trail (Finding SEC-10). ip ist optional (NULL,
+// falls kein CF-Connecting-IP-Header vorliegt, z.B. lokale Tests) - s.
+// countRecentFailedLoginsByIp() unten für die CI-17-Härtung.
+export async function recordLoginAttempt(db: D1Database, email: string, success: boolean, ip: string | null): Promise<void> {
   await db
-    .prepare("INSERT INTO login_attempts (id, email, success) VALUES (?, ?, ?)")
-    .bind(crypto.randomUUID(), email, success ? 1 : 0)
+    .prepare("INSERT INTO login_attempts (id, email, success, ip) VALUES (?, ?, ?, ?)")
+    .bind(crypto.randomUUID(), email, success ? 1 : 0, ip)
     .run();
 }
 
@@ -523,6 +525,27 @@ export async function countRecentFailedLogins(db: D1Database, email: string, win
        WHERE email = ?1 AND success = 0 AND created_at >= datetime('now', ?2)`
     )
     .bind(email, `-${windowMinutes} minutes`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+// CI-17-Härtung (zweiter Production-Readiness-Durchgang 2026-08-27): rein
+// E-Mail-basiertes Rate Limiting lässt Credential Stuffing/Password
+// Spraying von EINER IP über VIELE verschiedene Accounts unbegrenzt zu,
+// solange pro Account unter dem Limit bleibt. Zusätzliche, unabhängige
+// IP-basierte Grenze (höheres Limit als pro Account, da sich legitim
+// mehrere Personen dieselbe IP teilen können - Vereins-WLAN, NAT,
+// Firmennetz). `ip: null` (kein CF-Connecting-IP-Header, z.B. lokale
+// Tests) wird bewusst NIE gezählt/gesperrt - sonst könnte ein Client ohne
+// diesen Header alle anderen Clients ohne Header serverseitig blockieren.
+export async function countRecentFailedLoginsByIp(db: D1Database, ip: string | null, windowMinutes: number): Promise<number> {
+  if (!ip) return 0;
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) as n FROM login_attempts
+       WHERE ip = ?1 AND success = 0 AND created_at >= datetime('now', ?2)`
+    )
+    .bind(ip, `-${windowMinutes} minutes`)
     .first<{ n: number }>();
   return row?.n ?? 0;
 }

@@ -61,6 +61,65 @@ describe("Rate Limiting (SEC-01)", () => {
     });
     expect(blocked.status).toBe(429);
   });
+
+  // CI-17-Härtung (zweiter Production-Readiness-Durchgang 2026-08-27):
+  // reines E-Mail-Limit lässt Credential Stuffing über VIELE verschiedene
+  // Konten von EINER IP unbegrenzt zu, solange jedes Konto einzeln unter
+  // seinem Limit bleibt. Dieser Test simuliert genau das: 30 Fehlversuche
+  // gegen 30 VERSCHIEDENE (nicht existierende) E-Mail-Adressen von
+  // derselben IP - jeder einzelne Versuch bliebe unter dem Konto-Limit
+  // (10), muss aber durch das zusätzliche IP-Limit (30) gestoppt werden.
+  it("sperrt Credential Stuffing über viele verschiedene Konten von derselben IP (IP-Rate-Limit)", async () => {
+    const attackerIp = "203.0.113.42";
+
+    let lastStatus = 0;
+    for (let i = 0; i < 30; i++) {
+      const res = await SELF.fetch("https://example.test/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin", "CF-Connecting-IP": attackerIp },
+        body: JSON.stringify({ email: `stuffing-victim-${i}@test.local`, password: "irgendein-passwort" }),
+      });
+      lastStatus = res.status;
+    }
+    expect(lastStatus).toBe(401); // die ersten 30 sind normale (kontobezogene) Fehlversuche
+
+    const blocked = await SELF.fetch("https://example.test/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin", "CF-Connecting-IP": attackerIp },
+      body: JSON.stringify({ email: "stuffing-victim-31@test.local", password: "irgendein-passwort" }),
+    });
+    expect(blocked.status).toBe(429);
+
+    // Eine ANDERE IP ist von dieser Sperre unberührt - IP-Rate-Limiting
+    // sperrt nie global, nur die konkret auffällige IP.
+    const otherIpRes = await SELF.fetch("https://example.test/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin", "CF-Connecting-IP": "198.51.100.7" },
+      body: JSON.stringify({ email: "stuffing-victim-32@test.local", password: "irgendein-passwort" }),
+    });
+    expect(otherIpRes.status).toBe(401);
+  });
+
+  // Kein CF-Connecting-IP-Header (z.B. ein Client/Proxy, der ihn aus
+  // welchem Grund auch immer nicht mitschickt) darf NICHT dazu führen,
+  // dass alle Clients ohne diesen Header sich gegenseitig sperren -
+  // countRecentFailedLoginsByIp() behandelt `ip: null` deshalb bewusst als
+  // "nie zählen" (s. db.ts).
+  it("ohne CF-Connecting-IP-Header greift weiterhin nur das Konto-Limit, kein globales IP-Limit für 'keine IP'", async () => {
+    for (let i = 0; i < 15; i++) {
+      await SELF.fetch("https://example.test/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        body: JSON.stringify({ email: `no-ip-header-${i}@test.local`, password: "irgendein-passwort" }),
+      });
+    }
+    const res = await SELF.fetch("https://example.test/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+      body: JSON.stringify({ email: "no-ip-header-final@test.local", password: "irgendein-passwort" }),
+    });
+    expect(res.status).toBe(401); // keine Sperre, da weder Konto- noch (fehlendes) IP-Limit erreicht
+  });
 });
 
 describe("Cross-Tenant-Isolation (Vereine)", () => {
