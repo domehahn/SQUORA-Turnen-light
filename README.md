@@ -9,7 +9,7 @@ Aufbau im Stil von [tournament-manager](https://github.com/): React 19 + Vite
 + Tailwind v4 Frontend (SQUORA-Blau-Farbschema, Logo/Tabellenstil auch auf
 den Druckseiten), Cloudflare Worker (Hono) + D1 als Backend mit JWT-Login,
 als zwei Cloudflare Workers deploybar (`turnen-web` für Assets/SPA,
-`turnen-api` für die API). E-Mail-Versand über Cloudflare Email Sending
+`turnen-api` für die API). E-Mail-Versand über Resend
 (`no_reply@squora.de`).
 
 Die App kennt zwei Rollen pro Verein: **Turnleiter*in** (`member`, leitet
@@ -76,7 +76,7 @@ großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berech
 - Alle Druckseiten sind unabhängig vom App-Darkmode immer hell/kontrastreich gestaltet, im SQUORA-Formularstil (Logo, blaue Tabellenköpfe).
 
 ### Benachrichtigungen & Nachvollziehbarkeit
-- In-App-Postfach plus E-Mail-Benachrichtigung (Cloudflare Email Sending) bei Vertretungen, Genehmigungs-Anfragen, Wartelisten-Vorschlägen, Beitrittsanfragen etc.
+- In-App-Postfach plus E-Mail-Benachrichtigung (Resend) bei Vertretungen, Genehmigungs-Anfragen, Wartelisten-Vorschlägen, Beitrittsanfragen etc.
 - **Verlauf/Audit-Log**: wer hat wann was geändert. Turnleiter*innen sehen nur Einträge zu ihrer eigenen Gruppe, die Jugendleitung den gesamten Verein.
 - **Suche** über Kinder und Gruppen.
 
@@ -144,7 +144,7 @@ Voraussetzung: Node.js, `npm`.
 ```sh
 cd turnen/worker
 npm install
-cp .dev.vars.example .dev.vars   # JWT_SECRET lokal setzen
+cp .dev.vars.example .dev.vars   # lokale Secrets setzen
 npm run db:migrate:local          # legt das lokale D1-Schema an
 npm run dev                       # startet wrangler dev auf Port 8787
 ```
@@ -195,6 +195,7 @@ cd turnen/worker
 npm run db:migrate:remote
 wrangler secret put JWT_SECRET
 wrangler secret put ENCRYPTION_KEY
+wrangler secret put RESEND_API_KEY
 npm run deploy
 
 # Web-Worker (Assets + SPA + Proxy zum API-Worker)

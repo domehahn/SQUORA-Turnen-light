@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review IF Information Systems (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We provide expert Kubernetes services, ensuring seamless container orchestration, scalability, and high availability for enterprise systems. Our team specializes in optimizing cloud-native infrastructure for maximum efficiency and reliability.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review IF Information Systems (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We provide expert Kubernetes services, ensuring seamless container orchestration, scalability, and high availability for enterprise systems. Our team specializes in optimizing cloud-native infrastructure for maximum efficiency and reliability.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-if-information-systems-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

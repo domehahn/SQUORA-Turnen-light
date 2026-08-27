@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review CARS - China Academy of Railway Sciences (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. CARS promotes cloud native best practices in the railway domain, helping make railway information systems development and operation modern and easy. Services around Kubernetes include, but are not limited to, installation, maintenance, service operator development, and training.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review CARS - China Academy of Railway Sciences (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. CARS promotes cloud native best practices in the railway domain, helping make railway information systems development and operation modern and easy. Services around Kubernetes include, but are not limited to, installation, maintenance, service operator development, and training.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-cars-china-academy-of-railway-sciences-kcntp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

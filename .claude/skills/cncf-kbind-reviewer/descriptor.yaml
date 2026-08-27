@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review kbind using its official documentation and repository in the Provisioning / Automation & Configuration category. kbind aims to provide better support for service providers and consumers that reside in distinct Kubernetes clusters.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review kbind using its official documentation and repository in the Provisioning / Automation & Configuration category. kbind aims to provide better support for service providers and consumers that reside in distinct Kubernetes clusters.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-kbind-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-va-linux-systems-japan-kcsp-reviewer
+version: 0.1.0
+description: 'Review VA Linux Systems Japan (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. VA Linux provides the following services for Kubernetes: Consulting, Development, Failure Analysis & Support.'
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: 'Review VA Linux Systems Japan (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. VA Linux provides the following services for Kubernetes: Consulting, Development, Failure Analysis & Support.'
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

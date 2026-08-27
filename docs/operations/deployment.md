@@ -62,6 +62,7 @@ migration, continue?").
 cd turnen/worker
 wrangler secret put JWT_SECRET        # nur bei Ersteinrichtung/Rotation
 wrangler secret put ENCRYPTION_KEY    # nur bei Ersteinrichtung/Rotation
+wrangler secret put RESEND_API_KEY    # bei Ersteinrichtung/Rotation; aus Resend
 npm run deploy
 ```
 

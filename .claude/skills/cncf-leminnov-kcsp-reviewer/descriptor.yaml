@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Leminnov (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Leminnov helps companies design, deploy, and manage resilient Kubernetes infrastructures tailored to their business needs. From cloud native transformation to automated CI/CD pipelines, we enable scalable, secure, and efficient operations.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Leminnov (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Leminnov helps companies design, deploy, and manage resilient Kubernetes infrastructures tailored to their business needs. From cloud native transformation to automated CI/CD pipelines, we enable scalable, secure, and efficient operations.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-leminnov-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

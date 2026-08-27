@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-zoi-kcsp-reviewer
+version: 0.1.0
+description: Review Zoi (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Zoi is a cloud-native IT consulting company that specializes in the latest cloud technology. We are a trusted partner to manufacturing & retail companies in the DACH and Iberian Peninsula regions, and together develop & implement long-term digital strategies to help them remain competitive in an increasingly digital world. As a KCSP partner, we have validated expertise helping organisations successfully adopt Kubernetes. We offer Kubernetes support, consulting, and professional services for clients embarking on their Kubernetes journey.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Zoi (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Zoi is a cloud-native IT consulting company that specializes in the latest cloud technology. We are a trusted partner to manufacturing & retail companies in the DACH and Iberian Peninsula regions, and together develop & implement long-term digital strategies to help them remain competitive in an increasingly digital world. As a KCSP partner, we have validated expertise helping organisations successfully adopt Kubernetes. We offer Kubernetes support, consulting, and professional services for clients embarking on their Kubernetes journey.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

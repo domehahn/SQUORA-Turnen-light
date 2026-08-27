@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review PanWeiDB using its official documentation and repository in the App Definition and Development / Database category. PanWeiDB is an OLTP relational database developed by China Mobile based on the open-source kernel of openGauss. It supports multiple core business systems of the world's largest telecommunications operator. After being verified through long-term business operations, PanWeiDB has achieved leading positions in terms of feature completeness, high stable performance, and high security compared to similar products in the industry.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review PanWeiDB using its official documentation and repository in the App Definition and Development / Database category. PanWeiDB is an OLTP relational database developed by China Mobile based on the open-source kernel of openGauss. It supports multiple core business systems of the world's largest telecommunications operator. After being verified through long-term business operations, PanWeiDB has achieved leading positions in terms of feature completeness, high stable performance, and high security compared to similar products in the industry.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-panweidb-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

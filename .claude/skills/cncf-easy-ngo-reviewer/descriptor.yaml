@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Easy-Ngo using its official documentation and repository in the Orchestration & Management / Remote Procedure Call category. easy-ngo is a fast, out-of-the-box microservice development framework based on the Go language.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Easy-Ngo using its official documentation and repository in the Orchestration & Management / Remote Procedure Call category. easy-ngo is a fast, out-of-the-box microservice development framework based on the Go language.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-easy-ngo-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

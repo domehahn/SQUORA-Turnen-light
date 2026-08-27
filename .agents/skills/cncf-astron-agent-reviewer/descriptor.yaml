@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Astron Agent using its official documentation and repository in the AI Agent / Workflow Orchestration category. Enterprise-grade, commercial-friendly agentic workflow platform for building next-generation SuperAgents with multi-agent orchestration capabilities.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Astron Agent using its official documentation and repository in the AI Agent / Workflow Orchestration category. Enterprise-grade, commercial-friendly agentic workflow platform for building next-generation SuperAgents with multi-agent orchestration capabilities.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-astron-agent-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

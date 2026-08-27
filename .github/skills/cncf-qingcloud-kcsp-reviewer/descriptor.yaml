@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-qingcloud-kcsp-reviewer
+version: 0.1.0
+description: Review QingCloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. KubeSphere, developed by QingCloud, is an enterprise-grade Kubernetes platform that simplifies the deployment, management, and scaling of containerized applications. In addition to our platform, we offer a full range of Kubernetes professional services — including consulting, deployment, training, and ongoing support — to help organizations successfully adopt, operate, and optimize their cloud native environments.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review QingCloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. KubeSphere, developed by QingCloud, is an enterprise-grade Kubernetes platform that simplifies the deployment, management, and scaling of containerized applications. In addition to our platform, we offer a full range of Kubernetes professional services — including consulting, deployment, training, and ongoing support — to help organizations successfully adopt, operate, and optimize their cloud native environments.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

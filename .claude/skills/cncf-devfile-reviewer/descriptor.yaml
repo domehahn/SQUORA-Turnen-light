@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Devfile using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. An open standard defining containerized development environments that enables developer tools to simplify and accelerate workflows
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Devfile using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. An open standard defining containerized development environments that enables developer tools to simplify and accelerate workflows
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-devfile-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-sysdig-kcsp-reviewer
+version: 0.1.0
+description: Review Sysdig (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Sysdig offers professional services, technical account management, support and training. These services are designed to help companies get up-and-running with Sysdig and find best practices with their Kubernetes platform and cloud native applications.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Sysdig (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Sysdig offers professional services, technical account management, support and training. These services are designed to help companies get up-and-running with Sysdig and find best practices with their Kubernetes platform and cloud native applications.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

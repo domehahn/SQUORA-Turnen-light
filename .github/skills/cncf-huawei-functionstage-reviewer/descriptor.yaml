@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-huawei-functionstage-reviewer
+version: 0.1.0
+description: Review Huawei FunctionStage using its official documentation and repository in the Serverless / Hosted Platform category. FunctionStage is an event-driven function hosting and computing service, that compiles function code and configures running conditions without provisioning or managing servers, thus providing a scalable, maintenance-free, and reliable operation environment for functions. You only pay for what you use.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Huawei FunctionStage using its official documentation and repository in the Serverless / Hosted Platform category. FunctionStage is an event-driven function hosting and computing service, that compiles function code and configures running conditions without provisioning or managing servers, thus providing a scalable, maintenance-free, and reliable operation environment for functions. You only pay for what you use.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

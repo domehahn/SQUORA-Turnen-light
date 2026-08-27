@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review ZStack (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ZStack enables customers on their Kubernetes journey, helps enterprises focus on their applications rather than managing IT-infrastructure, and offers full life-cycle services including training, consulting, deployment, and pipeline to accelerate their digital transformation.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review ZStack (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ZStack enables customers on their Kubernetes journey, helps enterprises focus on their applications rather than managing IT-infrastructure, and offers full life-cycle services including training, consulting, deployment, and pipeline to accelerate their digital transformation.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-zstack-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-softbank-infrinia-ai-cloud-os-reviewer
+version: 0.1.0
+description: Review SoftBank Infrinia AI Cloud OS using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Softbank Infrinia AI Cloud OS is a GPU-native managed Kubernetes platform purpose-built for AI and ML workloads, providing automated GPU infrastructure provisioning, Kubernetes cluster orchestration, and MLOps tooling on GPU hardware.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review SoftBank Infrinia AI Cloud OS using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Softbank Infrinia AI Cloud OS is a GPU-native managed Kubernetes platform purpose-built for AI and ML workloads, providing automated GPU infrastructure provisioning, Kubernetes cluster orchestration, and MLOps tooling on GPU hardware.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

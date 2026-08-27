@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-groundcover-reviewer
+version: 0.1.0
+description: Review groundcover using its official documentation and repository in the Observability and Analysis / Observability category. groundcover is a cloud native observability platform powered by eBPF. It runs inside the customer’s cloud and provides complete visibility into applications, infrastructure, networks and AI systems without operational overhead.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review groundcover using its official documentation and repository in the Observability and Analysis / Observability category. groundcover is a cloud native observability platform powered by eBPF. It runs inside the customer’s cloud and provides complete visibility into applications, infrastructure, networks and AI systems without operational overhead.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

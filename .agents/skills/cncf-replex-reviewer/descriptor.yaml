@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Replex using its official documentation and repository in the Observability and Analysis / Observability category. The central source of truth for all IT infrastructure insights. Providing one central platform that uniquely combines technical and financial metrics to manage and optimize modern containerized IT infrastructure stacks successfully.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Replex using its official documentation and repository in the Observability and Analysis / Observability category. The central source of truth for all IT infrastructure insights. Providing one central platform that uniquely combines technical and financial metrics to manage and optimize modern containerized IT infrastructure stacks successfully.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-replex-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Alauda (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. Alauda is a Cloud Native Platform provider at the forefront of empowering Enterprise IT with Continuous Innovation in the Digital Age. We provide Kubernetes training and consulting services with experienced instructors.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Alauda (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. Alauda is a Cloud Native Platform provider at the forefront of empowering Enterprise IT with Continuous Innovation in the Digital Age. We provide Kubernetes training and consulting services with experienced instructors.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-alauda-kcntp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

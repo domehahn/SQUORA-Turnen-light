@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Sosivio using its official documentation and repository in the Observability and Analysis / Observability category. Sosivio is a non-intrusive autonomous cloud native platform delivering unmatched visibility into your cloud native environment, eventless failure prediction, and automatic resolution.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Sosivio using its official documentation and repository in the Observability and Analysis / Observability category. Sosivio is a non-intrusive autonomous cloud native platform delivering unmatched visibility into your cloud native environment, eventless failure prediction, and automatic resolution.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-sosivio-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

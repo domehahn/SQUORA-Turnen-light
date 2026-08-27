@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review SysEleven MetaKube using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. MetaKube offers carefree Multi Cloud Kubernetes as a Service on OpenStack Cloud, Amazon Web Services (AWS) and On-Premises. We provide you with SaaS solutions like a load balancer as well as solutions for backup and recovery, monitoring, etc., and various types of support - detailed documentation, tutorials and personal SRE-Support.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review SysEleven MetaKube using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. MetaKube offers carefree Multi Cloud Kubernetes as a Service on OpenStack Cloud, Amazon Web Services (AWS) and On-Premises. We provide you with SaaS solutions like a load balancer as well as solutions for backup and recovery, monitoring, etc., and various types of support - detailed documentation, tutorials and personal SRE-Support.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-syseleven-metakube-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

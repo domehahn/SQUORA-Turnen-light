@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review XSKY using its official documentation and repository in the Runtime / Cloud Native Storage category. XSKY (Beijing) Data Technology Co., Ltd. is a high-tech enterprise focusing on software defined infrastructure, providing software defined distributed storage product of enterprise-grade and helping customers achieve innovation in data structure.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review XSKY using its official documentation and repository in the Runtime / Cloud Native Storage category. XSKY (Beijing) Data Technology Co., Ltd. is a high-tech enterprise focusing on software defined infrastructure, providing software defined distributed storage product of enterprise-grade and helping customers achieve innovation in data structure.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-xsky-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

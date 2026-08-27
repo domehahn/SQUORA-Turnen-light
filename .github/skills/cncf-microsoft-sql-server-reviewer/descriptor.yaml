@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-microsoft-sql-server-reviewer
+version: 0.1.0
+description: Review Microsoft SQL Server using its official documentation and repository in the App Definition and Development / Database category. Data-Driven. Faster Insights. Breakthrough Performance. In-Memory Technology. Hybrid Data Platform.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Microsoft SQL Server using its official documentation and repository in the App Definition and Development / Database category. Data-Driven. Faster Insights. Breakthrough Performance. In-Memory Technology. Hybrid Data Platform.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

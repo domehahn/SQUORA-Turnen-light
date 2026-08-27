@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-catalyst-cloud-kcsp-reviewer
+version: 0.1.0
+description: Review Catalyst Cloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Catalyst Cloud specializes in the delivery of cloud services (private cloud consulting, training service and public cloud) benefiting from the freedom and choice of the broad ecosystem surrounding Kubernetes and OpenStack.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Catalyst Cloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Catalyst Cloud specializes in the delivery of cloud services (private cloud consulting, training service and public cloud) benefiting from the freedom and choice of the broad ecosystem surrounding Kubernetes and OpenStack.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

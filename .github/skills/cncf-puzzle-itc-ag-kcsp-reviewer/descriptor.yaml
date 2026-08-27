@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-puzzle-itc-ag-kcsp-reviewer
+version: 0.1.0
+description: Review Puzzle ITC AG (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Whether on-premises, in the cloud, or as a managed service – we help customers create the ideal Kubernetes environment and leverage the best tools from the cloud-native landscape. This results in a standardized, flexible, and automated environment that efficiently bridges the gap between development and operations.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Puzzle ITC AG (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Whether on-premises, in the cloud, or as a managed service – we help customers create the ideal Kubernetes environment and leverage the best tools from the cloud-native landscape. This results in a standardized, flexible, and automated environment that efficiently bridges the gap between development and operations.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

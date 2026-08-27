@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Shinesoft (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Shinesoft provides Kubernetes consulting and support solutions on your choice of infrastructure.  We help our customers to adopt DevOps, build CI/CD, and migrate applications to Kubernetes. We also design and build your Kubernetes cluster in the public cloud, on-prem, or multi/hybrid cloud  environments according to your needs.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Shinesoft (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Shinesoft provides Kubernetes consulting and support solutions on your choice of infrastructure.  We help our customers to adopt DevOps, build CI/CD, and migrate applications to Kubernetes. We also design and build your Kubernetes cluster in the public cloud, on-prem, or multi/hybrid cloud  environments according to your needs.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-shinesoft-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

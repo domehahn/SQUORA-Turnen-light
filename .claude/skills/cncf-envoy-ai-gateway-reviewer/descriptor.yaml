@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Envoy-ai-gateway using its official documentation and repository in the AI Native Infra / Gateway category. Manages Unified Access to Generative AI Services built on Envoy Gateway
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Envoy-ai-gateway using its official documentation and repository in the AI Native Infra / Gateway category. Manages Unified Access to Generative AI Services built on Envoy Gateway
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-envoy-ai-gateway-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

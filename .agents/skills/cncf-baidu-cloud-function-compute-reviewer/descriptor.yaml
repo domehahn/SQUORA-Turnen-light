@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Baidu Cloud Function Compute using its official documentation and repository in the Serverless / Hosted Platform category. CFC (Cloud Function Compute) is a serverless solution provided by Baidu for enterprises and developers. It provides event-based, flexible, highly available, scalable and highly responsive cloud computing capabilities, and supports a variety of function triggers meeting a variety of scenarios.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Baidu Cloud Function Compute using its official documentation and repository in the Serverless / Hosted Platform category. CFC (Cloud Function Compute) is a serverless solution provided by Baidu for enterprises and developers. It provides event-based, flexible, highly available, scalable and highly responsive cloud computing capabilities, and supports a variety of function triggers meeting a variety of scenarios.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-baidu-cloud-function-compute-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

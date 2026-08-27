@@ -12,6 +12,7 @@ import { redactError } from "./log-redaction";
 const BRAND_NAME = "Turnen";
 const BRAND_EMOJI = "🤸";
 const BRAND_COLOR = "#059669";
+const RESEND_EMAILS_URL = "https://api.resend.com/emails";
 
 const WRAPPER = (bodyHtml: string) => `
   <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1e293b; font-size: 15px; line-height: 1.6;">
@@ -60,10 +61,44 @@ function bodyHtml(text: string, link: string | null, linkLabel: string): string 
   `;
 }
 
+async function sendViaResend(
+  env: Env,
+  input: { to: string; subject: string; text: string; html: string }
+): Promise<boolean> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM_ADDRESS) return false;
+
+  const response = await fetch(RESEND_EMAILS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: `Turnen <${env.EMAIL_FROM_ADDRESS}>`,
+      // Nur die bereits serverseitig normalisierte Adresse übergeben. Ein
+      // frei eingegebener Anzeigename darf nicht Teil eines Mail-Headers sein.
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+    }),
+  });
+
+  if (!response.ok) {
+    // Resend-Fehlertexte können Empfängeradressen enthalten. Status und
+    // Request-ID genügen für die Diagnose, ohne PII in Logs zu übernehmen.
+    const requestId = response.headers.get("x-request-id");
+    throw new Error(
+      `Resend-Versand fehlgeschlagen (HTTP ${response.status}${requestId ? `, Request-ID ${requestId}` : ""})`
+    );
+  }
+  return true;
+}
+
 // Legt eine In-App-Benachrichtigung an und verschickt sie best effort per
 // E-Mail. Das Postfach in der App ist die verlässliche Quelle - schlägt der
-// E-Mail-Versand fehl (z.B. weil die Absender-Domain noch nicht bei Email
-// Sending onboarded ist), wird das nur geloggt, niemals geworfen. Der
+// E-Mail-Versand fehl (z.B. weil Resend nicht erreichbar ist), wird das nur
+// geloggt, niemals geworfen. Der
 // aufrufende Request-Handler darf davon nie blockiert oder abgebrochen
 // werden.
 export async function notifyUser(
@@ -100,14 +135,11 @@ export async function notifyUser(
     childId: input.childId,
   });
 
-  if (!env.EMAIL || !env.EMAIL_FROM_ADDRESS) return;
-
   try {
     const emailText = input.emailBody ?? input.body;
     const linkUrl = input.link ? `${env.FRONTEND_URL}${input.link}` : null;
-    await env.EMAIL.send({
-      to: { email: input.userEmail, name: input.userName ?? input.userEmail },
-      from: { email: env.EMAIL_FROM_ADDRESS, name: "Turnen" },
+    await sendViaResend(env, {
+      to: input.userEmail,
       subject: input.title,
       text: `${emailText}${linkUrl ? `\n\n${linkUrl}` : ""}`,
       html: WRAPPER(bodyHtml(emailText, linkUrl, "In der App ansehen")),
@@ -127,7 +159,6 @@ export async function sendEmailOnly(
   env: Env,
   input: {
     to: string;
-    toName: string | null;
     subject: string;
     text: string;
     // Optionaler Call-to-Action-Link (z.B. Passwort-Reset-URL, Login-Seite) -
@@ -136,18 +167,17 @@ export async function sendEmailOnly(
     link?: string;
     linkLabel?: string;
   }
-): Promise<void> {
-  if (!env.EMAIL || !env.EMAIL_FROM_ADDRESS) return;
+): Promise<boolean> {
   try {
-    await env.EMAIL.send({
-      to: { email: input.to, name: input.toName ?? input.to },
-      from: { email: env.EMAIL_FROM_ADDRESS, name: "Turnen" },
+    return await sendViaResend(env, {
+      to: input.to,
       subject: input.subject,
       text: `${input.text}${input.link ? `\n\n${input.link}` : ""}`,
       html: WRAPPER(bodyHtml(input.text, input.link ?? null, input.linkLabel ?? "Jetzt öffnen")),
     });
   } catch (err) {
     console.error("E-Mail-Versand fehlgeschlagen:", redactError(err));
+    return false;
   }
 }
 

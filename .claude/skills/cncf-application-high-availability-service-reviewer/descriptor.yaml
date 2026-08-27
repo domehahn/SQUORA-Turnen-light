@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Application High Availability Service using its official documentation and repository in the Observability and Analysis / Observability category. A SaaS-based service that aims to improve the high availability of your applications. Application High Availability Service features automatic application architecture discovery, high availability assessment following principles of chaos engineering, application traffic control, and service fallback.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Application High Availability Service using its official documentation and repository in the Observability and Analysis / Observability category. A SaaS-based service that aims to improve the high availability of your applications. Application High Availability Service features automatic application architecture discovery, high availability assessment following principles of chaos engineering, application traffic control, and service fallback.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-application-high-availability-service-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

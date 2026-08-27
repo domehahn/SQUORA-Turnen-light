@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-xline-reviewer
+version: 0.1.0
+description: Review Xline using its official documentation and repository in the Orchestration & Management / Coordination & Service Discovery category. Xline is a high-performance geo-distributed metadata management system, which is compatible with the ETCD interface.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Xline using its official documentation and repository in the Orchestration & Management / Coordination & Service Discovery category. Xline is a high-performance geo-distributed metadata management system, which is compatible with the ETCD interface.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

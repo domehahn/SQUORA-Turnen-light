@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-composefs-reviewer
+version: 0.1.0
+description: Review composefs using its official documentation and repository in the Runtime / Container Runtime category. A project that combines Linux kernel features to provide read-only mountable filesystem trees stacking on top of an underlying "lower" Linux filesystem, particularly useful for mounting container images.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review composefs using its official documentation and repository in the Runtime / Container Runtime category. A project that combines Linux kernel features to provide read-only mountable filesystem trees stacking on top of an underlying "lower" Linux filesystem, particularly useful for mounting container images.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

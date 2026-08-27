@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Confluentis Consulting (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Confluentis Consulting is a technology engineering and DevOps focused consulting firm helping enterprises build scalable, cost-efficient, and resilient digital platforms. We specialize in Cloud FinOps, multi-cloud consulting, and platform engineering, enabling organizations to gain deep cost visibility, optimize Kubernetes and cloud workloads, and align engineering decisions with financial outcomes.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Confluentis Consulting (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Confluentis Consulting is a technology engineering and DevOps focused consulting firm helping enterprises build scalable, cost-efficient, and resilient digital platforms. We specialize in Cloud FinOps, multi-cloud consulting, and platform engineering, enabling organizations to gain deep cost visibility, optimize Kubernetes and cloud workloads, and align engineering decisions with financial outcomes.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-confluentis-consulting-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

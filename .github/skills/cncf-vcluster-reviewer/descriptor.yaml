@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-vcluster-reviewer
+version: 0.1.0
+description: Review vCluster using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. vCluster lets you create fully functional but virtual Kubernetes clusters. Each vCluster runs inside a namespace of another Kubernetes cluster. Using vCluster is much cheaper than creating separate full-blown clusters and it offers better multi-tenancy and isolation compared to regular namespaces.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review vCluster using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. vCluster lets you create fully functional but virtual Kubernetes clusters. Each vCluster runs inside a namespace of another Kubernetes cluster. Using vCluster is much cheaper than creating separate full-blown clusters and it offers better multi-tenancy and isolation compared to regular namespaces.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

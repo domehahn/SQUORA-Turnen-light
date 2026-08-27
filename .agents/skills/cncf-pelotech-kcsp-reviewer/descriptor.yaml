@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Pelotech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Setting clients up for success by crafting Kubernetes first cloud native solutions to their problems.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Pelotech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Setting clients up for success by crafting Kubernetes first cloud native solutions to their problems.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-pelotech-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review SparkFabrik (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We provide cloud native custom development and services on top of Kubernetes, helping our customers to transition to the cloud native era.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review SparkFabrik (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We provide cloud native custom development and services on top of Kubernetes, helping our customers to transition to the cloud native era.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-sparkfabrik-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

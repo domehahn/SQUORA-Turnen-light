@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review SIGHUP Distribution using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. SIGHUP Distribution is a battle-tested distribution purely based on upstream Kubernetes. Deploy and manage a stable and production grade Kubernetes Cluster at scale with a comprehensive Cloud Native stack implemented with top notch CNCF components.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review SIGHUP Distribution using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. SIGHUP Distribution is a battle-tested distribution purely based on upstream Kubernetes. Deploy and manage a stable and production grade Kubernetes Cluster at scale with a comprehensive Cloud Native stack implemented with top notch CNCF components.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-sighup-distribution-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

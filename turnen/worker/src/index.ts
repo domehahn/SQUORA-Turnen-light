@@ -1065,6 +1065,65 @@ app.delete("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
   return c.body(null, 204);
 });
 
+// TEMPORÄR (Nutzeranfrage 2026-08-27): schickt zu jedem E-Mail-Typ, den die
+// App verschickt, eine Testmail mit synthetischen Beispieldaten an eine feste
+// Adresse - zum visuellen Review des neuen E-Mail-Designs. Admin-only, wird
+// nach einmaliger Nutzung wieder entfernt (nicht Teil des dauerhaften
+// Funktionsumfangs).
+app.post("/api/admin/_debug/send-all-sample-emails", requireAuth, requireAdmin, async (c) => {
+  const TEST_TO = "aboutdevops@gmail.com";
+  const F = c.env.FRONTEND_URL;
+  const samples: { id: string; subject: string; text: string; link?: string; linkLabel?: string }[] = [
+    { id: "waitlist_promoted", subject: `Platz frei in „Minis“`, text: `Anna Beispiel wurde von der Warteliste in „Minis“ nachgerückt.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "waitlist_capacity_freed", subject: `Platz frei in „Minis“ – Warteliste prüfen`, text: `In „Minis“ sind wieder 2 Plätze frei. Von der Warteliste passt vom Alter her: Anna Beispiel, Ben Muster.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "welcome_new_user", subject: "Dein Zugang für Turnen", text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: max.mustermann@example.com\nEinmal-Passwort: Beispiel-Passwort-Nicht-Echt\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst.`, link: `${F}/login`, linkLabel: "Jetzt anmelden" },
+    { id: "password_reset", subject: "Passwort zurücksetzen", text: `Für dein Konto wurde ein Zurücksetzen des Passworts angefordert. Falls du das warst, kannst du dir über den folgenden Link ein neues Passwort vergeben.\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail - es ändert sich nichts an deinem Passwort.`, link: `${F}/passwort-zuruecksetzen?token=beispiel-token-nicht-echt`, linkLabel: "Neues Passwort festlegen" },
+    { id: "club_join_requested", subject: `Beitrittsanfrage für „TSV Musterstadt“`, text: `Max Mustermann möchte „TSV Musterstadt“ beitreten - bitte freigeben oder ablehnen.`, link: `${F}/verein`, linkLabel: "In der App ansehen" },
+    { id: "club_join_approved", subject: `Beitritt zu „TSV Musterstadt“ freigegeben`, text: `Erika Beispiel hat deine Beitrittsanfrage für „TSV Musterstadt“ freigegeben.`, link: `${F}/verein`, linkLabel: "In der App ansehen" },
+    { id: "club_join_rejected", subject: `Beitritt zu „TSV Musterstadt“ abgelehnt`, text: `Erika Beispiel hat deine Beitrittsanfrage für „TSV Musterstadt“ abgelehnt.`, link: `${F}/verein`, linkLabel: "In der App ansehen" },
+    { id: "group_co_leader_added", subject: `Mit-Trainer*in für „Große Turner“`, text: `Erika Beispiel hat dich als Mit-Trainer*in für „Große Turner“ eingetragen - du hast jetzt dieselben Rechte wie die Gruppenleitung.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "capacity_request", subject: `Kapazitäts-Anfrage für „Minis“`, text: `Anna Beispiel soll in die volle Gruppe „Minis“ - bitte freigeben oder ablehnen.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "substitute_request", subject: `Vertretung gesucht für „Große Turner“`, text: `Erika Beispiel sucht für den Termin am 2026-09-03 in „Große Turner“ eine Vertretung. (Beispiel-Notiz)`, link: `${F}/vertretungen`, linkLabel: "In der App ansehen" },
+    { id: "substitute_claimed", subject: `Vertretung übernommen für „Große Turner“`, text: `Max Mustermann übernimmt den Termin am 2026-09-03 in „Große Turner“.`, link: `${F}/vertretungen`, linkLabel: "In der App ansehen" },
+    { id: "substitute_returned", subject: `Vertretung zurückgegeben für „Große Turner“`, text: `Max Mustermann kann den Termin am 2026-09-03 in „Große Turner“ doch nicht übernehmen - die Stunde liegt wieder bei dir.`, link: `${F}/vertretungen`, linkLabel: "In der App ansehen" },
+    { id: "move_request", subject: `Verschiebe-Anfrage für „Große Turner“`, text: `Anna Beispiel möchte in deine Gruppe „Große Turner“ wechseln - bitte freigeben oder ablehnen.\n\nBegründung: Beispiel-Begründung für den Wechsel.\n\nDetails (Notfallkontakt) siehst du nach dem Anmelden in der App.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_approved_owner", subject: `Verschiebe-Anfrage genehmigt: „Große Turner“`, text: `Anna Beispiel wurde von „Minis“ in „Große Turner“ verschoben.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_approved_requester", subject: `Deine Verschiebe-Anfrage wurde genehmigt`, text: `Anna Beispiel wurde in „Große Turner“ aufgenommen.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_rejected_owner", subject: `Verschiebe-Anfrage abgelehnt: „Große Turner“`, text: `Anna Beispiel bleibt in „Minis“ - der Wechsel nach „Große Turner“ wurde abgelehnt.\n\nBegründung: Beispiel-Ablehnungsgrund.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_rejected_requester", subject: `Deine Verschiebe-Anfrage wurde abgelehnt`, text: `Anna Beispiel konnte nicht nach „Große Turner“ wechseln.\n\nBegründung: Beispiel-Ablehnungsgrund.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "club_waitlist_added", subject: "Neue Anfrage auf der Warteliste", text: `Erika Beispiel hat Ben Muster zur Warteliste hinzugefügt. (Beispiel-Notiz)`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_proposed", subject: `Platzvorschlag für „Minis“`, text: `Erika Beispiel schlägt Ben Muster für deine Gruppe „Minis“ vor - bitte bestätige oder lehne ab.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_requested", subject: `Übernahme-Anfrage für „Minis“`, text: `Max Mustermann möchte Ben Muster in die Gruppe „Minis“ übernehmen - Begründung: Beispiel-Begründung - bitte freigeben oder ablehnen.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_confirmed_proposer", subject: `Platzvorschlag bestätigt für „Minis“`, text: `Erika Beispiel hat Ben Muster in „Minis“ aufgenommen.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_confirmed_new_owner", subject: `Neues Kind in deiner Gruppe „Minis“`, text: `Ben Muster wurde in deine Gruppe „Minis“ aufgenommen. Details (Notfallkontakt) siehst du nach dem Anmelden in der App.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "placement_declined", subject: `Übernahme-Anfrage abgelehnt für „Minis“`, text: `Erika Beispiel kann Ben Muster aktuell nicht in „Minis“ aufnehmen.\n\nBegründung: Beispiel-Ablehnungsgrund.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "session_override_requested", subject: `Abweichender Termin angefragt für „Große Turner“`, text: `Max Mustermann möchte den Termin am 2026-09-03 in „Große Turner“ abweichend durchführen (Beispiel-Notiz) - bitte freigeben oder ablehnen.`, link: `${F}/anwesenheit`, linkLabel: "In der App ansehen" },
+    { id: "substitute_assigned", subject: `Vertretung eingetragen für „Große Turner“`, text: `Erika Beispiel hat dich für den Termin am 2026-09-03 in „Große Turner“ als Leitung eingetragen - die Stunde zählt in deinem Stundennachweis.`, link: `${F}/nachweis`, linkLabel: "In der App ansehen" },
+    { id: "session_override_approved", subject: `Abweichender Termin freigegeben für „Große Turner“`, text: `Erika Beispiel hat deinen abweichenden Termin am 2026-09-03 in „Große Turner“ freigegeben.`, link: `${F}/anwesenheit`, linkLabel: "In der App ansehen" },
+    { id: "session_override_rejected", subject: `Abweichender Termin abgelehnt für „Große Turner“`, text: `Erika Beispiel hat deinen abweichenden Termin am 2026-09-03 in „Große Turner“ abgelehnt.`, link: `${F}/anwesenheit`, linkLabel: "In der App ansehen" },
+    { id: "move_request_reminder_owner", subject: `Erinnerung: Verschiebe-Anfrage für „Große Turner“`, text: `Anna Beispiel wartet seit 3 Tagen auf deine Freigabe für „Große Turner“.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_reminder_requester", subject: "Erinnerung: Deine Verschiebe-Anfrage wartet noch", text: `Anna Beispiel wartet seit 3 Tagen auf Freigabe für „Große Turner“.`, link: `${F}/kinder`, linkLabel: "In der App ansehen" },
+    { id: "capacity_request_reminder", subject: `Erinnerung: Kapazitäts-Anfrage für „Minis“`, text: `Anna Beispiel wartet seit 3 Tagen auf deine Freigabe für „Minis“.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+  ];
+  const results: { id: string; ok: boolean }[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    try {
+      const sent = await sendEmailOnly(c.env, {
+        to: TEST_TO,
+        subject: `[TEST ${i + 1}/${samples.length} · ${s.id}] ${s.subject}`,
+        text: s.text,
+        link: s.link,
+        linkLabel: s.linkLabel,
+      });
+      results.push({ id: s.id, ok: sent });
+    } catch {
+      results.push({ id: s.id, ok: false });
+    }
+  }
+  return c.json(results);
+});
+
 // Alle Nutzer*innen vereinsübergreifend - für die Admin-Nutzerverwaltung.
 app.get("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   return c.json(await db.listAllUsersForAdmin(c.env.DB));
@@ -1119,7 +1178,6 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   // kann es bei Bedarf selbst weitergeben.
   await sendEmailOnly(c.env, {
     to: email,
-    toName: name,
     subject: "Dein Zugang für Turnen",
     text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: ${email}\nEinmal-Passwort: ${password}\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst.`,
     link: `${c.env.FRONTEND_URL}/login`,
@@ -1374,7 +1432,6 @@ app.post("/api/password-reset/request", async (c) => {
   const resetToken = await signPasswordResetToken(userRow.id, c.env.JWT_SECRET);
   await sendEmailOnly(c.env, {
     to: userRow.email,
-    toName: userRow.name,
     subject: "Passwort zurücksetzen",
     text: `Für dein Konto wurde ein Zurücksetzen des Passworts angefordert. Falls du das warst, kannst du dir über den folgenden Link ein neues Passwort vergeben.\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail - es ändert sich nichts an deinem Passwort.`,
     link: `${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${resetToken}`,

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-itgix-kcsp-reviewer
+version: 0.1.0
+description: Review ITGix (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We specialize in building and supporting Kubernetes clusters across popular cloud providers, as well as on-premise vanilla installations. Our expertise lies in assisting customers with their transition to cloud-native environments and containerization. We can consult, implement and support our clients to adopt Kubernetes and tools from the CNCF landscape.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review ITGix (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We specialize in building and supporting Kubernetes clusters across popular cloud providers, as well as on-premise vanilla installations. Our expertise lies in assisting customers with their transition to cloud-native environments and containerization. We can consult, implement and support our clients to adopt Kubernetes and tools from the CNCF landscape.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-cars-china-academy-of-railway-sciences-kcsp-reviewer
+version: 0.1.0
+description: Review CARS - China Academy of Railway Sciences (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. CARS promotes cloud native best practices in the railway domain, helping make railway information systems development and operation modern and easy. Services around Kubernetes include, but are not limited to, installation, maintenance, service operator development, and training.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review CARS - China Academy of Railway Sciences (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. CARS promotes cloud native best practices in the railway domain, helping make railway information systems development and operation modern and easy. Services around Kubernetes include, but are not limited to, installation, maintenance, service operator development, and training.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

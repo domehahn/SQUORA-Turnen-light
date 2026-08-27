@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-alibaba-cloud-function-compute-reviewer
+version: 0.1.0
+description: Review Alibaba Cloud Function Compute using its official documentation and repository in the Serverless / Hosted Platform category. A fully hosted and serverless running environment that takes away the need to manage infrastructure such as servers and enables developers to focus on writing and uploading code.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Alibaba Cloud Function Compute using its official documentation and repository in the Serverless / Hosted Platform category. A fully hosted and serverless running environment that takes away the need to manage infrastructure such as servers and enables developers to focus on writing and uploading code.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

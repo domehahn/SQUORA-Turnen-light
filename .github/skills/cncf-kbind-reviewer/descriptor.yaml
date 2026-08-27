@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-kbind-reviewer
+version: 0.1.0
+description: Review kbind using its official documentation and repository in the Provisioning / Automation & Configuration category. kbind aims to provide better support for service providers and consumers that reside in distinct Kubernetes clusters.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review kbind using its official documentation and repository in the Provisioning / Automation & Configuration category. kbind aims to provide better support for service providers and consumers that reside in distinct Kubernetes clusters.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

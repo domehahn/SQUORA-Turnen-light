@@ -1,3 +1,5 @@
 JWT_SECRET=change-me-to-a-long-random-string
 # 32 Byte Hex, z.B. erzeugt mit: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ENCRYPTION_KEY=change-me-to-64-hex-chars-0000000000000000000000000000000000000000
+# Optional für lokalen E-Mail-Versand; niemals einen echten Schlüssel committen:
+# RESEND_API_KEY=re_your_local_key

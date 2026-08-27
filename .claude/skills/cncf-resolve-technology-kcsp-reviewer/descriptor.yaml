@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Resolve Technology (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Resolve Technology offers comprehensive cloud-native consultation and implementation services, covering Kubernetes cluster design, cloud-native application deployment, zero-trust security, CI/CD pipeline optimization, and robust monitoring solutions for Kubernetes and related CNCF technologies. From inception to ongoing operations, we ensure seamless integration and optimal performance across the cloud-native ecosystem.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Resolve Technology (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Resolve Technology offers comprehensive cloud-native consultation and implementation services, covering Kubernetes cluster design, cloud-native application deployment, zero-trust security, CI/CD pipeline optimization, and robust monitoring solutions for Kubernetes and related CNCF technologies. From inception to ongoing operations, we ensure seamless integration and optimal performance across the cloud-native ecosystem.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-resolve-technology-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

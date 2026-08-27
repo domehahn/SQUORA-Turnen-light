@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review HPE Ezmeral Runtime Enterprise using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. The HPE Ezmeral Runtime Enterprise is a secure, enterprise-grade platform to deploy cloud-native and non-cloud-native applications at scale across your data centers, multiple clouds, and at the edge.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review HPE Ezmeral Runtime Enterprise using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. The HPE Ezmeral Runtime Enterprise is a secure, enterprise-grade platform to deploy cloud-native and non-cloud-native applications at scale across your data centers, multiple clouds, and at the edge.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-hpe-ezmeral-runtime-enterprise-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

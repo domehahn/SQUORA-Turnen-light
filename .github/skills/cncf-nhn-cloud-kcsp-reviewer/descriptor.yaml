@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-nhn-cloud-kcsp-reviewer
+version: 0.1.0
+description: Review NHN Cloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. NHN Cloud strongly supports customers in understanding and using Kubernetes by offering consulting and training courses run by NHN Cloud edu center to help customers design and configure Kubernetes clusters suitable for their environments and providing fully managed cloud native services.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review NHN Cloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. NHN Cloud strongly supports customers in understanding and using Kubernetes by offering consulting and training courses run by NHN Cloud edu center to help customers design and configure Kubernetes clusters suitable for their environments and providing fully managed cloud native services.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

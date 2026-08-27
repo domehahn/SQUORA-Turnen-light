@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-ngrok-reviewer
+version: 0.1.0
+description: Review ngrok using its official documentation and repository in the Orchestration & Management / API Gateway category. ngrok is a unified ingress platform that combines your firewall, API gateway and global load balancing into a versatile production service. Loved by over 6 million developers, you can deliver and monitor apps from any cloud, datacenter or your home network.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review ngrok using its official documentation and repository in the Orchestration & Management / API Gateway category. ngrok is a unified ingress platform that combines your firewall, API gateway and global load balancing into a versatile production service. Loved by over 6 million developers, you can deliver and monitor apps from any cloud, datacenter or your home network.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

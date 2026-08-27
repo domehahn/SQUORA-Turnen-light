@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review SUSE (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. SUSE is here to help simplify your business modernization journey offering reliable and interoperable cloud native solutions with consulting, training and support services to keep up with the pace of change and your expectations.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review SUSE (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. SUSE is here to help simplify your business modernization journey offering reliable and interoperable cloud native solutions with consulting, training and support services to keep up with the pace of change and your expectations.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-suse-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

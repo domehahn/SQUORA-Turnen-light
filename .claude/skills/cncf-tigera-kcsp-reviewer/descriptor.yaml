@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Tigera (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Calico helps solve complex use cases, accelerate your adoption process of microservices and bring your team up to speed in operating and supporting your application modernization initiative.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Tigera (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Calico helps solve complex use cases, accelerate your adoption process of microservices and bring your team up to speed in operating and supporting your application modernization initiative.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-tigera-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

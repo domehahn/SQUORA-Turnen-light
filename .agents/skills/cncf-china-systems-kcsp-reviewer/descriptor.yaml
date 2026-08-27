@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review China Systems (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. China Systems’ team of cloud technology experts provides consulting, DevOps and Production training, and support services to enterprises to fast-track their adoption of Kubernetes on the cloud-native application platform.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review China Systems (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. China Systems’ team of cloud technology experts provides consulting, DevOps and Production training, and support services to enterprises to fast-track their adoption of Kubernetes on the cloud-native application platform.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-china-systems-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-browser-use-reviewer
+version: 0.1.0
+description: Review Browser Use using its official documentation and repository in the AI Agent / Agent Tool category. Make websites accessible for AI agents. Automate tasks online with ease.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Browser Use using its official documentation and repository in the AI Agent / Agent Tool category. Make websites accessible for AI agents. Automate tasks online with ease.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

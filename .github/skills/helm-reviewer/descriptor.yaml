@@ -1,0 +1,30 @@
+schema_version: "2"
+name: helm-reviewer
+version: 0.1.0
+description: Review Helm charts, templates, values, dependencies, hooks, secrets, schema validation, upgrades, and rollbacks.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Helm charts, templates, values, dependencies, hooks, secrets, schema validation, upgrades, and rollbacks.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

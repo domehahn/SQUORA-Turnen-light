@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-fabric8-kubernetes-client-reviewer
+version: 0.1.0
+description: Review Fabric8 Kubernetes Client using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. The Fabric8 Kubernetes Client is a Java client that is used to interact with Kubernetes clusters through the Kubernetes API. It's one of the main building blocks for other CNCF projects like the Java Operator SDK from the Operator Framework.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Fabric8 Kubernetes Client using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. The Fabric8 Kubernetes Client is a Java client that is used to interact with Kubernetes clusters through the Kubernetes API. It's one of the main building blocks for other CNCF projects like the Java Operator SDK from the Operator Framework.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

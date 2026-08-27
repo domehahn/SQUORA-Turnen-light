@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Desotech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Desotech provides training and consulting services for the world’s leading containerization platform and can customize it to your business needs.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Desotech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Desotech provides training and consulting services for the world’s leading containerization platform and can customize it to your business needs.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-desotech-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

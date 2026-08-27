@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-control-plane-managed-kubernetes-reviewer
+version: 0.1.0
+description: Review Control Plane Managed Kubernetes using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Control Plane Managed Kubernetes is a service that creates and manages Kubernetes clusters across multiple cloud platforms and on-prem environments.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Control Plane Managed Kubernetes using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Control Plane Managed Kubernetes is a service that creates and manages Kubernetes clusters across multiple cloud platforms and on-prem environments.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

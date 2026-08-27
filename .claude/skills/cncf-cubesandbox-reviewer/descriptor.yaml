@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review CubeSandbox using its official documentation and repository in the AI Native Infra / Workload Runtime category. A high-performance sandbox infrastructure for AI Agent execution with 60ms startup and 5MB memory footprint.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review CubeSandbox using its official documentation and repository in the AI Native Infra / Workload Runtime category. A high-performance sandbox infrastructure for AI Agent execution with 60ms startup and 5MB memory footprint.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-cubesandbox-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

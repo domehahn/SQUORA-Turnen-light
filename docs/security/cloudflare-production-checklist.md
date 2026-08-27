@@ -16,7 +16,7 @@ automatisierbar).
 | 6 | Keine personenbezogenen Daten in statischen Build-Artefakten | ✅ (Skript durchsucht `dist/` nach Namen-/E-Mail-Mustern aus Testdaten, sofern vorhanden) | ✅ Manuell geprüft — keine Fixtures/PII im Build |
 | 7 | Debug-Logging ist in Produktion deaktiviert | Teilweise ✅ | ⚠️ Kein explizites Debug-Flag im Code gefunden (kein `DEBUG`-Var, kein `console.log` außer den beiden dokumentierten `console.error`-Aufrufen) — grundsätzlich unauffällig, aber auch kein strukturiertes Logging-Level-System vorhanden, das sich "deaktivieren" ließe |
 | 8 | Keine Synthetic-/Development-Auth-Bypässe in Produktion aktiv | Teilweise ✅ (Skript prüft auf bekannte Bypass-Muster im Code) | ✅ Kein Auth-Bypass-Code gefunden (`requireAuth` ist unconditional, kein `if (env === "dev") skip` o.ä.) |
-| 9 | Keine Secrets/Klartext-Passwörter in `wrangler.toml` | ✅ | ✅ `JWT_SECRET` korrekt als `wrangler secret` referenziert, nicht in `[vars]` |
+| 9 | Keine Secrets/Klartext-Passwörter in `wrangler.toml` | ✅ | ✅ `JWT_SECRET`, `ENCRYPTION_KEY` und `RESEND_API_KEY` korrekt als `wrangler secret` referenziert, nicht in `[vars]` |
 | 10 | KV-Namespaces enthalten keine Kind-/Gesundheits-/Consent-Daten | ✅ | N/A — keine KV-Namespaces im Projekt |
 | 11 | Durable Objects (falls vorhanden) nutzen EU-Jurisdiktion, IDs enthalten keine PII | ✅ | N/A — keine Durable Objects im Projekt |
 | 12 | Rate Limiting für `/api/login` aktiv | ❌ Nicht automatisiert prüfbar (Cloudflare Rate Limiting Rules sind Dashboard-Konfiguration) | ❌ **FAIL** — weder im Code noch als bekannte Dashboard-Regel vorhanden (siehe SEC-01) |

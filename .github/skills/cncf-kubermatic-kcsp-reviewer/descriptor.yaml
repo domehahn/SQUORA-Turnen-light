@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-kubermatic-kcsp-reviewer
+version: 0.1.0
+description: Review Kubermatic (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Kubermatic empowers organizations to fully automate their Kubernetes operations across multi-cloud, edge, and on-prem environments, simplifying the management of thousands of clusters for leading enterprises. Leveraging our deep expertise as a top 15 contributor to the Kubernetes project, we provide professional services and enterprise-grade software to safely accelerate your cloud-native transformation like we've done for leading companies like Lufthansa, Bosch, and T-Systems.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Kubermatic (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Kubermatic empowers organizations to fully automate their Kubernetes operations across multi-cloud, edge, and on-prem environments, simplifying the management of thousands of clusters for leading enterprises. Leveraging our deep expertise as a top 15 contributor to the Kubernetes project, we provide professional services and enterprise-grade software to safely accelerate your cloud-native transformation like we've done for leading companies like Lufthansa, Bosch, and T-Systems.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -49,7 +49,7 @@ STRATO (DNS-Registrar) → Cloudflare Zone squora.de (gemeinsam genutzt)
         │
         └── turnen-api (Worker, kein öffentliches Routing)
               ├── D1 "turnen-eu" (jurisdiction=eu)
-              ├── Email Sending Binding
+              ├── Resend API (HTTPS; API-Key als Worker-Secret)
               └── täglicher Cron (Reminders, Retention, Security-Log-Cleanup)
 ```
 

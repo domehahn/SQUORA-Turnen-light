@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Develocity using its official documentation and repository in the Observability and Analysis / Observability category. Develocity speeds up builds and tests, makes troubleshooting more efficient, and increases toolchain observability with reporting and visualization. Develocity gives developers back at least one day each week in lost productivity, and supports Apache Maven, Bazel, sbt, and Gradle build systems.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Develocity using its official documentation and repository in the Observability and Analysis / Observability category. Develocity speeds up builds and tests, makes troubleshooting more efficient, and increases toolchain observability with reporting and visualization. Develocity gives developers back at least one day each week in lost productivity, and supports Apache Maven, Bazel, sbt, and Gradle build systems.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-develocity-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Oracle Kubernetes Engine (OKE) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Simplify operations of enterprise-grade Kubernetes at scale. Easily deploy and manage resource-intensive workloads such as AI with automatic scaling, patching, and upgrades.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Oracle Kubernetes Engine (OKE) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Simplify operations of enterprise-grade Kubernetes at scale. Easily deploy and manage resource-intensive workloads such as AI with automatic scaling, patching, and upgrades.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-oracle-kubernetes-engine-oke-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

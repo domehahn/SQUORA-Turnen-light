@@ -12,6 +12,7 @@ Repository eingecheckt.
 | Secret | Wo verwaltet | Status |
 |---|---|---|
 | `JWT_SECRET` | `wrangler secret put JWT_SECRET` (laut Kommentar in `worker/wrangler.toml`) | ✅ Korrekt — nicht im Repo, `.dev.vars` (lokaler Platzhalter) ist git-ignored, nur `.dev.vars.example` mit Dummy-Wert ist eingecheckt |
+| `RESEND_API_KEY` | `wrangler secret put RESEND_API_KEY` | ✅ Korrekt — nicht im Repo; authentifiziert ausschließlich den ausgehenden E-Mail-Versand über Resend |
 | Cloudflare API Token (für `wrangler`-CLI/CI) | Nicht im Repo sichtbar — vermutlich lokale Wrangler-Anmeldung/Umgebungsvariable des Bedieners | `VERIFY`: sicherstellen, dass CI (falls eingerichtet) einen dedizierten, minimal berechtigten Token statt eines persönlichen Kontos nutzt |
 | D1-Datenbank-ID, Vereinsnummer o.ä. | `wrangler.toml` (Klartext) | Unkritisch — Datenbank-IDs sind keine Secrets im eigentlichen Sinn, aber kein Zugriffsschutz ohne zusätzlichen Auth-Layer nötig, da D1 nur über den Worker mit eigener Authentifizierung erreichbar ist |
 

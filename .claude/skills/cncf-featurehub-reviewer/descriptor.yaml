@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review FeatureHub using its official documentation and repository in the Observability and Analysis / Feature Flagging category. FeatureHub is a Cloud Native Feature Flags, Remote Configuration and A/B Testing Platform suitable for mobile, web and server applications and available with the variety of SDKs. Self-hosted open source or SaaS options are available.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review FeatureHub using its official documentation and repository in the Observability and Analysis / Feature Flagging category. FeatureHub is a Cloud Native Feature Flags, Remote Configuration and A/B Testing Platform suitable for mobile, web and server applications and available with the variety of SDKs. Self-hosted open source or SaaS options are available.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-featurehub-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

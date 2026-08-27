@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-memcached-reviewer
+version: 0.1.0
+description: Review Memcached using its official documentation and repository in the Data / Data Architecture category. A high performance multithreaded event-based key/value cache store intended to be used in a distributed system.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Memcached using its official documentation and repository in the Data / Data Architecture category. A high performance multithreaded event-based key/value cache store intended to be used in a distributed system.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

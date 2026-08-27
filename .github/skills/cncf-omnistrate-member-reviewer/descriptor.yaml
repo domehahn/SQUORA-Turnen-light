@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-omnistrate-member-reviewer
+version: 0.1.0
+description: 'Review Omnistrate (member) using its official documentation and repository in the App Definition and Development / Continuous Integration & Delivery category. Omnistrate is a CoPilot for platform teams — helping them build software and agent platforms and turn cloud-native projects into production-ready  platforms without years of custom glue code. Instead of stitching together CI/CD, runtimes, infra-as-code, Day-2 operations, integrations, and  billing from scratch for every customer — and making it all work across clouds, regions, accounts, and deployment configurations — Omnistrate  provides ready-to-use modules that integrate directly with the CNCF ecosystem: Kubernetes, Argo, Flux, Helm, Operators, Kustomize, Terraform,  Prometheus, and more. By building on top of CNCF projects rather than reinventing them, Omnistrate enables modern software companies to deliver  applications in any model — OnPrem, BYOC, PaaS, SaaS, or Agent-aaS — in days, not years.'
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: 'Review Omnistrate (member) using its official documentation and repository in the App Definition and Development / Continuous Integration & Delivery category. Omnistrate is a CoPilot for platform teams — helping them build software and agent platforms and turn cloud-native projects into production-ready  platforms without years of custom glue code. Instead of stitching together CI/CD, runtimes, infra-as-code, Day-2 operations, integrations, and  billing from scratch for every customer — and making it all work across clouds, regions, accounts, and deployment configurations — Omnistrate  provides ready-to-use modules that integrate directly with the CNCF ecosystem: Kubernetes, Argo, Flux, Helm, Operators, Kustomize, Terraform,  Prometheus, and more. By building on top of CNCF projects rather than reinventing them, Omnistrate enables modern software companies to deliver  applications in any model — OnPrem, BYOC, PaaS, SaaS, or Agent-aaS — in days, not years.'
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

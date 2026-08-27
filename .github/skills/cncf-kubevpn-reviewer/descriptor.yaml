@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-kubevpn-reviewer
+version: 0.1.0
+description: Review KubeVPN using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. KubeVPN offers a Cloud-Native Dev Environment that seamlessly connects to your Kubernetes cluster network. Gain access to the Kubernetes cluster network effortlessly using service names or Pod IP/Service IP. Facilitate the interception of inbound traffic from remote Kubernetes cluster services to your local PC through a service mesh and more. For instance, you have the flexibility to run your Kubernetes pod within a local Docker container, ensuring an identical environment, volume, and network setup. With KubeVPN, empower yourself to develop applications entirely on your local PC!
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review KubeVPN using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. KubeVPN offers a Cloud-Native Dev Environment that seamlessly connects to your Kubernetes cluster network. Gain access to the Kubernetes cluster network effortlessly using service names or Pod IP/Service IP. Facilitate the interception of inbound traffic from remote Kubernetes cluster services to your local PC through a service mesh and more. For instance, you have the flexibility to run your Kubernetes pod within a local Docker container, ensuring an identical environment, volume, and network setup. With KubeVPN, empower yourself to develop applications entirely on your local PC!
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

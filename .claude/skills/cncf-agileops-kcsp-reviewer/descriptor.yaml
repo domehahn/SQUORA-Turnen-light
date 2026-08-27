@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review AgileOps (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. AgileOps delivers expert Kubernetes consulting, deployment, and optimization services to help teams build scalable, secure, and cloud-native infrastructure. We empower DevOps global teams to streamline operations and accelerate delivery with Kubernetes at the core.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review AgileOps (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. AgileOps delivers expert Kubernetes consulting, deployment, and optimization services to help teams build scalable, secure, and cloud-native infrastructure. We empower DevOps global teams to streamline operations and accelerate delivery with Kubernetes at the core.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-agileops-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

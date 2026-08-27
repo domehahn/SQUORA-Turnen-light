@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-applications-manager-reviewer
+version: 0.1.0
+description: Review Applications Manager using its official documentation and repository in the Observability and Analysis / Observability category. Applications Manager is a multi-platform monitoring tool built for IT admins and DevOps for tracking KPIs of 100+ technologies spanning hybrid clouds, containers as well as traditional environments (web applications, servers, VMs, application servers, databases, big data stores, middleware & messaging components, web servers, web services & ERP suites).
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Applications Manager using its official documentation and repository in the Observability and Analysis / Observability category. Applications Manager is a multi-platform monitoring tool built for IT admins and DevOps for tracking KPIs of 100+ technologies spanning hybrid clouds, containers as well as traditional environments (web applications, servers, VMs, application servers, databases, big data stores, middleware & messaging components, web servers, web services & ERP suites).
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

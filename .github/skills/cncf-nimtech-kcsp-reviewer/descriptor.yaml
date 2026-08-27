@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-nimtech-kcsp-reviewer
+version: 0.1.0
+description: Review Nimtech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We help organizations unlock the full potential of Kubernetes through hands-on consulting, tailored training, and end-to-end implementation, backed by ongoing support from our team of dedicated platform engineers.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Nimtech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We help organizations unlock the full potential of Kubernetes through hands-on consulting, tailored training, and end-to-end implementation, backed by ongoing support from our team of dedicated platform engineers.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

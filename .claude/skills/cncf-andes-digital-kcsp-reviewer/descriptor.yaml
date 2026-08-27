@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Andes Digital (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We empower teams to succeed with Kubernetes through consulting, implementation, and 24/7 support. Our solutions accelerate cloud-native adoption, improve developer productivity, and reduce operational risk.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Andes Digital (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We empower teams to succeed with Kubernetes through consulting, implementation, and 24/7 support. Our solutions accelerate cloud-native adoption, improve developer productivity, and reduce operational risk.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-andes-digital-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

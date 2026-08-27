@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Vald using its official documentation and repository in the App Definition and Development / Database category. Vald is a highly scalable, cloud-native distributed vector search engine optimized for machine learning and AI applications. It offers efficient, near real-time search for high-dimensional vector data, ensuring robust performance and flexibility in handling large datasets. Engineered for ease of use and integration, Vald empowers developers with cutting-edge search capabilities.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Vald using its official documentation and repository in the App Definition and Development / Database category. Vald is a highly scalable, cloud-native distributed vector search engine optimized for machine learning and AI applications. It offers efficient, near real-time search for high-dimensional vector data, ensuring robust performance and flexibility in handling large datasets. Engineered for ease of use and integration, Vald empowers developers with cutting-edge search capabilities.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-vald-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

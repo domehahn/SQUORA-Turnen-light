@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review IBM Storage using its official documentation and repository in the Runtime / Cloud Native Storage category. IBM Storage for containers, Kubernetes, and Red Hat OpenShift delivers native cloud acceleration to help you build powerful, agile, and persistent storage for private cloud environments.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review IBM Storage using its official documentation and repository in the Runtime / Cloud Native Storage category. IBM Storage for containers, Kubernetes, and Red Hat OpenShift delivers native cloud acceleration to help you build powerful, agile, and persistent storage for private cloud environments.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-ibm-storage-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

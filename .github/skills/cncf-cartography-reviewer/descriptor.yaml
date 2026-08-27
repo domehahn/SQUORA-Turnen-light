@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-cartography-reviewer
+version: 0.1.0
+description: Review Cartography using its official documentation and repository in the Provisioning / Security & Compliance category. Cartography is a Python tool that consolidates infrastructure assets and the relationships between them in an intuitive graph view.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Cartography using its official documentation and repository in the Provisioning / Security & Compliance category. Cartography is a Python tool that consolidates infrastructure assets and the relationships between them in an intuitive graph view.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Catalyst by Zoho using its official documentation and repository in the Serverless / Hosted Platform category. Catalyst is a full-stack cloud development platform that enables you to build feature-rich applications. From building and testing to hosting and deploying, Catalyst streamlines your development cycle with a rich suite of Serverless components, Backend tools, DevOps, AI/ML capabilities and more.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Catalyst by Zoho using its official documentation and repository in the Serverless / Hosted Platform category. Catalyst is a full-stack cloud development platform that enables you to build feature-rich applications. From building and testing to hosting and deploying, Catalyst streamlines your development cycle with a rich suite of Serverless components, Backend tools, DevOps, AI/ML capabilities and more.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-catalyst-by-zoho-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

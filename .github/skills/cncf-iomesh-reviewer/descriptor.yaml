@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-iomesh-reviewer
+version: 0.1.0
+description: Review IOMesh using its official documentation and repository in the Runtime / Cloud Native Storage category. IOMesh is an enterprise Kubernetes-native distributed storage product with extreme performance and strong reliability. It leverages Kubernetes-native DevOps system to manage storage resources in the Kubernetes cluster, and provide persistent storage for the most demanding stateful applications. IOMesh will help reduce the cost and complexity of adopting Kubernetes and accelerate your containerization journey.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review IOMesh using its official documentation and repository in the Runtime / Cloud Native Storage category. IOMesh is an enterprise Kubernetes-native distributed storage product with extreme performance and strong reliability. It leverages Kubernetes-native DevOps system to manage storage resources in the Kubernetes cluster, and provide persistent storage for the most demanding stateful applications. IOMesh will help reduce the cost and complexity of adopting Kubernetes and accelerate your containerization journey.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Switch Cloud Kubernetes (SCK) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Switch Cloud Kubernetes (SCK) is a Kubernetes as a Service platform for the education, research and innovation landscape in Switzerland.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Switch Cloud Kubernetes (SCK) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Switch Cloud Kubernetes (SCK) is a Kubernetes as a Service platform for the education, research and innovation landscape in Switzerland.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-switch-cloud-kubernetes-sck-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

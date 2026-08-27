@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-opennebula-elastic-kubernetes-service-oneks-reviewer
+version: 0.1.0
+description: Review OpenNebula Elastic Kubernetes Service (OneKS) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Virtual Appliance for KVM with preinstalled Kubernetes service is available from OpenNebula's Public Marketplace.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review OpenNebula Elastic Kubernetes Service (OneKS) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Virtual Appliance for KVM with preinstalled Kubernetes service is available from OpenNebula's Public Marketplace.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

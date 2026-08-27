@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Dosec (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. As the leader of cloud native security in China and the first cloud native security manufacturer in China to join CNCF, Xiaoyou Technology has a large number of Kubernetes expert lecturers who have passed CKA certification and the most professional container security R&D team in China, providing Kubernetes full life cycle service solutions.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Dosec (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. As the leader of cloud native security in China and the first cloud native security manufacturer in China to join CNCF, Xiaoyou Technology has a large number of Kubernetes expert lecturers who have passed CKA certification and the most professional container security R&D team in China, providing Kubernetes full life cycle service solutions.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-dosec-kcntp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

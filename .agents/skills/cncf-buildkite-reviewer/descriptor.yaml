@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Buildkite using its official documentation and repository in the App Definition and Development / Continuous Integration & Delivery category. Buildkite is a platform for running fast, secure, and scalable continuous integration pipelines on your own infrastructure.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Buildkite using its official documentation and repository in the App Definition and Development / Continuous Integration & Delivery category. Buildkite is a platform for running fast, secure, and scalable continuous integration pipelines on your own infrastructure.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-buildkite-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,7 +1,7 @@
 -- In-App-Postfach für Benachrichtigungen (Freigabe-Anfragen, Warteliste,
 -- Anwesenheits-Trends). Wird zusätzlich - best effort, ohne den Aufruf zu
--- blockieren - per E-Mail verschickt, sobald Email Sending für die
--- Absender-Domain freigeschaltet ist (siehe worker/src/notifications.ts).
+-- blockieren - per E-Mail über Resend verschickt, sobald der API-Schlüssel
+-- als Worker-Secret gesetzt ist (siehe worker/src/notifications.ts).
 CREATE TABLE notifications (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-mia-platform-reviewer
+version: 0.1.0
+description: 'Review Mia-Platform using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Mia-Platform is a Digital Platform Builder: it enables organizations to build and orchestrate their Internal Developer Platforms (IDP) to scale cloud-native development and operations. Mia-Platform also features a Data Fabric solution that can be used to build a Digital Integration Hub. This solution ingests data from different sources, aggregates it in single views, and makes it available in near real-time.'
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: 'Review Mia-Platform using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Mia-Platform is a Digital Platform Builder: it enables organizations to build and orchestrate their Internal Developer Platforms (IDP) to scale cloud-native development and operations. Mia-Platform also features a Data Fabric solution that can be used to build a Digital Integration Hub. This solution ingests data from different sources, aggregates it in single views, and makes it available in near real-time.'
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

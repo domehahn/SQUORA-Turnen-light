@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-alibaba-cloud-file-storage-cpfs-reviewer
+version: 0.1.0
+description: Review Alibaba Cloud File Storage CPFS using its official documentation and repository in the Runtime / Cloud Native Storage category. Alibaba Cloud File Storage CPFS is a scale-out parallel file system for Artificial intelligence(AI), High performance computing(HPC) workload while ensuring security, reliability, data efficiency and high performance.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Alibaba Cloud File Storage CPFS using its official documentation and repository in the Runtime / Cloud Native Storage category. Alibaba Cloud File Storage CPFS is a scale-out parallel file system for Artificial intelligence(AI), High performance computing(HPC) workload while ensuring security, reliability, data efficiency and high performance.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

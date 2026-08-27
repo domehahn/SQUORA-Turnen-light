@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Mandao Fintech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Mandao Technology has launched K8s operations and maintenance services around the full life cycle of Kubernetes to help you enjoy the benefits of rapid application transformation and efficiency improvement brought by K8s, greatly reducing business risks.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Mandao Fintech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Mandao Technology has launched K8s operations and maintenance services around the full life cycle of Kubernetes to help you enjoy the benefits of rapid application transformation and efficiency improvement brought by K8s, greatly reducing business risks.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-mandao-fintech-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

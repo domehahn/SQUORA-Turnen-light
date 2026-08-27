@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Effectual (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Effectual delivers full stack Kubernetes professional services including automated deployments, service mesh integration, network policy security, observability, and persistent storage solutions to streamline, secure, and scale container environments. Our experience and expertise help customers accelerate adoption, optimize workloads, and manage Kubernetes platforms with proven design and implementation approaches.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Effectual (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Effectual delivers full stack Kubernetes professional services including automated deployments, service mesh integration, network policy security, observability, and persistent storage solutions to streamline, secure, and scale container environments. Our experience and expertise help customers accelerate adoption, optimize workloads, and manage Kubernetes platforms with proven design and implementation approaches.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-effectual-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

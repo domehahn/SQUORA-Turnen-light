@@ -1,0 +1,30 @@
+schema_version: "2"
+name: security-invariant-test-engineer
+version: 0.1.0
+description: Derive negative tests and declarative evals from contract capabilities, tools, data flows, approvals, limits, and structured invariants.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Derive negative tests and declarative evals from contract capabilities, tools, data flows, approvals, limits, and structured invariants.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

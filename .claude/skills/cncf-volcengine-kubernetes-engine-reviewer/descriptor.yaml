@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Volcengine Kubernetes Engine using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Volcengine Kubernetes Engine(VKE) is a Kubernetes-based service that provides high-performance container cluster management. By deeply integrating the new generation of cloud-native technologies, VKE ensures high efficiency for enterprises through running containerized applications on the cloud
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Volcengine Kubernetes Engine using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Volcengine Kubernetes Engine(VKE) is a Kubernetes-based service that provides high-performance container cluster management. By deeply integrating the new generation of cloud-native technologies, VKE ensures high efficiency for enterprises through running containerized applications on the cloud
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-volcengine-kubernetes-engine-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

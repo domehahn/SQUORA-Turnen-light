@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Oracle Functions using its official documentation and repository in the Serverless / Hosted Platform category. Write, deploy, and run code without having to provision, manage, or scale servers. Oracle Functions is a fully managed, highly scalable, on-demand, functions-as-a-service platform, built on enterprise-grade Oracle Cloud Infrastructure and powered by the Fn Project open source engine.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Oracle Functions using its official documentation and repository in the Serverless / Hosted Platform category. Write, deploy, and run code without having to provision, manage, or scale servers. Oracle Functions is a fully managed, highly scalable, on-demand, functions-as-a-service platform, built on enterprise-grade Oracle Cloud Infrastructure and powered by the Fn Project open source engine.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-oracle-functions-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

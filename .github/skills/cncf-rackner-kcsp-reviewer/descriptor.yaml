@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-rackner-kcsp-reviewer
+version: 0.1.0
+description: Review Rackner (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Rackner is a cloud native consultancy where we work closely with our clients to build, secure, and operate on any cloud with Kubernetes.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Rackner (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Rackner is a cloud native consultancy where we work closely with our clients to build, secure, and operate on any cloud with Kubernetes.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

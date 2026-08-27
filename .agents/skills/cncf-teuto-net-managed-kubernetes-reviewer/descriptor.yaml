@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review teuto.net Managed Kubernetes using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. teuto.net quickly deploys and manages production-ready Kubernetes clusters for you.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review teuto.net Managed Kubernetes using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. teuto.net quickly deploys and manages production-ready Kubernetes clusters for you.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-teuto-net-managed-kubernetes-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0
