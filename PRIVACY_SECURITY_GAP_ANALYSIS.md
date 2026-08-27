@@ -49,16 +49,17 @@ inkl. Architekturumstellung):
 - E-Mail-Änderung am eigenen Profil verlangt jetzt Step-up
   (aktuelles Passwort) - vorher ungeschützt trotz E-Mail = Login-Name.
 
-**Bewusst weiterhin NICHT umgesetzt:**
-
 **Nachtrag (2026-08-27, dritter Durchgang):** Auf explizite Nutzerbestätigung
 ("go for it") zusätzlich umgesetzt:
 
 - **SEC-18 (MFA API-seitige Durchsetzung)**: `requireAuth` blockiert jetzt Admin-/Jugendleitung-Accounts ohne aktivierte MFA serverseitig für alle Routen außer einer expliziten Positivliste (`/api/me`, `/api/logout`, `/api/me/mfa*`, `/api/me/sessions*`, `/api/me/password`) - vorher konnte ein direkter API-Client (nicht die SPA) das UI-Overlay umgehen. 2 neue/angepasste Tests, 3 bestehende Tests mussten auf echte MFA-Einrichtung umgestellt werden (neuer `enableMfaForTest()`-Testhelfer).
 - **SEC-19 (PBKDF2-Iterationen)**: von global 100.000 auf 600.000 (OWASP-Empfehlung) angehoben. Iterationszahl jetzt pro Nutzer gespeichert (`users.password_iterations`, Migration 0038) statt hartkodiert - bestehende Hashes bleiben mit ihrer ursprünglichen Zahl gültig, ein erfolgreicher Login hebt sie transparent auf die neue Stufe (kein erzwungenes Passwort-Reset nötig). MFA-Backup-Codes bewusst auf einer eigenen, stabilen Konstante (100.000) belassen - sie sind kurzlebige Zufallswerte, ihre Sicherheit kommt aus der Entropie, nicht aus PBKDF2-Kosten. 2 neue Tests (Legacy-Hash funktioniert weiter + wird angehoben, neue Nutzer bekommen direkt die neue Zahl).
-- **CI/CD-Pipeline, Branch Protection, Required Status Checks** - GitHub-Repo-Einstellungen, kein Code.
+- **SEC-20 (CI-Pipeline)**: `.github/workflows/ci.yml` - läuft bei jedem Push/PR auf main, je ein Job für API-Worker (Typecheck, Lint, 43 Tests) und Frontend-Worker (Lint, Typecheck, Build). Deckte sofort eine echte Lücke auf: `oxlint` war im Worker-Paket nie als Dependency deklariert, lief bisher nur dank einer lokal auflösbaren `npx`-Version - im CI-Runner schlug der erste Durchlauf entsprechend fehl, gefixt durch Nachtragen als devDependency. **Branch Protection bewusst NICHT aktiviert** - Nutzerentscheidung: CI-Status soll nur sichtbar sein, `main` bleibt für direkte Pushes offen (kein PR-Zwang), um den etablierten Arbeitsablauf dieser Session nicht zu brechen.
+
+**Bewusst weiterhin NICHT umgesetzt:**
+
 - **IaC (`cloudflare-turnen-iac/`) entspricht nicht der echten Infrastruktur** - lt. früherer expliziter Nutzeranweisung unangetastet lassen.
-- Backup/Restore-Test, externer Pentest, DAST - organisatorische Prozesse, nicht code-seitig lösbar.
+- Backup/Restore-Test, externer Pentest, DAST - organisatorische Prozesse, nicht code-seitig lösbar ohne dedizierte Tools/Beauftragung.
 
 Diese Punkte bleiben **offen und sind nicht vergessen** - sie sind bewusst
 zurückgestellt (niedrige Priorität bzw. außerhalb des Code-Scopes), nicht
