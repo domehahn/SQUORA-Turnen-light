@@ -1,0 +1,53 @@
+name: CI
+
+# CI/CD-Pipeline (Finding aus der externen Production-Readiness-Prüfung
+# 2026-08-27): vorher gab es keinerlei automatisierte Prüfung auf main.
+# Läuft bei jedem Push/PR auf main für beide Teilprojekte (API-Worker,
+# Frontend-Worker) getrennt - Typecheck, Lint, Tests (Worker), Build.
+# Deployment bleibt bewusst manuell (wrangler deploy, s. README) statt
+# hier automatisiert, um keine versehentlichen Produktiv-Deploys direkt
+# aus CI auszulösen, solange kein eigenes Deploy-Secret-Handling etabliert
+# ist.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  worker:
+    name: API-Worker (Typecheck, Lint, Tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: turnen/worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: turnen/worker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  web:
+    name: Frontend-Worker (Typecheck, Lint, Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: turnen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: turnen/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run web:typecheck
+      - run: npm run build

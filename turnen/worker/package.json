@@ -10,6 +10,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "create-admin": "node scripts/create-admin.mjs",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
     "test": "vitest run"
   },
   "dependencies": {
