@@ -3,24 +3,25 @@ variable "cloudflare_account_id" {
   type        = string
 }
 
+# Nur nötig, falls manage_zone_settings = true (s. security.tf) - die
+# Turnen-App selbst braucht keine eigene Zone: sie läuft unter
+# squora.de/turnen-light/ auf der bestehenden, von mehreren Projekten
+# gemeinsam genutzten Zone squora.de (kein Custom Domain/Subdomain für
+# dieses Projekt).
 variable "cloudflare_zone_id" {
-  description = "Existing Cloudflare Zone ID for the domain registered at STRATO."
+  description = "Zone ID von squora.de - nur für optionale Zone-weite Security-Settings (siehe manage_zone_settings)."
   type        = string
-}
-
-variable "domain" {
-  description = "Base domain, e.g. turnen.example.de."
-  type        = string
+  default     = null
 }
 
 variable "project_name" {
-  description = "Short lowercase project identifier used in Cloudflare resource names."
+  description = "Kurzer Bezeichner für Ressourcennamen dieses Projekts."
   type        = string
   default     = "turnen"
 }
 
 variable "environment" {
-  description = "Deployment environment."
+  description = "Deployment-Umgebung."
   type        = string
   default     = "prod"
 
@@ -30,49 +31,16 @@ variable "environment" {
   }
 }
 
-variable "app_subdomain" {
-  description = "Frontend subdomain."
-  type        = string
-  default     = "app"
-}
-
-variable "api_subdomain" {
-  description = "API/Worker subdomain."
-  type        = string
-  default     = "api"
-}
-
-variable "pages_production_branch" {
-  description = "Branch name used for Cloudflare Pages production deployments."
-  type        = string
-  default     = "main"
-}
-
-variable "pages_build_command" {
-  description = "Frontend build command."
-  type        = string
-  default     = "npm run build"
-}
-
-variable "pages_output_directory" {
-  description = "Frontend build output directory."
-  type        = string
-  default     = "dist"
-}
-
-variable "enable_export_bucket" {
-  description = "Create a private EU R2 bucket for short-lived GDPR/user exports."
+# Zone-weite Einstellungen (TLS, 0-RTT, Always Online) gelten für die
+# GESAMTE Zone squora.de, nicht nur für /turnen-light/ - squora.de hostet
+# mehrere Projekte (u.a. das Referenzprojekt tournament-manager) auf
+# demselben Zonen-Objekt. Dieses Terraform-Projekt darf solche Einstellungen
+# NICHT unilateral verwalten, ohne das mit den anderen Projekten auf
+# derselben Zone abzustimmen - deshalb standardmäßig deaktiviert (false).
+# Nur aktivieren, wenn ausdrücklich geklärt ist, dass dieses Repository die
+# Quelle der Wahrheit für die Zonen-Einstellungen von squora.de sein soll.
+variable "manage_zone_settings" {
+  description = "Zone-weite Security-Settings für squora.de verwalten (WARNUNG: wirkt auf ALLE Projekte der gemeinsam genutzten Zone, nicht nur turnen-light). Standardmäßig aus."
   type        = bool
-  default     = true
-}
-
-variable "export_retention_seconds" {
-  description = "Automatic deletion age for export objects. Default: 24 hours."
-  type        = number
-  default     = 86400
-
-  validation {
-    condition     = var.export_retention_seconds >= 3600
-    error_message = "export_retention_seconds must be at least 3600 seconds."
-  }
+  default     = false
 }

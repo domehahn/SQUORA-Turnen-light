@@ -1,270 +1,184 @@
 # Cloudflare IaC – Turnen-App
 
-Baseline-Infrastruktur für eine Anwendung, die personenbezogene Daten von
-Minderjährigen und Gesundheitsdaten verarbeitet.
+Terraform-Projekt für die tatsächliche Cloudflare-Infrastruktur der
+Turnen-App (SQUORA). Angepasst am 2026-08-27 von einem generischen
+Platzhalter-Scaffold auf die reale Architektur - siehe
+`../PRIVACY_SECURITY_GAP_ANALYSIS.md` für den Hintergrund.
 
-## Zielarchitektur
+## Reale Architektur
 
 ```text
-STRATO
-└── Domain-Registrar
-    └── Nameserver zeigen auf Cloudflare
-
-Cloudflare Zone / DNS
-├── app.<domain>
-│   └── Cloudflare Pages
-└── api.<domain>
-    └── Cloudflare Worker
-        ├── D1: jurisdiction = eu
-        └── R2 exports: jurisdiction = eu, automatische Löschung
+STRATO (nur DNS-Registrar für squora.de)
+        |
+        v
+Cloudflare Zone squora.de (gemeinsam genutzt mit weiteren Projekten,
+                            u.a. dem Referenzprojekt tournament-manager)
+        |
+        +-- Route squora.de/turnen-light* (in turnen/wrangler.toml)
+        |         |
+        |         v
+        |   turnen-web (Cloudflare Worker, KEIN Cloudflare Pages)
+        |     +-- Assets-Bindung: statische SPA-Dateien (dist/)
+        |     +-- Service-Binding "API" -> turnen-api
+        |
+        +-- turnen-api (Cloudflare Worker, kein eigenes öffentliches
+              Routing, nur per Service Binding erreichbar,
+              workers_dev = false)
+              +-- D1 "turnen-eu", jurisdiction = eu   <- HIER von Terraform verwaltet
+              +-- Email-Sending-Bindung
+              +-- täglicher Cron-Trigger
 ```
 
-## Warum Terraform + Wrangler?
+Es gibt **keine** separate `api.<domain>`-Subdomain, **kein** Cloudflare
+Pages Project und **keinen** `app.<domain>`-Hostname - das war die Annahme
+des ursprünglichen generischen Scaffolds, entspricht aber nicht der
+tatsächlich gebauten Anwendung. Beide Worker sind im selben Cloudflare-
+Account per Service Binding verbunden, nicht per HTTP/DNS.
 
-Terraform verwaltet langlebige Infrastruktur:
+## Warum nur D1 in Terraform?
 
-- D1
-- R2
-- Cloudflare Pages Project
-- DNS
-- Worker-Service
-- Worker Custom Domain
-- TLS/HTTPS-Zoneneinstellungen
+Dieses Projekt verwaltet in Terraform **ausschließlich die D1-Datenbank**.
+Alles andere - beide Worker-Skripte, die Route, die Assets-Bindung, die
+Service-Bindung, die Email-Bindung, der Cron-Trigger und alle Secrets -
+bleibt bei Wrangler (`turnen/wrangler.toml`, `turnen/worker/wrangler.toml`,
+`wrangler deploy`).
 
-Wrangler verwaltet Worker-Code, Bindings und Secrets.
+Das ist kein Kompromiss, sondern eine bewusste, geprüfte Entscheidung:
 
-Das verhindert insbesondere, dass Verschlüsselungsschlüssel oder andere
-Anwendungs-Secrets als Terraform-Variablen im Terraform-State landen.
+- Der aktuelle Cloudflare-Terraform-Provider (`cloudflare/cloudflare ~> 5`)
+  modelliert Worker-Code nicht mehr als einfache Datei-Referenz, sondern
+  über `cloudflare_worker_version` mit einem `modules`-Attribut, das den
+  kompilierten JS-Code (inkl. aller SPA-Assets für `turnen-web`) inhaltlich
+  in die Ressource - und damit in den Terraform-State - einbetten würde.
+  Für eine SPA mit vielen statischen Assets ist das unpraktikabel und
+  würde den ohnehin schon zu schützenden State-File zusätzlich aufblähen.
+- Wrangler ist genau für diesen Zweck gebaut (inkrementelle Asset-Uploads,
+  Source Maps, `wrangler dev`, Secrets-Handling) und funktioniert bereits
+  zuverlässig für dieses Projekt.
+- Zwei Tools, die dieselbe Ressource verwalten (z. B. die Route sowohl in
+  `wrangler.toml` als auch in `cloudflare_workers_route`), würden
+  gegeneinander driften - bei jedem `wrangler deploy` bzw. `terraform
+  apply` könnte das jeweils andere Tool die Änderung des anderen wieder
+  zurücksetzen oder einen Konfliktfehler werfen.
+
+D1 ist dagegen ideal für Terraform: die Datenbank selbst (inkl. der nach
+der Erstellung nicht mehr änderbaren `jurisdiction`) ist eine langlebige,
+von Wrangler nur per `database_id` *referenzierte*, nicht *erzeugte*
+Ressource - keine Überschneidung, kein Konflikt.
+
+## Bestehende Datenbank importieren
+
+Die produktive Datenbank `turnen-eu` (`jurisdiction = eu`) existiert
+bereits (angelegt am 2026-08-26 per `wrangler d1 create turnen-eu
+--jurisdiction eu`, siehe `../docs/privacy/cloudflare-data-flow.md`). Sie
+darf **nicht** neu erzeugt werden - das würde eine zweite, leere Datenbank
+mit demselben Namen anlegen wollen bzw. einen Fehler werfen. Vor dem
+ersten `apply` MUSS sie importiert werden:
+
+```bash
+export CLOUDFLARE_API_TOKEN='...'
+terraform init   # oder: tofu init
+
+terraform import cloudflare_d1_database.app \
+  <account_id>/da52e146-2dde-47d9-9747-9da8cda1cfdf
+
+terraform plan   # MUSS "No changes" zeigen, bevor irgendetwas applied wird
+```
+
+Zeigt `terraform plan` nach dem Import **irgendeine** Änderung an D1 an
+(insbesondere an `jurisdiction` oder `read_replication`) - **nicht
+applyen**. Das würde bedeuten, dass die hier hinterlegte Konfiguration
+nicht exakt der echten Datenbank entspricht, und ein `apply` könnte ein
+Replacement (= Datenverlust) auslösen.
 
 ## Voraussetzungen
 
-- Domain bleibt bei STRATO registriert.
-- Die Domain muss als Zone in Cloudflare vorhanden sein.
-- Bei STRATO werden die von Cloudflare vorgegebenen autoritativen Nameserver
-  für die Domain hinterlegt.
-- Terraform >= 1.7
-- Node.js
+- Terraform >= 1.7 (oder ein kompatibles Tool wie OpenTofu)
 - Cloudflare Account ID
-- Cloudflare Zone ID
-- ein minimal berechtigtes Cloudflare API Token
+- Ein minimal berechtigtes Cloudflare API Token (Schreibrecht auf D1 für
+  diesen Account; zusätzlich Zone-Settings-Schreibrecht für die Zone
+  squora.de, aber **nur** falls `manage_zone_settings = true` genutzt wird)
 
 ## API Token
 
-Keinen Global API Key benutzen.
-
-Das Token benötigt für diese Baseline mindestens Schreibrechte für die
-tatsächlich verwendeten Ressourcen, z. B.:
-
-- D1
-- R2
-- Pages
-- Workers Scripts
-- Workers Routes / Custom Domains
-- DNS
-- Zone Settings
-
-Das Token ausschließlich als Umgebungsvariable übergeben:
+Keinen Global API Key benutzen. Token ausschließlich als
+Umgebungsvariable:
 
 ```bash
 export CLOUDFLARE_API_TOKEN='...'
 ```
 
-## Installation
+## Installation (nach dem Import, s.o.)
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
 $EDITOR terraform.tfvars
 
-terraform init
 terraform fmt -recursive
 terraform validate
 terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Danach:
+Danach `d1_database_id` aus `terraform output -raw d1_database_id` prüfen -
+er muss weiterhin exakt mit `database_id` in
+`../turnen/worker/wrangler.toml` übereinstimmen (Terraform ändert diese
+Datei nicht automatisch, das bleibt manuell/per PR gepflegt, s.o.).
+
+## Worker deployen (weiterhin über Wrangler)
 
 ```bash
-python3 scripts/render-wrangler.py
-npm install
-npm run cf:types
-npm run cf:deploy:api
-```
+cd ../turnen/worker
+npm run db:migrate:remote   # falls neue Migrationen anstehen
+npm run deploy
 
-Frontend:
-
-```bash
+cd ../..
+cd turnen
 npm run build
-npx wrangler pages deploy dist \
-  --project-name="$(terraform output -raw pages_project_name)" \
-  --branch=main
+npm run web:deploy
 ```
+
+Reihenfolge wichtig: API-Worker vor Web-Worker deployen, siehe
+`../README.md` im Hauptprojekt.
 
 ## Worker Secrets
 
-Secrets **nicht** über Terraform übergeben.
-
-Beispiel für einen Key für Application-/Field-Level Encryption:
-
-```bash
-openssl rand -base64 32
-npx wrangler secret put FIELD_ENCRYPTION_KEY
-```
-
-Der Key muss zusätzlich außerhalb von Cloudflare in einem kontrollierten
-Recovery-/Key-Management-Prozess gesichert werden.
-
-Keine Schlüssel in:
-
-- Git
-- terraform.tfvars
-- wrangler.jsonc
-- Frontend Environment Variables
-- CI Logs
-
-## EU-Jurisdiction
-
-D1 wird explizit mit:
-
-```hcl
-jurisdiction = "eu"
-```
-
-erstellt.
-
-R2 wird ebenfalls explizit mit:
-
-```hcl
-jurisdiction = "eu"
-```
-
-erstellt.
-
-Ein Location Hint wie `weur` ist keine gleichwertige Jurisdiction-Garantie.
-
-WICHTIG: Bestehende D1-Datenbanken ohne Jurisdiction nicht blind ersetzen.
-Ein Replacement kann Datenverlust verursachen. Erst Backup/Migrationsplan
-erstellen.
-
-## D1
-
-`prevent_destroy = true` ist bewusst gesetzt.
-
-Vor Datenbankmigrationen:
+Secrets **nicht** über Terraform übergeben - dort landen sie sonst im
+State. `JWT_SECRET` und `ENCRYPTION_KEY` weiterhin per:
 
 ```bash
-terraform plan
+wrangler secret put JWT_SECRET
+wrangler secret put ENCRYPTION_KEY
 ```
 
-genau prüfen. Keine automatische Replacement-Aktion gegen Produktions-D1
-freigeben.
+setzen (aus `turnen/worker/`). Keine Schlüssel in Git, `terraform.tfvars`,
+`wrangler.toml` oder CI-Logs.
 
-## R2 Exporte
+## Zone-weite Einstellungen (`manage_zone_settings`)
 
-Der optionale Export-Bucket ist nur für kurzlebige Exporte gedacht.
-
-Default:
-
-```text
-24 Stunden
-```
-
-Danach löscht eine R2 Lifecycle Rule die Objekte.
-
-Der Bucket erhält keine Public-Domain-Konfiguration.
-
-Die Anwendung sollte Downloads nur über serverseitig autorisierte Zugriffe
-oder kurzlebige signierte URLs ermöglichen.
-
-## Logging
-
-Cloudflare Worker Observability und Logpush sind zunächst deaktiviert.
-
-Erst aktivieren, wenn garantiert ist, dass folgende Daten niemals in Logs,
-Traces oder Telemetrie gelangen:
-
-- Name
-- Geburtsdatum
-- E-Mail
-- Telefonnummer
-- Notfallkontakte
-- Allergien
-- Medikamente
-- Erkrankungen
-- medizinische Hinweise
-- Tokens/Cookies/Authorization Header
-
-Audit Logging für fachliche Zugriffe sollte separat und payload-frei in der
-Anwendung implementiert werden.
-
-## HTTP Caching
-
-Für alle Antworten mit personenbezogenen Daten:
-
-```http
-Cache-Control: no-store, private
-```
-
-Keine Cache Rules anlegen, die `/api`, `/health`, `/children`,
-`/emergency`, `/guardian`, `/auth` oder `/exports` zwischenspeichern.
-
-## STRATO
-
-STRATO bleibt in diesem Design nur Registrar.
-
-Es werden dort absichtlich keine:
-
-- Kinderprofile
-- Gesundheitsdaten
-- Notfallkontakte
-- Datenbankinhalte
-- Backups
-
-abgelegt.
+**Standardmäßig deaktiviert.** `squora.de` ist eine von mehreren Projekten
+gemeinsam genutzte Zone. Zone-weite Einstellungen (TLS-Minimum, 0-RTT,
+Always Online) in `security.tf` wirken auf die **gesamte** Zone, nicht nur
+auf `/turnen-light/`. Nur aktivieren, wenn mit den anderen Projekten auf
+derselben Zone abgestimmt ist, dass dieses Repository die Quelle der
+Wahrheit für diese Einstellungen sein soll.
 
 ## Terraform State
 
-Der Terraform-State enthält Infrastrukturmetadaten und muss trotzdem geschützt
-werden.
+Enthält Infrastrukturmetadaten (u.a. die D1-`database_id`) und muss
+trotzdem geschützt werden - nicht ins Git-Repository committen (s.
+`.gitignore`). Für einen mehrköpfigen/CI-Betrieb einen verschlüsselten
+Remote State mit Zugriffskontrolle verwenden.
 
-Nicht ins Git Repository committen.
+## Nicht (mehr) enthalten
 
-Für CI/CD einen verschlüsselten Remote State mit Zugriffskontrolle verwenden,
-z. B. den State-Backend-Mechanismus der eingesetzten CI/CD-Plattform oder ein
-separat gebootstrapptes privates Backend.
-
-## Noch nicht enthalten
-
-Bewusst nicht pauschal aktiviert:
-
-- Cloudflare KV
-- global replizierte Durable Objects
-- Web Analytics
-- Logpush
-- Zaraz
-- Third-party Analytics
-- Cloudflare Access für normale App-Benutzer
-- Regional Services / Data Localization Suite
-- WAF Managed Rules / Rate Limiting Regeln
-
-Diese Funktionen hängen von Plan, Architektur und Anwendungslogik ab und
-sollten gezielt ergänzt werden.
-
-Für eine Anwendung mit Gesundheitsdaten von Kindern sind vor Go-live
-insbesondere noch zu ergänzen:
-
-1. Authentifizierung
-2. RBAC + Object/Relationship-Level Authorization
-3. Field-Level Encryption für Gesundheitsdaten
-4. Consent-/Widerrufsmodell
-5. Audit Events ohne Payload
-6. Rate Limiting für Login/Reset/API
-7. CSP und weitere Response Security Headers
-8. Datenlöschung/Retention
-9. Backup-/Restore-Test
-10. Datenschutz-Folgenabschätzung
-11. AVV/DPA und Transferprüfung für Cloudflare
-12. externer Penetrationstest
+Der ursprüngliche Scaffold enthielt zusätzlich ein Cloudflare-Pages-
+Project, eine Workers-Custom-Domain, einen R2-Export-Bucket und einen
+eigenen Platzhalter-Worker-Quellcode - all das entsprach nicht der echten
+Anwendung und wurde entfernt, statt es künstlich passend zu biegen. Sollte
+künftig tatsächlich ein R2-Bucket für Exporte gebraucht werden: neu
+hinzufügen, mit `jurisdiction = "eu"` von Anfang an, analog zum
+D1-Vorgehen hier.
 
 ## Privacy Check
 
@@ -274,16 +188,6 @@ Nach `terraform apply`:
 ./scripts/privacy-check.sh
 ```
 
-Der Check stellt mindestens sicher, dass D1/R2 als EU-Jurisdiction gemeldet
-werden und sucht nach offensichtlichem Health-Data-Logging im Worker-Code.
-
-## Wichtiger Architekturhinweis
-
-EU-Jurisdiction von D1/R2 regelt die Ausführung/Speicherung dieser jeweiligen
-Datenservices. Sie bedeutet nicht automatisch, dass jeder Worker-Request
-ausschließlich in der EU verarbeitet wird.
-
-Wenn Health-Daten im Worker verarbeitet werden, muss separat geprüft werden,
-ob Cloudflare Regional Services/Data Localization eingesetzt werden sollen
-bzw. welche Transfermechanismen und organisatorischen Maßnahmen erforderlich
-sind.
+Prüft, dass D1 als EU-Jurisdiktion gemeldet wird, und sucht im echten
+Worker-Quellcode (`../turnen/worker/src`) nach offensichtlichem
+Health-Data-Logging.

@@ -4,11 +4,3 @@
 *.tfplan
 terraform.tfvars
 crash.log
-
-wrangler.jsonc
-.dev.vars
-.env
-.env.*
-!.env.example
-node_modules/
-dist/

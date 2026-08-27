@@ -1,16 +1,9 @@
 cloudflare_account_id = "REPLACE_WITH_ACCOUNT_ID"
-cloudflare_zone_id    = "REPLACE_WITH_ZONE_ID"
 
-domain       = "example.de"
 project_name = "turnen"
 environment  = "prod"
 
-app_subdomain = "app"
-api_subdomain = "api"
-
-pages_production_branch = "main"
-pages_build_command      = "npm run build"
-pages_output_directory   = "dist"
-
-enable_export_bucket     = true
-export_retention_seconds = 86400
+# Nur setzen, falls manage_zone_settings = true - siehe Warnung in
+# security.tf/variables.tf (squora.de ist eine gemeinsam genutzte Zone).
+# cloudflare_zone_id    = "REPLACE_WITH_ZONE_ID"
+manage_zone_settings = false

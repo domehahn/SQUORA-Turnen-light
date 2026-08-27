@@ -175,16 +175,22 @@ Danach unter `http://localhost:5173` mit dem angelegten Nutzer anmelden.
 
 ## Deployment (Cloudflare)
 
+Die D1-Datenbank wird seit 2026-08-27 **ausschließlich über Terraform**
+angelegt/verwaltet (`cloudflare-turnen-iac/`, siehe dortige README für
+Import-Anleitung der bestehenden Datenbank) - nicht mehr per
+`wrangler d1 create`. Worker-Code, Bindings, Routes und Secrets bleiben
+bei Wrangler (siehe `cloudflare-turnen-iac/README.md`, Abschnitt "Warum
+nur D1 in Terraform?" für die Begründung dieser Aufteilung).
+
 Beide Worker werden unabhängig deployed:
 
 ```sh
-# API-Worker (besitzt die D1-Datenbank)
+# API-Worker (D1 existiert bereits via Terraform, database_id in
+# turnen/worker/wrangler.toml eintragen)
 cd turnen/worker
-wrangler d1 create <name> --jurisdiction eu   # einmalig, database_id in wrangler.toml eintragen -
-                                               # jurisdiction=eu ist Pflicht (Finding CF-01), nicht
-                                               # nur ein --location-Hint
 npm run db:migrate:remote
 wrangler secret put JWT_SECRET
+wrangler secret put ENCRYPTION_KEY
 npm run deploy
 
 # Web-Worker (Assets + SPA + Proxy zum API-Worker)
