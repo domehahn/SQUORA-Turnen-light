@@ -39,7 +39,7 @@ import {
   validTime,
   validWeekday,
 } from "./validation";
-import type { CapacityRequestRow, Child, ChildRow, ClubRole, Env, GroupRow } from "./types";
+import type { CapacityRequestRow, Child, ChildRow, ClubRole, Env, Family, GroupRow } from "./types";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -128,6 +128,37 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
+// CSRF Defense-in-Depth (externe Production-Readiness-Prüfung 2026-08-27):
+// SameSite=Strict auf dem Session-Cookie verhindert bereits, dass ein
+// fremder Origin das Cookie bei einem Cross-Site-Request mitschickt - laut
+// OWASP soll das aber nicht die einzige Schutzschicht sein (ältere Browser,
+// künftige SameSite-Änderungen, Subdomain-Sonderfälle). Zusätzliche
+// serverseitige Prüfung für alle zustandsändernden Methoden: Origin (bzw.
+// ersatzweise Sec-Fetch-Site für Browser, die bei manchen Requests keinen
+// Origin-Header senden) muss auf den eigenen Frontend-Origin bzw. "same-
+// origin" zeigen. GET/HEAD/OPTIONS sind lesend und bleiben unangetastet.
+const CSRF_UNSAFE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+
+function isSameOriginRequest(c: { req: { url: string; header: (name: string) => string | undefined } }, env: Env): boolean {
+  const secFetchSite = c.req.header("Sec-Fetch-Site");
+  if (secFetchSite) return secFetchSite === "same-origin" || secFetchSite === "none";
+
+  const origin = c.req.header("Origin");
+  if (!origin) return true; // kein Origin/Sec-Fetch-Site: z.B. direkte curl-Requests, nicht browserbasiertes CSRF
+
+  if (origin === new URL(env.FRONTEND_URL).origin) return true;
+  const apiHostname = new URL(c.req.url).hostname;
+  const isLocalApi = apiHostname === "localhost" || apiHostname === "127.0.0.1";
+  return isLocalApi && /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(origin);
+}
+
+app.use("/api/*", async (c, next) => {
+  if (CSRF_UNSAFE_METHODS.has(c.req.method) && !isSameOriginRequest(c, c.env)) {
+    return c.json({ error: "Anfrage von fremder Herkunft abgelehnt" }, 403);
+  }
+  await next();
+});
+
 // Serverseitiges Session-Management (s.o.): das JWT trägt nur eine
 // Sitzungs-ID, Gültigkeit/Widerruf/Idle-Timeout leben in der `sessions`-
 // Tabelle - eine Sitzung kann damit aktiv beendet werden (Passwort ändern/
@@ -135,6 +166,48 @@ app.use("/api/*", async (c, next) => {
 // passiv ablaufen. 5 Minuten Inaktivität ODER 8 Stunden absolute
 // Sitzungsdauer -> Logout, beides serverseitig geprüft, nicht nur im
 // Client-Timer.
+// Passiver Hintergrund-Traffic, der NICHT als Benutzeraktivität für den
+// Idle-Timeout zählen darf (externe Production-Readiness-Prüfung
+// 2026-08-27, Finding "5-Minuten-Idle-Timeout funktioniert real nicht"):
+// die Benachrichtigungsglocke pollt alle 60 Sekunden GET /api/notifications
+// im Hintergrund, solange der Tab offen ist - das hätte jede Session
+// unbegrenzt am Leben gehalten, selbst wenn die Person längst nicht mehr
+// am Gerät sitzt. Bewusst nur GET (reines Auslesen) exemptiert, nicht die
+// POST-Routen zum Als-gelesen-Markieren - das ist eine echte Interaktion.
+const IDLE_EXEMPT_GET_PATHS = new Set(["/api/notifications"]);
+
+function isIdleExempt(c: { req: { method: string; path: string } }): boolean {
+  return c.req.method === "GET" && IDLE_EXEMPT_GET_PATHS.has(c.req.path);
+}
+
+// API-seitige MFA-Durchsetzung für die Platform-Admin-Rolle (is_admin) -
+// Nutzerentscheidung 2026-08-27, zweiter Durchgang: MFA war zwischenzeitlich
+// für Admin UND Jugendleitung verpflichtend, wurde komplett zurückgenommen,
+// jetzt explizit erneut angefordert, aber bewusst nur für is_admin (nicht
+// Jugendleitung) - Platform-Admin hat potentiell vereinsübergreifenden
+// Zugriff, das ist die höchste Risikostufe. Positivliste (nicht "alles außer
+// X"), damit neue Routen standardmäßig gesperrt sind, bis sie hier bewusst
+// freigegeben werden - alles, was zum Herausfinden des eigenen Status,
+// Abmelden und zur MFA-Einrichtung selbst nötig ist.
+const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
+  "/api/me",
+  "/api/logout",
+  "/api/me/mfa",
+  "/api/me/mfa/setup",
+  "/api/me/mfa/confirm",
+  "/api/me/mfa/disable",
+  "/api/me/sessions",
+  "/api/me/sessions/revoke-all",
+  "/api/me/password",
+]);
+
+// Erzwungener Passwortwechsel (Nutzeranfrage 2026-08-27): wer mit einem von
+// einer anderen Person vergebenen initialen Passwort einloggt (Admin-
+// Nutzerverwaltung oder scripts/create-admin.mjs), muss es zuerst über
+// PUT /api/me/password ändern, bevor irgendetwas anderes nutzbar ist -
+// serverseitig durchgesetzt, nicht nur eine Frontend-Empfehlung.
+const PASSWORD_CHANGE_EXEMPT_PATHS = new Set(["/api/me", "/api/logout", "/api/me/password"]);
+
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const token = getCookie(c, SESSION_COOKIE_NAME);
   if (!token) return c.json({ error: "Nicht angemeldet" }, 401);
@@ -172,8 +245,30 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("isAdmin", Boolean(user.is_admin));
     c.set("sessionId", session.id);
 
-    if (now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
+    if (!isIdleExempt(c) && now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
       await db.touchSessionActivity(c.env.DB, session.id);
+    }
+
+    const pathname = new URL(c.req.url).pathname;
+
+    // Erzwungener Passwortwechsel zuerst prüfen (vor MFA) - ein von jemand
+    // anderem vergebenes Passwort sollte nicht erst zur MFA-Einrichtung
+    // verwendet werden, bevor es überhaupt ersetzt wurde.
+    if (user.must_change_password && !PASSWORD_CHANGE_EXEMPT_PATHS.has(pathname)) {
+      return c.json(
+        { error: "Das Passwort muss vor der weiteren Nutzung geändert werden.", passwordChangeRequired: true },
+        403
+      );
+    }
+
+    // API-seitige MFA-Durchsetzung für Platform-Admin (s. Kommentar oben bei
+    // MFA_ENFORCEMENT_EXEMPT_PATHS) - serverseitig, nicht nur im Frontend-
+    // Overlay, sonst könnte ein direkter API-Client das umgehen.
+    if (user.is_admin && !user.totp_enabled && !MFA_ENFORCEMENT_EXEMPT_PATHS.has(pathname)) {
+      return c.json(
+        { error: "Zwei-Faktor-Authentifizierung ist für Admin-Accounts erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
+        403
+      );
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -197,9 +292,19 @@ const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
 // WICHTIG (P0-Fix, externe Production-Readiness-Prüfung 2026-08-27): vorher
 // galt "keine Gruppe -> für jede*n authentifizierte*n Nutzer*in bearbeitbar,
 // vereinsübergreifend" - ein echter Cross-Tenant-Fehler, sobald mehr als
-// ein Verein existiert. Die einzige verbleibende Ausnahme (club_id UND
-// group_id beide NULL) ist reine Absicherung für echten, vereinslosen
-// Alt-Bestand - im aktuellen Datenbestand existiert das nicht mehr.
+// ein Verein existiert.
+//
+// Fail-closed statt Fail-open (P1 "AUTHORIZATION MUSS FAIL CLOSED SEIN",
+// externe Production-Readiness-Prüfung 2026-08-27): frühere Fassung hatte
+// ZWEI "return true"-Ausnahmen für unbekannte/kaputte Mandantenbeziehungen -
+// ein Kind ganz ohne Vereinszuordnung (club_id UND group_id beide NULL) UND
+// ein Kind mit einer group_id, die auf keine (mehr) existierende Gruppe
+// zeigt. Beides galt als "für alle bearbeitbar". Verifiziert (2026-08-27):
+// im produktiven Datenbestand hat JEDES Kind eine club_id und JEDE
+// group_id zeigt auf eine existierende Gruppe - beide Ausnahmen waren
+// bereits tote Kompatibilitäts-Öffnungen ohne echten Nutzen, aber mit
+// echtem Risiko. Eine unbekannte/kaputte Beziehung ist jetzt ein Deny plus
+// Security-Event (kein personenbezogener Inhalt im Log).
 async function isChildWritable(
   dbEnv: D1Database,
   child: { group_id: string | null; club_id: string | null },
@@ -207,13 +312,36 @@ async function isChildWritable(
   ctx?: { clubId: string | null; clubRole: string | null }
 ): Promise<boolean> {
   if (!child.group_id) {
-    if (child.club_id === null) return true; // echter Alt-Bestand ohne jede Vereinszuordnung
+    if (child.club_id === null) {
+      await logSecurityEvent(dbEnv, { actorId: userId, clubId: ctx?.clubId ?? null, action: "security.unknown_tenant_relation_denied" });
+      return false;
+    }
     return Boolean(ctx?.clubId && ctx.clubId === child.club_id);
   }
   const group = await db.getGroupRowById(dbEnv, child.group_id);
-  if (!group) return true;
+  if (!group) {
+    await logSecurityEvent(dbEnv, { actorId: userId, clubId: ctx?.clubId ?? null, action: "security.dangling_group_reference_denied" });
+    return false;
+  }
   if (ctx && ctx.clubRole === "jugendleiter" && group.club_id && group.club_id === ctx.clubId) return true;
   return db.canWriteGroupAsync(dbEnv, group, userId);
+}
+
+// Security-Event-Log für Fail-closed-Deny-Fälle bei unbekannten/kaputten
+// Mandantenbeziehungen (s.o.) - bewusst ohne personenbezogenen Inhalt
+// (kein Name, keine ID des betroffenen Kindes/der Familie im Klartext-
+// Label), nur Aktion + Akteur + Verein.
+async function logSecurityEvent(
+  dbEnv: D1Database,
+  input: { actorId: string | null; clubId: string | null; action: string }
+): Promise<void> {
+  await db.logAudit(dbEnv, {
+    clubId: input.clubId,
+    actorId: input.actorId,
+    actorName: null,
+    action: input.action,
+    targetLabel: "Zugriff verweigert (unbekannte Mandantenbeziehung)",
+  });
 }
 
 // Wer darf die Anwesenheit für genau diesen Termin lesen/erfassen? Normal
@@ -592,7 +720,55 @@ app.get("/api/me/mfa", requireAuth, async (c) => {
   return c.json({ enabled: Boolean(userRow?.totp_enabled) });
 });
 
+// Verifiziert einen TOTP- oder Backup-Code gegen die AKTIVE (bereits
+// bestätigte) MFA einer Person - Hilfsfunktion für die Re-Authentifizierung
+// bei einer MFA-Rotation (s. POST /api/me/mfa/setup unten). Ein verwendeter
+// Backup-Code wird dabei bewusst NICHT verbraucht (reiner Nachweis "ich habe
+// weiterhin Zugriff auf den zweiten Faktor", kein Login-Vorgang) - anders
+// als beim eigentlichen Login mit Backup-Code (POST /api/login/mfa).
+async function verifyActiveMfaCode(
+  userRow: { totp_secret: string | null; totp_backup_codes: string | null },
+  code: string,
+  encryptionKey: string
+): Promise<boolean> {
+  if (!userRow.totp_secret) return false;
+  const secretBase32 = await decryptField(userRow.totp_secret, encryptionKey);
+  if (secretBase32 && (await verifyTotp(base32Decode(secretBase32), code))) return true;
+  if (!userRow.totp_backup_codes) return false;
+  const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
+  const normalizedCode = code.toUpperCase().replace(/\s/g, "");
+  for (const hc of hashedCodes) {
+    if (await verifyPassword(normalizedCode, hc.hash, hc.salt, BACKUP_CODE_ITERATIONS)) return true;
+  }
+  return false;
+}
+
+// MFA-Rotation gehärtet (externe Production-Readiness-Prüfung 2026-08-27,
+// P1 "MFA SETUP / ROTATION ABSICHERN"): dieser Aufruf schreibt nur noch
+// pending_totp_secret (s. db.setPendingTotpSecret) - eine bereits aktive,
+// funktionierende MFA bleibt bis zur erfolgreichen Bestätigung des NEUEN
+// Codes vollständig unangetastet. Zusätzlich jetzt immer Passwort-
+// Re-Authentifizierung nötig; ist bereits eine MFA aktiv, zusätzlich der
+// AKTUELLE zweite Faktor (TOTP oder Backup-Code) - sonst könnte eine
+// gekaperte Sitzung allein (ohne Passwort/TOTP-Kenntnis) eine Rotation
+// anstoßen und mit einem eigenen QR-Code fortsetzen.
 app.post("/api/me/mfa/setup", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const password = typeof body?.password === "string" ? body.password : "";
+  const currentCode = typeof body?.currentCode === "string" ? body.currentCode.trim() : "";
+
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  if (!userRow) return c.json({ error: "Nicht angemeldet" }, 401);
+  if (!(await verifyPassword(password, userRow.password_hash, userRow.password_salt, userRow.password_iterations))) {
+    return c.json({ error: "Passwort falsch" }, 403);
+  }
+  if (userRow.totp_enabled) {
+    if (!currentCode) return c.json({ error: "Aktueller MFA-Code erforderlich, um die MFA neu einzurichten" }, 400);
+    if (!(await verifyActiveMfaCode(userRow, currentCode, c.env.ENCRYPTION_KEY))) {
+      return c.json({ error: "Aktueller MFA-Code ungültig" }, 403);
+    }
+  }
+
   const secret = generateTotpSecret();
   const encrypted = await encryptField(base32Encode(secret), c.env.ENCRYPTION_KEY);
   if (encrypted === null) return c.json({ error: "Verschlüsselung fehlgeschlagen" }, 500);
@@ -609,13 +785,18 @@ app.post("/api/me/mfa/confirm", requireAuth, async (c) => {
   if (!code) return c.json({ error: "Code fehlt" }, 400);
 
   const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
-  if (!userRow?.totp_secret) return c.json({ error: "Keine MFA-Einrichtung gestartet" }, 400);
+  if (!userRow?.pending_totp_secret) return c.json({ error: "Keine MFA-Einrichtung gestartet" }, 400);
 
-  const secretBase32 = await decryptField(userRow.totp_secret, c.env.ENCRYPTION_KEY);
+  const secretBase32 = await decryptField(userRow.pending_totp_secret, c.env.ENCRYPTION_KEY);
   if (!secretBase32) return c.json({ error: "MFA-Konfiguration beschädigt, bitte neu einrichten" }, 500);
   const ok = await verifyTotp(base32Decode(secretBase32), code);
+  // Falscher Code bei einer Rotation: pending_totp_secret bleibt zwar
+  // bestehen (nächster Versuch möglich), die AKTIVE, bereits eingerichtete
+  // MFA bleibt aber unverändert funktionsfähig - kein Zustand, in dem
+  // jemand ohne funktionierende MFA dasteht.
   if (!ok) return c.json({ error: "Code ungültig" }, 400);
 
+  const wasRotation = Boolean(userRow.totp_enabled);
   const backupCodes = generateBackupCodes();
   const hashedBackupCodes = await Promise.all(
     backupCodes.map(async (bc) => {
@@ -623,12 +804,21 @@ app.post("/api/me/mfa/confirm", requireAuth, async (c) => {
       return { hash, salt };
     })
   );
+  // Atomar (einzelnes UPDATE in db.enableTotp): totp_secret <- pending,
+  // totp_enabled <- 1, neue Backup-Codes, pending_totp_secret geleert -
+  // kein Zwischenzustand, in dem beide oder keine Fassung aktiv wäre.
   await db.enableTotp(c.env.DB, c.get("userId"), JSON.stringify(hashedBackupCodes));
+  if (wasRotation) {
+    // Rotation ist ein Security-Recovery-Vorgang (z.B. Verdacht auf
+    // kompromittierten zweiten Faktor) - andere Sitzungen widerrufen, analog
+    // zu MFA-Disable und Passwortänderung.
+    await db.revokeAllUserSessions(c.env.DB, c.get("userId"), c.get("sessionId"));
+  }
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
     actorName: c.get("name"),
-    action: "mfa.enabled",
+    action: wasRotation ? "mfa.rotated" : "mfa.enabled",
     targetLabel: c.get("email") ?? c.get("userId"),
   });
   return c.json({ backupCodes });
@@ -697,10 +887,16 @@ app.get("/api/me", requireAuth, async (c) => {
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
     isAdmin: c.get("isAdmin"),
-    // MFA ist reines Opt-in (Nutzerentscheidung 2026-08-27: nicht
-    // verpflichtend, muss aktiv in Profil/Settings aktiviert werden) -
-    // kein serverseitiger oder UI-seitiger Zwang mehr für irgendeine Rolle.
+    // MFA ist für normale Rollen (member/jugendleiter) weiterhin reines
+    // Opt-in. Für Platform-Admin (is_admin) erneut verpflichtend
+    // (Nutzerentscheidung 2026-08-27, zweiter Durchgang) - höchste
+    // Zugriffsstufe, vereinsübergreifend.
     mfaEnabled,
+    mfaSetupRequired: c.get("isAdmin") && !mfaEnabled,
+    // Erzwungener Passwortwechsel (Nutzeranfrage 2026-08-27): true, solange
+    // ein von jemand anderem vergebenes initiales Passwort noch nicht durch
+    // ein selbst gewähltes ersetzt wurde.
+    passwordChangeRequired: Boolean(userRow?.must_change_password),
   });
 });
 
@@ -891,7 +1087,18 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
   const targetUser = await db.getUserById(c.env.DB, id);
-  await db.updateUserPassword(c.env.DB, id, await hashPassword(newPassword));
+  // must_change_password = true: die Admin-Person kennt dieses Passwort,
+  // die betroffene Person muss es beim nächsten Login selbst ersetzen.
+  await db.updateUserPassword(c.env.DB, id, await hashPassword(newPassword), true);
+  // Session Revocation (Finding P1 "ADMIN PASSWORD RESET", externe
+  // Production-Readiness-Prüfung 2026-08-27): fehlte hier bisher komplett -
+  // ein Admin-Reset ist ein Security-Recovery-Vorgang (z.B. Verdacht auf
+  // kompromittierten Account), ALLE Sitzungen der Zielperson müssen enden,
+  // nicht nur zukünftige Logins ein neues Passwort verlangen. Anders als bei
+  // der eigenen Passwortänderung gibt es hier keine "aktuelle Sitzung"
+  // auszunehmen - die admin-ausführende Person ist nicht als Zielperson
+  // authentifiziert, also alle Sitzungen ausnahmslos widerrufen.
+  await db.revokeAllUserSessions(c.env.DB, id);
   // Niemals das neue Passwort selbst loggen - nur, dass ein Reset stattfand.
   await db.logAudit(c.env.DB, {
     clubId: null,
@@ -1022,7 +1229,9 @@ app.put("/api/me/password", requireAuth, async (c) => {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
 
-  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword));
+  // must_change_password = false: die Person hat gerade selbst ein neues
+  // Passwort gewählt - erfüllt einen etwaigen erzwungenen Wechsel.
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword), false);
   // Session Revocation (Session-Management-Härtung): ein gestohlenes Token
   // auf einem anderen Gerät soll nach einer Passwortänderung nicht gültig
   // bleiben. Die aktuelle Sitzung (auf der die Änderung selbst gerade
@@ -1044,11 +1253,34 @@ app.put("/api/me/password", requireAuth, async (c) => {
 // bewusst IMMER identisch (200, generische Nachricht), unabhängig davon, ob
 // die E-Mail-Adresse existiert - sonst ließen sich Accounts per Timing/
 // Statuscode aufzählen (Account Enumeration).
+// Rate Limiting (Finding P1 "PASSWORD RESET HARDENING", externe Production-
+// Readiness-Prüfung 2026-08-27) - kombiniert E-Mail und IP, beide mit
+// eigenem Limit im selben Zeitfenster. Bewusst grosszügiger als der Login-
+// Rate-Limiter (LOGIN_MAX_FAILED_ATTEMPTS): eine legitime Person kann
+// durchaus mehrfach hintereinander "Passwort vergessen" anklicken (Mail
+// nicht angekommen, falscher Ordner o.ä.).
+const RESET_REQUEST_WINDOW_MINUTES = 15;
+const RESET_REQUEST_MAX_PER_EMAIL = 5;
+const RESET_REQUEST_MAX_PER_IP = 20;
+
 app.post("/api/password-reset/request", async (c) => {
   const body = await c.req.json().catch(() => null);
   const email = normalizedEmail(body?.email);
   const genericResponse = c.json({ ok: true, message: "Falls diese E-Mail-Adresse registriert ist, wurde eine Zurücksetzen-Mail verschickt." });
   if (!email) return genericResponse;
+
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
+  const { byEmail, byIp } = await db.countRecentPasswordResetRequests(c.env.DB, {
+    email,
+    ip,
+    windowMinutes: RESET_REQUEST_WINDOW_MINUTES,
+  });
+  // Immer dieselbe generische Antwort, auch wenn das Limit greift - sonst
+  // ließe sich über ein abweichendes Verhalten indirekt auf die Existenz
+  // eines Accounts schließen. Der Request wird nur nicht mehr gezählt/
+  // protokolliert und keine Mail mehr verschickt.
+  if (byEmail >= RESET_REQUEST_MAX_PER_EMAIL || byIp >= RESET_REQUEST_MAX_PER_IP) return genericResponse;
+  await db.recordPasswordResetRequest(c.env.DB, email, ip);
 
   const userRow = await db.getUserByEmail(c.env.DB, email);
   if (!userRow) return genericResponse;
@@ -1077,14 +1309,6 @@ app.post("/api/password-reset/confirm", async (c) => {
     return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
   }
 
-  // Einmaligkeit (Production-Readiness-Prüfung 2026-08-27): der Token war
-  // vorher innerhalb seiner 30-Minuten-Gültigkeit mehrfach einlösbar. Erste
-  // Verwendung gewinnt, jeder weitere Versuch mit demselben Token schlägt
-  // fehl (PRIMARY KEY auf jti in used_password_reset_tokens).
-  const expiresAtIso = toSqliteDatetime(new Date(payload.expiresAt * 1000));
-  const firstUse = await db.consumePasswordResetJti(c.env.DB, payload.jti, expiresAtIso);
-  if (!firstUse) return c.json({ error: "Dieser Link wurde bereits verwendet. Bitte einen neuen anfordern." }, 401);
-
   const userRow = await db.getUserById(c.env.DB, payload.userId);
   if (!userRow) return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
 
@@ -1092,7 +1316,21 @@ app.post("/api/password-reset/confirm", async (c) => {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
 
-  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword));
+  // Einmaligkeit (Production-Readiness-Prüfung 2026-08-27) - der Token darf
+  // erst JETZT verbraucht werden, nachdem alles andere (Signatur, Ablauf,
+  // Nutzer, Passwort-Syntax, HIBP) bereits erfolgreich geprüft wurde. Vorher
+  // wurde die jti schon vor der HIBP-Prüfung konsumiert - ein abgelehntes
+  // (z.B. geleaktes) Passwort hätte den sonst gültigen Link bereits
+  // verbrannt, ohne dass der Wechsel stattfand, und die Person hätte einen
+  // komplett neuen Reset anfordern müssen. Der INSERT mit PRIMARY KEY auf
+  // jti bleibt der atomare Gate: bei zwei parallelen Requests mit
+  // derselben jti gewinnt nur einer, unabhängig von der Reihenfolge davor.
+  const expiresAtIso = toSqliteDatetime(new Date(payload.expiresAt * 1000));
+  const firstUse = await db.consumePasswordResetJti(c.env.DB, payload.jti, expiresAtIso);
+  if (!firstUse) return c.json({ error: "Dieser Link wurde bereits verwendet. Bitte einen neuen anfordern." }, 401);
+
+  // must_change_password = false: selbst gewähltes neues Passwort.
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword), false);
   // Ein Passwort-Reset ist ein Recovery-Vorgang (möglicher Kompromittierungs-
   // Verdacht) - anders als bei der normalen Passwortänderung werden hier
   // ALLE Sitzungen widerrufen, es gibt keine "aktuelle" auszunehmen (dieser
@@ -1712,10 +1950,29 @@ app.delete("/api/groups/:id/co-leaders/:userId", requireAuth, async (c) => {
 
 // --- Kinder --------------------------------------------------------------
 
+// Least-Privilege-Härtung (externe Production-Readiness-Prüfung
+// 2026-08-27): die Kinderliste ist vereinsweit sichtbar (auch für Kinder
+// fremder Gruppen, damit z.B. Geschwister-Verknüpfung oder Warteliste
+// funktionieren), enthielt bisher aber für JEDES zurückgegebene Kind auch
+// die entschlüsselten Notfallkontakte - unabhängig davon, ob die
+// anfragende Person überhaupt eine Beziehung zu dieser Gruppe hat. Wer ein
+// Kind nicht bearbeiten darf UND nicht Jugendleitung ist (die braucht den
+// vereinsweiten Überblick tatsächlich, z.B. für Vertretungsplanung),
+// bekommt die Notfallkontakte jetzt als null statt im Klartext - alle
+// anderen Felder (Name, Gruppe, Alter) bleiben unverändert sichtbar, die
+// sind fürs bloße Auflisten/Zuordnen nötig.
 app.get("/api/children", requireAuth, async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
   const children = await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived);
-  return c.json(await Promise.all(children.map((child) => decryptChild(child, c.env.ENCRYPTION_KEY))));
+  const isJugendleiter = c.get("clubRole") === "jugendleiter";
+  const decrypted = await Promise.all(
+    children.map(async (child) => {
+      const full = await decryptChild(child, c.env.ENCRYPTION_KEY);
+      if (full.canEdit || isJugendleiter) return full;
+      return { ...full, emergencyContactName: null, emergencyContactPhone: null };
+    })
+  );
+  return c.json(decrypted);
 });
 
 // Entschlüsselt die verschlüsselt gespeicherten Felder eines Child-Objekts
@@ -1799,6 +2056,16 @@ app.post("/api/children", requireAuth, async (c) => {
   } else {
     clubIdForChild = c.get("clubId");
     if (!clubIdForChild) return c.json({ error: "Kein Verein zugeordnet" }, 400);
+  }
+
+  // Cross-Tenant-Verknüpfung verhindern (Migration 0039, s. auch
+  // PUT /api/children/:id/family) - auch schon beim Anlegen prüfen, nicht
+  // nur beim nachträglichen Ändern der Familien-Zuordnung.
+  if (familyId) {
+    const family = await db.getFamilyRowById(c.env.DB, familyId);
+    if (!family || family.club_id === null || family.club_id !== clubIdForChild) {
+      return c.json({ error: "Familie gehört nicht zu diesem Verein" }, 403);
+    }
   }
 
   // Notfallkontakte verschlüsselt ablegen (auch im Kapazitäts-Anfrage-
@@ -1891,6 +2158,14 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     targetGroup = await db.getGroupRowById(c.env.DB, groupId);
     if (!targetGroup) return c.json({ error: "Gruppe nicht gefunden" }, 404);
     clubIdForChild = targetGroup.club_id;
+  }
+
+  // Cross-Tenant-Verknüpfung verhindern (Migration 0039).
+  if (familyId) {
+    const family = await db.getFamilyRowById(c.env.DB, familyId);
+    if (!family || family.club_id === null || family.club_id !== clubIdForChild) {
+      return c.json({ error: "Familie gehört nicht zu diesem Verein" }, 403);
+    }
   }
 
   const childInput = {
@@ -2042,8 +2317,23 @@ app.post("/api/children/:id/reactivate", requireAuth, async (c) => {
 
 // --- Familien / Geschwister --------------------------------------------------
 
+// Application-Level Encryption für Familien-Kontaktdaten (P1 "FAMILY FIELD
+// ENCRYPTION", externe Production-Readiness-Prüfung 2026-08-27) - dieselbe
+// bewährte AES-256-GCM-Verschlüsselung wie bei Notfallkontakten
+// (worker/src/crypto.ts, Finding PRIV-02), keine eigene Kryptografie.
+async function decryptFamily<T extends Family | null>(family: T, encryptionKey: string): Promise<T> {
+  if (!family) return family;
+  return {
+    ...family,
+    contactName: await decryptField(family.contactName, encryptionKey),
+    contactPhone: await decryptField(family.contactPhone, encryptionKey),
+    contactEmail: await decryptField(family.contactEmail, encryptionKey),
+  };
+}
+
 app.get("/api/families", requireAuth, async (c) => {
-  return c.json(await db.listFamiliesForUser(c.env.DB, c.get("userId"), c.get("clubId")));
+  const families = await db.listFamiliesForUser(c.env.DB, c.get("userId"), c.get("clubId"));
+  return c.json(await Promise.all(families.map((f) => decryptFamily(f, c.env.ENCRYPTION_KEY))));
 });
 
 // Nur die Familien-Zuordnung eines Kindes ändern, ohne den restlichen
@@ -2075,6 +2365,18 @@ app.put("/api/children/:id/family", requireAuth, async (c) => {
   }
   if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
+  // Cross-Tenant-Verknüpfung verhindern (Migration 0039): eine Familie darf
+  // nur mit Kindern desselben Vereins verknüpft werden, sonst könnte eine
+  // manipulierte familyId Kinder unterschiedlicher Vereine in derselben
+  // Familie zusammenführen und damit deren Notfallkontakte querverfügbar
+  // machen.
+  if (familyId) {
+    const family = await db.getFamilyRowById(c.env.DB, familyId);
+    if (!family || family.club_id === null || family.club_id !== existing.club_id) {
+      return c.json({ error: "Familie gehört nicht zu diesem Verein" }, 403);
+    }
+  }
+
   const child = await db.setChildFamily(c.env.DB, id, familyId);
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -2099,7 +2401,17 @@ app.post("/api/families", requireAuth, async (c) => {
   if (contactPhone === undefined) return c.json({ error: "Telefonnummer ist zu lang" }, 400);
   if (contactEmail === undefined) return c.json({ error: "E-Mail ist zu lang" }, 400);
 
-  const family = await db.createFamily(c.env.DB, { name, contactName, contactPhone, contactEmail }, c.get("userId"));
+  const family = await db.createFamily(
+    c.env.DB,
+    {
+      name,
+      contactName: await encryptField(contactName, c.env.ENCRYPTION_KEY),
+      contactPhone: await encryptField(contactPhone, c.env.ENCRYPTION_KEY),
+      contactEmail: await encryptField(contactEmail, c.env.ENCRYPTION_KEY),
+    },
+    c.get("userId"),
+    c.get("clubId")
+  );
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
@@ -2107,7 +2419,7 @@ app.post("/api/families", requireAuth, async (c) => {
     action: "family.created",
     targetLabel: name,
   });
-  return c.json(family, 201);
+  return c.json(await decryptFamily(family, c.env.ENCRYPTION_KEY), 201);
 });
 
 app.put("/api/families/:id", requireAuth, async (c) => {
@@ -2125,9 +2437,22 @@ app.put("/api/families/:id", requireAuth, async (c) => {
 
   const existing = await db.getFamilyRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Familie nicht gefunden" }, 404);
-  if (existing.created_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung für diese Familie" }, 403);
+  // Tenant-Grenze zuerst prüfen (Migration 0039, fest gesetztes club_id) -
+  // eine fremde Vereins-ID darf niemals als "nicht gefunden" von einer
+  // eigenen unterscheidbar sein oder umgekehrt Berechtigungsdetails leaken.
+  // Innerhalb des eigenen Vereins bleibt es bei der bisherigen, strengeren
+  // Regel (nur die anlegende Person darf bearbeiten).
+  const sameClub = existing.club_id !== null && existing.club_id === c.get("clubId");
+  if (!sameClub || existing.created_by !== c.get("userId")) {
+    return c.json({ error: "Keine Berechtigung für diese Familie" }, 403);
+  }
 
-  const family = await db.updateFamily(c.env.DB, id, { name, contactName, contactPhone, contactEmail });
+  const family = await db.updateFamily(c.env.DB, id, {
+    name,
+    contactName: await encryptField(contactName, c.env.ENCRYPTION_KEY),
+    contactPhone: await encryptField(contactPhone, c.env.ENCRYPTION_KEY),
+    contactEmail: await encryptField(contactEmail, c.env.ENCRYPTION_KEY),
+  });
   if (!family) return c.json({ error: "Familie nicht gefunden" }, 404);
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -2136,7 +2461,7 @@ app.put("/api/families/:id", requireAuth, async (c) => {
     action: "family.updated",
     targetLabel: name,
   });
-  return c.json(family);
+  return c.json(await decryptFamily(family, c.env.ENCRYPTION_KEY));
 });
 
 // --- Audit-Log -----------------------------------------------------------------
@@ -3972,10 +4297,22 @@ async function deleteStaleArchivedChildren(env: Env): Promise<void> {
   }
 }
 
+// Speicherbegrenzung für Security-Tabellen (externe Production-Readiness-
+// Prüfung 2026-08-27, Finding "Retention"): sessions/login_attempts/
+// used_password_reset_tokens wuchsen bisher unbegrenzt. Gleiche
+// Opt-in-Logik wie bei deleteStaleArchivedChildren - ohne gesetzte
+// SECURITY_LOG_RETENTION_DAYS läuft kein Cleanup.
+async function cleanupSecurityLogs(env: Env): Promise<void> {
+  const retentionDays = Number(env.SECURITY_LOG_RETENTION_DAYS);
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return;
+  await db.cleanupSecurityLogs(env.DB, retentionDays);
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(remindStaleRequests(env));
     ctx.waitUntil(deleteStaleArchivedChildren(env));
+    ctx.waitUntil(cleanupSecurityLogs(env));
   },
 } satisfies ExportedHandler<Env>;

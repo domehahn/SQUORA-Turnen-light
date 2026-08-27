@@ -4,3 +4,7 @@
 *.tfplan
 terraform.tfvars
 crash.log
+.env
+.env.local
+.env.*
+!.env.example

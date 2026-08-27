@@ -1,0 +1,23 @@
+# Gitleaks-Konfiguration (P1 "CI/CD HARDENING", externe Production-
+# Readiness-Prüfung 2026-08-27) - erweitert die eingebauten Standardregeln
+# um eine Allowlist für bekannte False Positives, statt die Regeln selbst
+# abzuschwächen.
+#
+# Alle Treffer hier sind verifiziert harmlos:
+# - turnen/worker/test/**: synthetische Test-Passwörter in Testfixtures
+#   (z.B. "brandnew-password-456") - keine echten Zugangsdaten, laufen nie
+#   gegen Produktionsdaten (isolierte In-Memory-D1 pro Testlauf).
+# - turnen/worker/vitest.config.ts: fest hinterlegter, klar als
+#   "test-only" kommentierter Dummy-Schlüssel für dieselbe isolierte
+#   Test-Umgebung, kein Produktions-Secret.
+title = "Turnen (SQUORA) Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Bekannte False Positives in Testfixtures"
+paths = [
+  '''turnen/worker/test/.*''',
+  '''turnen/worker/vitest\.config\.ts''',
+]

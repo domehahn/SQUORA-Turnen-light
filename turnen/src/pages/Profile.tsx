@@ -39,6 +39,13 @@ export default function Profile() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaBackupCodes, setMfaBackupCodes] = useState<string[] | null>(null);
   const [mfaDisablePassword, setMfaDisablePassword] = useState("");
+  // Re-Authentifizierung vor Einrichtung/Rotation (Härtung, externe
+  // Production-Readiness-Prüfung 2026-08-27) - ein einzelner authentifizierter
+  // Aufruf darf keine bestehende MFA mehr anfassen können, daher immer
+  // Passwort nötig, bei bereits aktiver MFA zusätzlich der aktuelle Code.
+  const [mfaStartForm, setMfaStartForm] = useState(false);
+  const [mfaStartPassword, setMfaStartPassword] = useState("");
+  const [mfaStartCurrentCode, setMfaStartCurrentCode] = useState("");
   const [mfaBusy, setMfaBusy] = useState(false);
   const [mfaError, setMfaError] = useState<string | null>(null);
 
@@ -49,12 +56,19 @@ export default function Profile() {
       .catch(() => setMfaEnabled(false));
   }, []);
 
-  async function handleMfaStart() {
+  async function handleMfaStart(e: FormEvent) {
+    e.preventDefault();
     setMfaError(null);
     setMfaBusy(true);
     try {
-      const res = await api.post<{ secret: string; otpauthUri: string }>("/api/me/mfa/setup", {});
+      const res = await api.post<{ secret: string; otpauthUri: string }>("/api/me/mfa/setup", {
+        password: mfaStartPassword,
+        currentCode: mfaEnabled ? mfaStartCurrentCode : undefined,
+      });
       setMfaSetup(res);
+      setMfaStartForm(false);
+      setMfaStartPassword("");
+      setMfaStartCurrentCode("");
     } catch (err) {
       setMfaError(err instanceof Error ? err.message : "Fehler beim Starten der Einrichtung");
     } finally {
@@ -302,35 +316,117 @@ export default function Profile() {
           </div>
         )}
 
-        {mfaEnabled === null ? null : mfaEnabled && !mfaBackupCodes ? (
-          <form onSubmit={handleMfaDisable} className="space-y-2">
-            <p className="text-sm text-emerald-700 dark:text-emerald-400">Aktiv.</p>
-            <div className="max-w-xs">
+        {mfaEnabled === null ? null : mfaEnabled && !mfaBackupCodes && !mfaSetup ? (
+          <div className="space-y-4">
+            <form onSubmit={handleMfaDisable} className="space-y-2">
+              <p className="text-sm text-emerald-700 dark:text-emerald-400">Aktiv.</p>
+              <div className="max-w-xs">
+                <FloatingInput
+                  label="Passwort zur Bestätigung"
+                  type="password"
+                  required
+                  value={mfaDisablePassword}
+                  onChange={(e) => setMfaDisablePassword(e.target.value)}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={mfaBusy}
+                className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+              >
+                Deaktivieren
+              </button>
+            </form>
+
+            {/* Rotation: neues Gerät/Authenticator einrichten, ohne MFA
+                zwischenzeitlich zu deaktivieren - alter Faktor bleibt bis zur
+                Bestätigung des neuen vollständig aktiv (s. Kommentar in
+                worker/src/index.ts, POST /api/me/mfa/setup). */}
+            {mfaStartForm ? (
+              <form onSubmit={handleMfaStart} className="max-w-xs space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Neu einrichten (z.B. neues Gerät) - aktuelles Passwort und aktueller Code bestätigen:
+                </p>
+                <FloatingInput
+                  label="Aktuelles Passwort"
+                  type="password"
+                  required
+                  autoFocus
+                  value={mfaStartPassword}
+                  onChange={(e) => setMfaStartPassword(e.target.value)}
+                />
+                <FloatingInput
+                  label="Aktueller Code oder Backup-Code"
+                  type="text"
+                  required
+                  value={mfaStartCurrentCode}
+                  onChange={(e) => setMfaStartCurrentCode(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={mfaBusy}
+                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                  >
+                    Weiter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMfaStartForm(false)}
+                    className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMfaStartForm(true)}
+                className="text-sm text-slate-500 hover:underline dark:text-slate-400"
+              >
+                Neu einrichten (neues Gerät)
+              </button>
+            )}
+          </div>
+        ) : !mfaEnabled && !mfaSetup && !mfaBackupCodes ? (
+          mfaStartForm ? (
+            <form onSubmit={handleMfaStart} className="max-w-xs space-y-2">
               <FloatingInput
-                label="Passwort zur Bestätigung"
+                label="Aktuelles Passwort zur Bestätigung"
                 type="password"
                 required
-                value={mfaDisablePassword}
-                onChange={(e) => setMfaDisablePassword(e.target.value)}
+                autoFocus
+                value={mfaStartPassword}
+                onChange={(e) => setMfaStartPassword(e.target.value)}
               />
-            </div>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={mfaBusy}
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  Weiter
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMfaStartForm(false)}
+                  className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          ) : (
             <button
-              type="submit"
+              type="button"
+              onClick={() => setMfaStartForm(true)}
               disabled={mfaBusy}
-              className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
             >
-              Deaktivieren
+              Einrichten
             </button>
-          </form>
-        ) : !mfaSetup && !mfaBackupCodes ? (
-          <button
-            type="button"
-            onClick={handleMfaStart}
-            disabled={mfaBusy}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-          >
-            Einrichten
-          </button>
+          )
         ) : mfaSetup ? (
           <form onSubmit={handleMfaConfirm} className="space-y-3">
             <p className="text-sm text-slate-600 dark:text-slate-300">Mit der Authenticator-App scannen:</p>

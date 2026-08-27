@@ -11,12 +11,18 @@ export interface Env {
   // Speicherbegrenzung (Finding PRIV-05, Art. 5(1)(e) DSGVO): Anzahl Tage,
   // die ein archiviertes (ausgetretenes) Kind noch aufbewahrt wird, bevor
   // der tägliche Cron-Job es endgültig löscht/anonymisiert. Bewusst als
-  // Konfigurationswert statt Code-Konstante - **die konkrete Zahl ist
-  // LEGAL/PRIVACY REVIEW REQUIRED**, der aktuelle Wert in wrangler.toml ist
-  // ein nicht rechtlich geprüfter Platzhalter. Optional, da bestehende
-  // Deployments diese Variable ggf. noch nicht gesetzt haben - dann läuft
-  // KEINE automatische Löschung (sicherer Default als "sofort löschen").
+  // Konfigurationswert statt Code-Konstante. Auf explizite Nutzerentscheidung
+  // (2026-08-27) produktiv auf 1095 Tage (3 Jahre) gesetzt, siehe
+  // wrangler.toml. Optional, da bestehende Deployments diese Variable ggf.
+  // noch nicht gesetzt haben - dann läuft KEINE automatische Löschung
+  // (sicherer Default als "sofort löschen").
   ARCHIVED_CHILD_RETENTION_DAYS?: string;
+  // Aufbewahrungsdauer für Security-Tabellen (sessions, login_attempts,
+  // used_password_reset_tokens) - täglicher Cron-Job löscht Einträge, die
+  // älter als diese Anzahl Tage sind. Wert per Nutzerentscheidung
+  // (2026-08-27) auf 90 Tage. Optional, gleiche Logik wie oben: ohne
+  // gesetzten Wert läuft kein Cleanup.
+  SECURITY_LOG_RETENTION_DAYS?: string;
 }
 
 export type ClubRole = "member" | "jugendleiter";
@@ -51,6 +57,16 @@ export interface UserRow {
   totp_secret: string | null;
   totp_enabled: number;
   totp_backup_codes: string | null;
+  // Separates Feld für ein neu generiertes, noch nicht bestätigtes Secret
+  // (Migration 0041) - ein Setup-/Rotations-Aufruf darf niemals die aktive
+  // totp_secret/totp_enabled direkt überschreiben, sonst würde ein einzelner
+  // authentifizierter Aufruf ohne weitere Bestätigung eine bestehende,
+  // funktionierende MFA deaktivieren.
+  pending_totp_secret: string | null;
+  // Erzwungener Passwortwechsel (Migration 0040) - true, wenn eine andere
+  // Person (Admin oder das Bootstrap-Skript) ein initiales Passwort vergeben
+  // hat, das noch nie durch ein selbst gewähltes ersetzt wurde.
+  must_change_password: number;
 }
 
 export interface Club {
@@ -283,6 +299,10 @@ export interface FamilyRow {
   contact_email: string | null;
   created_by: string | null;
   created_at: string;
+  // Mandantengrenze, fest beim Anlegen gesetzt (Migration 0039) - siehe
+  // dortiger Kommentar. Kann bei sehr alten, nicht rekonstruierbaren
+  // Alt-Datensätzen NULL sein.
+  club_id: string | null;
 }
 
 export interface Family {
@@ -292,6 +312,7 @@ export interface Family {
   contactPhone: string | null;
   contactEmail: string | null;
   createdAt: string;
+  clubId: string | null;
 }
 
 // --- Audit-Log ---------------------------------------------------------------

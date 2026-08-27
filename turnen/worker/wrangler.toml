@@ -9,8 +9,11 @@ compatibility_date = "2026-07-01"
 # unabhängig vom Web-Worker und dessen Security-Headern/CSP (externe
 # Production-Readiness-Prüfung 2026-08-27). Service Bindings funktionieren
 # unabhängig von workers_dev weiter - der Web-Worker kann diesen Worker
-# also weiterhin ansprechen.
+# also weiterhin ansprechen. preview_urls ebenfalls explizit aus (zweiter
+# Durchgang derselben Prüfung) - aus Konsistenz mit dem Web-Worker, auch
+# wenn der API-Worker ohnehin kein öffentliches Routing hat.
 workers_dev = false
+preview_urls = false
 
 [[d1_databases]]
 binding = "DB"
@@ -28,13 +31,17 @@ EMAIL_FROM_ADDRESS = "no_reply@squora.de"
 
 # Speicherbegrenzung für archivierte (ausgetretene) Kinder (Finding PRIV-05,
 # Art. 5(1)(e) DSGVO) - der tägliche Cron-Job löscht sie endgültig, sobald
-# sie seit mindestens dieser Anzahl Tage archiviert sind. Bewusst
-# AUSKOMMENTIERT/nicht gesetzt: die konkrete Frist ist eine
-# rechtliche/organisatorische Entscheidung (LEGAL/PRIVACY REVIEW REQUIRED,
-# siehe PRIVACY_SECURITY_GAP_ANALYSIS.md, PRIV-05), kein technischer
-# Automatismus, den diese Session eigenmächtig aktivieren darf. Ohne diese
-# Variable läuft KEINE automatische Löschung.
-# ARCHIVED_CHILD_RETENTION_DAYS = "1095"
+# sie seit mindestens dieser Anzahl Tage archiviert sind. Frist per
+# Nutzerentscheidung (2026-08-27) auf 1095 Tage (3 Jahre) festgelegt, nicht
+# von Claude eigenmächtig gewählt - siehe PRIVACY_SECURITY_GAP_ANALYSIS.md,
+# PRIV-05.
+ARCHIVED_CHILD_RETENTION_DAYS = "1095"
+
+# Aufbewahrungsdauer für Security-Tabellen (sessions, login_attempts,
+# used_password_reset_tokens) - täglicher Cleanup-Job löscht Einträge, die
+# älter als diese Anzahl Tage sind (abgelaufene/widerrufene Sessions sofort,
+# unabhängig von dieser Frist). Wert per Nutzerentscheidung (2026-08-27).
+SECURITY_LOG_RETENTION_DAYS = "90"
 
 # JWT_SECRET wird NICHT hier eingetragen, sondern per Secret gesetzt:
 #   wrangler secret put JWT_SECRET

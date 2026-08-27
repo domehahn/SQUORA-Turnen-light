@@ -6,12 +6,27 @@ Schema). Sie ist die Grundlage für den Umsetzungsplan; **es wurden noch keine
 Code-Änderungen vorgenommen.** Rechtliche/organisatorische Entscheidungen sind
 mit `LEGAL/PRIVACY REVIEW REQUIRED` markiert und wurden nicht erfunden.
 
+**Achter Durchgang (2026-08-27) ausgelagert:** ein großer, eigenständiger
+Production-Readiness-Härtungsdurchgang (Session-Idle-Client-Lock,
+MFA-Setup/Rotations-Invariante, Admin-Reset-Session-Revocation,
+Passwort-Policy/Reset-Hardening, Fail-closed-Authorization,
+Family-Field-Encryption, CI-Security-Jobs) ist **nicht** in dieses
+Dokument eingearbeitet, sondern eigenständig in
+`PRODUCTION_READINESS_ANALYSIS.md` und `PRODUCTION_GO_LIVE_REPORT.md`
+dokumentiert (dortige Findings-Tabelle mit Status RESOLVED/OPEN pro
+Punkt) - dieses Dokument bleibt als Historie der ersten sieben Durchgänge
+bestehen, wird für künftige Prüfungen aber durch die beiden neuen
+Dokumente ergänzt/fortgeführt.
+
 Begleitdokumente:
 - `docs/privacy/cloudflare-data-flow.md` — Cloudflare-Infrastruktur im Detail (D1-Jurisdiktion, Worker-Verarbeitungsort, Email Service, Cache)
+- `docs/privacy/data-inventory.md`, `docs/privacy/data-flow.md`, `docs/privacy/retention-policy.md`, `docs/privacy/toms.md` — Privacy-Dokumentation (achter Durchgang)
 - `docs/security/cloudflare-security.md` — Sicherheitssicht auf dieselbe Infrastruktur
-- `docs/security/cloudflare-production-checklist.md` — Deploy-Checkliste
+- `docs/security/cloudflare-production-checklist.md`, `docs/security/production-security-checklist.md` — Deploy-Checklisten
+- `docs/security/tenant-model.md`, `docs/security/authorization-model.md`, `docs/security/session-management.md`, `docs/security/authentication.md`, `docs/security/threat-model.md`, `docs/security/security-test-report.md`, `docs/security/incident-response.md` — Sicherheitsmodell-Dokumentation (achter Durchgang)
+- `docs/operations/deployment.md`, `rollback.md`, `disaster-recovery.md`, `origin-migration.md`, `github-production-settings.md`, `production-runbook.md` — Betriebsdokumentation (achter Durchgang)
 - `scripts/privacy-check.ts` — automatisiertes, lesendes Prüfskript (getestet, siehe unten)
-- weitere `docs/privacy/*.md` gemäß Abschnitt 22 der Anfrage (Data Inventory, Data Flow, TOMs, Retention, Consent, Data Subject Rights, Third Parties, DPIA-Entwurf) sowie `docs/security/threat-model.md` und `docs/security/privacy-incident-response.md`
+- `scripts/production-readiness-check.ts` — automatisierter technischer Production-Readiness-Check (achter Durchgang, läuft in CI)
 
 ## Nachtrag: Externe Production-Readiness-Prüfung (2026-08-27)
 
@@ -53,13 +68,120 @@ inkl. Architekturumstellung):
 ("go for it") zusätzlich umgesetzt:
 
 - ~~SEC-18 (MFA API-seitige Durchsetzung)~~ — **zurückgenommen** (2026-08-27, vierter Durchgang): auf explizite Nutzeranweisung ("Mache MFA nicht verpflichtend, sondern dass dies jeweils aktiv aktiviert werden muss") wieder auf reines Opt-in umgestellt. `requireAuth` erzwingt keine MFA mehr für irgendeine Rolle, das blockierende Frontend-Overlay (`MfaEnforcementOverlay.tsx`) wurde entfernt, `GET /api/me` liefert kein `mfaSetupRequired` mehr. Die zuvor angepassten Tests wurden zurückgebaut (kein `enableMfaForTest()`-Zwang mehr in den Autorisierungstests), ein neuer Test bestätigt stattdessen ausdrücklich, dass Admin-Routen auch ohne aktivierte MFA erreichbar bleiben.
-- **SEC-19 (PBKDF2-Iterationen)**: von global 100.000 auf 600.000 (OWASP-Empfehlung) angehoben. Iterationszahl jetzt pro Nutzer gespeichert (`users.password_iterations`, Migration 0038) statt hartkodiert - bestehende Hashes bleiben mit ihrer ursprünglichen Zahl gültig, ein erfolgreicher Login hebt sie transparent auf die neue Stufe (kein erzwungenes Passwort-Reset nötig). MFA-Backup-Codes bewusst auf einer eigenen, stabilen Konstante (100.000) belassen - sie sind kurzlebige Zufallswerte, ihre Sicherheit kommt aus der Entropie, nicht aus PBKDF2-Kosten. 2 neue Tests (Legacy-Hash funktioniert weiter + wird angehoben, neue Nutzer bekommen direkt die neue Zahl).
+- ~~SEC-19 (PBKDF2-Iterationen)~~ — **teilweise zurückgenommen** (2026-08-27, fünfter Durchgang): ursprünglich von global 100.000 auf 600.000 (OWASP-Empfehlung) angehoben, mit `password_iterations` pro Nutzer (`users.password_iterations`, Migration 0038). In Produktion stellte sich heraus, dass die Cloudflare-Workers-Runtime (`workerd`) `crypto.subtle.deriveBits` mit PBKDF2 oberhalb von 100.000 Iterationen mit `NotSupportedError: iteration counts above 100000 are not supported` ablehnt - jeder Login mit transparentem Rehashing (also praktisch jeder Bestandsaccount) endete in einem 500er und sperrte die Person faktisch aus. `CURRENT_PBKDF2_ITERATIONS` deshalb wieder auf 100.000 (die von der Laufzeit unterstützte Obergrenze) gesetzt und neu deployt. Die Infrastruktur (pro-Nutzer-Iterationszahl, transparentes Rehashing) bleibt bestehen und funktioniert weiter, greift aktuell aber nicht, weil Ziel- und Bestandswert identisch sind - ließe sich nutzen, falls workerd künftig höhere Werte erlaubt oder auf einen anderen KDF (z. B. Argon2id über eine externe Bibliothek) umgestellt wird. MFA-Backup-Codes weiterhin auf einer eigenen, stabilen Konstante (100.000) - unverändert vom Vorfall betroffen. Tests entsprechend angepasst (Legacy-Test nutzt jetzt einen künstlich niedrigeren Wert, um den Rehashing-Mechanismus selbst zu prüfen, unabhängig vom aktuell gültigen Zielwert).
 - **SEC-20 (CI-Pipeline)**: `.github/workflows/ci.yml` - läuft bei jedem Push/PR auf main, je ein Job für API-Worker (Typecheck, Lint, 43 Tests) und Frontend-Worker (Lint, Typecheck, Build). Deckte sofort eine echte Lücke auf: `oxlint` war im Worker-Paket nie als Dependency deklariert, lief bisher nur dank einer lokal auflösbaren `npx`-Version - im CI-Runner schlug der erste Durchlauf entsprechend fehl, gefixt durch Nachtragen als devDependency. **Branch Protection bewusst NICHT aktiviert** - Nutzerentscheidung: CI-Status soll nur sichtbar sein, `main` bleibt für direkte Pushes offen (kein PR-Zwang), um den etablierten Arbeitsablauf dieser Session nicht zu brechen.
 
-**Bewusst weiterhin NICHT umgesetzt:**
+**Nachtrag (2026-08-27, sechster Durchgang):** Zweite externe Prüfung des
+Stands nach Commit `171d16a` (CI grün) kam zum Ergebnis "noch kein
+Production-Go" wegen zwei neuer Findings + mehrerer P1s. Auf Bestätigung
+umgesetzt:
 
-- **IaC (`cloudflare-turnen-iac/`) entspricht nicht der echten Infrastruktur** - lt. früherer expliziter Nutzeranweisung unangetastet lassen.
-- Backup/Restore-Test, externer Pentest, DAST - organisatorische Prozesse, nicht code-seitig lösbar ohne dedizierte Tools/Beauftragung.
+- 🔴 **"5-Minuten-Idle-Timeout funktioniert real nicht"**: Backend-Logik war
+  korrekt, aber die Benachrichtigungsglocke pollt alle 60s
+  `GET /api/notifications` im Hintergrund, solange der Tab offen ist - jeder
+  Poll hat `last_activity_at` mit-aktualisiert und damit den Idle-Timeout
+  faktisch wirkungslos gemacht (Session blieb beliebig lange "aktiv", auch
+  wenn niemand am Gerät saß). Fix: `requireAuth` nimmt `GET /api/notifications`
+  jetzt explizit von der Aktivitäts-Aktualisierung aus (`isIdleExempt()`,
+  `worker/src/index.ts`) - der Idle-Timeout selbst prüft weiterhin gegen die
+  letzte ECHTE Aktivität. Neuer Test reproduziert exakt das gemeldete
+  Szenario (wiederholtes Polling hält die Sitzung nicht künstlich am Leben).
+- 🔴 **Zweite Cross-Tenant-Lücke bei `families`**: `families` hatte keine
+  eigene `club_id`, die Mandantengrenze wurde dynamisch über
+  `created_by -> user.club_id` berechnet - wechselt die anlegende Person den
+  Verein, wäre die Familie (und darüber querverfügbare Notfallkontakte
+  verknüpfter Kinder) logisch mitgewandert. Fix (Migration 0039):
+  `families.club_id` fest beim Anlegen gesetzt, nicht mehr aus dem aktuellen
+  Konto der anlegenden Person abgeleitet; Backfill für die 3 produktiven
+  Bestandsfamilien anhand ihrer verknüpften Kinder bzw. ersatzweise des
+  aktuellen Vereins der anlegenden Person. Cross-Tenant-Verknüpfung von Kind
+  und Familie (`familyId` beim Anlegen/Bearbeiten eines Kindes sowie
+  `PUT /api/children/:id/family`) wird jetzt serverseitig gegen `club_id`
+  geprüft und abgelehnt. 4 neue Tests in `tenant-isolation.test.ts`.
+- 🟠 **Least Privilege bei Notfallkontakten**: `GET /api/children` lieferte
+  bisher für JEDES vereinsweit sichtbare Kind auch die entschlüsselten
+  Notfallkontakte, unabhängig davon, ob die anfragende Person eine Beziehung
+  zur jeweiligen Gruppe hat. Fix: Notfallkontakte werden jetzt nur noch
+  ausgeliefert, wenn die Person das Kind bearbeiten darf (eigene/Mit-
+  Trainer*innen-Gruppe) oder Jugendleitung ist (braucht den vereinsweiten
+  Überblick tatsächlich) - sonst `null` statt Klartext. Bewusst keine
+  separaten `ChildSummary`/`ChildDetail`-Endpunkte (größerer Umbau), sondern
+  Redaktion pro Element in derselben Liste - alle anderen Felder (Name,
+  Gruppe, Alter) bleiben unverändert sichtbar. 3 neue Tests.
+- 🟠 **CSRF Defense-in-Depth**: zusätzlich zu `SameSite=Strict` prüft der
+  Server jetzt bei `POST`/`PUT`/`DELETE`/`PATCH` explizit `Origin` (Fallback
+  `Sec-Fetch-Site`) gegen den eigenen Frontend-Origin, lehnt sonst mit 403 ab
+  (`worker/src/index.ts`, `isSameOriginRequest()`). 4 neue Tests.
+- 🔴 **Web-Worker weiterhin über `workers.dev` erreichbar**: `workers_dev`
+  stand beim Web-Worker (anders als beim API-Worker) noch auf `true`, dazu
+  waren Preview-URLs aktiv. Fix: `workers_dev = false` und
+  `preview_urls = false` in `turnen/wrangler.toml`, deployt und verifiziert
+  (die `workers.dev`-URL ist jetzt nicht mehr erreichbar).
+- 🔴 **Retention produktiv aktiviert**: `ARCHIVED_CHILD_RETENTION_DAYS` war
+  im Code fertig (s. PRIV-05), in Produktion aber bewusst nicht gesetzt.
+  Nutzerentscheidung: 1095 Tage (3 Jahre). Zusätzlich neuer täglicher
+  Cleanup für die Security-Tabellen (`sessions`, `login_attempts`,
+  `used_password_reset_tokens`), die bisher unbegrenzt wuchsen -
+  `SECURITY_LOG_RETENTION_DAYS = 90` (Nutzerentscheidung), abgelaufene/
+  widerrufene Sessions werden unabhängig davon sofort entfernt.
+
+**Nachtrag (2026-08-27, siebter Durchgang):** ~~SEC-18 (MFA API-seitige
+Durchsetzung)~~ **erneut eingeführt, diesmal dauerhaft gewollt und bewusst
+enger gefasst** - Nutzeranweisung "admin muss doch MFA zwingend haben" nach
+Rückfrage, für welche Rolle(n): **nur Platform-Admin (`is_admin`), nicht
+Jugendleitung.** Anders als beim ersten Durchgang (SEC-18, zurückgenommen
+über Commit `971993e`) gilt der Zwang jetzt also nur für die höchste
+Zugriffsstufe (vereinsübergreifend), nicht für Jugendleitung (bleibt
+weiterhin Opt-in). Umsetzung analog zum ursprünglichen SEC-18:
+`requireAuth` blockiert `is_admin`-Accounts ohne aktivierte MFA serverseitig
+für alle Routen außer einer Positivliste (`/api/me`, `/api/logout`,
+`/api/me/mfa*`, `/api/me/sessions*`, `/api/me/password`), `GET /api/me`
+liefert wieder `mfaSetupRequired`, `MfaEnforcementOverlay.tsx` (blockierendes
+Setup-Overlay) aus der Git-Historie wiederhergestellt und auf die neue
+Formulierung ("Admin-Accounts" statt "Jugendleitung/Admin") angepasst.
+Vor dem Deploy geprüft: der einzige produktive Admin-Account hatte MFA
+bereits aktiv, kein Lockout-Risiko. 4 neue Tests in `mfa.test.ts`, 2
+bestehende Admin-Tests in `authorization.test.ts` angepasst (MFA vorab
+einrichten bzw. die erwartete Blockade prüfen statt sie zu umgehen).
+
+**Nachtrag (2026-08-27, achter Durchgang):** Erzwungener Passwortwechsel
+beim ersten Login (Nutzeranfrage: "initial Passwort von Admin anlegen, aber
+beim ersten Login wechseln müssen") - neues Feld `users.must_change_password`
+(Migration 0040, Default 0, keine Auswirkung auf Bestandsaccounts). Gesetzt
+auf 1 bei: Account-Erstellung über `scripts/create-admin.mjs` oder
+`POST /api/admin/users` (Admin-Nutzerverwaltung), sowie erneut bei jedem
+`PUT /api/admin/users/:id/password` (Admin setzt ein fremdes Passwort
+zurück - die Admin-Person kennt dieses Passwort, es muss ersetzt werden).
+Zurückgesetzt auf 0 bei jedem selbst gewählten neuen Passwort (eigene
+Passwortänderung, E-Mail-Passwort-Reset) - **nicht** beim transparenten
+PBKDF2-Rehashing (dasselbe Passwort, nur höhere Iterationszahl, kein
+echter Wechsel durch die Person). Serverseitig in `requireAuth` durchgesetzt
+(Positivliste `/api/me`, `/api/logout`, `/api/me/password`, analog zur
+MFA-Durchsetzung), zusätzlich blockierendes Frontend-Overlay
+(`PasswordChangeRequiredOverlay.tsx`), Priorität vor einem etwaigen
+gleichzeitigen MFA-Setup-Zwang. 6 neue Tests in
+`password-change-required.test.ts`.
+
+**Bewusst weiterhin NICHT umgesetzt (unverändert seit dem letzten Durchgang):**
+
+- **Eigene Origin (`turnen.squora.de` statt `squora.de/turnen-light`)** -
+  auf Nutzerentscheidung (2026-08-27) explizit zurückgestellt: eine echte
+  DNS-/Zonen-Änderung mit Abstimmungsbedarf mit anderen Projekten auf
+  derselben Zone, kein reiner Code-Fix. Bleibt ein offenes P1.
+- **MFA-Zwang für Jugendleitung** - weiterhin bewusst Opt-in (nur
+  Platform-Admin ist verpflichtend, s. Nachtrag oben). Bei einer strengen
+  Security-Bewertung für Jugendleitung als **akzeptiertes Restrisiko** zu
+  dokumentieren, nicht als "Best Practice erfüllt".
+- **Branch Protection / Required Status Checks** - unverändert bewusst
+  nicht aktiviert (Nutzerentscheidung: `main` bleibt für direkte Pushes
+  offen).
+- **SAST/SCA/Secret-Scan, Action-SHA-Pinning, SBOM** - nicht umgesetzt.
+- **Remote-State-Backend für Terraform/OpenTofu** - State liegt weiterhin
+  lokal.
+- Backup/Restore-Test (Recovery-Drill, RPO/RTO-Definition), externer
+  Pentest, DAST, strukturiertes Betriebsmonitoring/Alerting -
+  organisatorische Prozesse, nicht code-seitig lösbar ohne dedizierte
+  Tools/Beauftragung.
 
 Diese Punkte bleiben **offen und sind nicht vergessen** - sie sind bewusst
 zurückgestellt (niedrige Priorität bzw. außerhalb des Code-Scopes), nicht
@@ -125,7 +247,7 @@ verifizierenden Tests. Das ist selbst ein Finding (siehe SEC-08).
 | SEC-12 | Der clubbezogene Verlauf (`/verlauf`, `GET /api/audit-log`) war für alle Vereinsmitglieder sichtbar (mit Sichtfilter auf eigene Aktionen für Nicht-Jugendleitung). Nutzerentscheidung: nur die Admin-Rolle soll ihn sehen. | — (Produktentscheidung, kein Compliance-Fund) | Frontend Nav/Route, `GET /api/audit-log` | — | — | Nav-Eintrag, Seiten-Guard (`AuditLog.tsx`) und Backend-Route (`requireAdmin`) jeweils auf die Admin-Rolle beschränkt. | **Umgesetzt** (2026-08-26) |
 | INFO-01 | Keine Third-Party-SDKs (kein Sentry/Firebase/Analytics/Crashlytics) im Repo (`package.json` Backend+Frontend geprüft). | Info (positiv) | — | Aktuell kein Telemetrie-Leak-Risiko über Drittanbieter. | Abschnitt 11 der Anfrage | Bei künftiger Integration: **vor** dem Einbau `beforeSend`/Redaction-Schicht verpflichtend mitliefern. | N/A |
 | INFO-02 | Keine Secrets im Repository gefunden. `.dev.vars` (echtes `JWT_SECRET`) ist git-ignored, nur `.dev.vars.example` mit Platzhalter ist eingecheckt. `.env.production` enthält nur öffentliche Frontend-Build-Variablen. | Info (positiv) | — | — | Abschnitt 18 der Anfrage | Weiter so; Secret-Scanning in CI ergänzen, um das dauerhaft abzusichern (siehe SEC-08/CI-Abschnitt). | N/A |
-| INFO-03 | Passwort-Hashing: PBKDF2-SHA256, zufälliges 16-Byte-Salt pro Nutzer, timing-safe Vergleich (`worker/src/auth.ts`). Kein Klartext-Passwort wird je gespeichert oder geloggt. | Info (positiv) | Auth | — | Art. 32, OWASP ASVS V2 | Iterationen von 100k auf 600k angehoben (siehe SEC-19). Argon2id bliebe der theoretisch modernste Standard, aber PBKDF2 mit 600k Iterationen gilt nach OWASP als angemessen - kein akuter Handlungsbedarf mehr. | Beobachtung, weitgehend erledigt |
+| INFO-03 | Passwort-Hashing: PBKDF2-SHA256, zufälliges 16-Byte-Salt pro Nutzer, timing-safe Vergleich (`worker/src/auth.ts`). Kein Klartext-Passwort wird je gespeichert oder geloggt. | Info (positiv) | Auth | — | Art. 32, OWASP ASVS V2 | Erhöhung auf 600k Iterationen (SEC-19) in Produktion an einer Laufzeit-Obergrenze von workerd gescheitert (s. SEC-19) und auf 100k zurückgesetzt. Argon2id bliebe der modernste Standard und würde die 100k-Grenze umgehen, ist aber ein größerer Umbau (externe Library, kein Web-Crypto-Standardverfahren) - kein akuter Handlungsbedarf, aber nicht mehr "erledigt". | Beobachtung, offen |
 | REVIEW-01 | Kein Auftragsverarbeitungsvertrag (AVV) mit Cloudflare (D1, Workers, Email Sending) dokumentiert; Verarbeitungsort/Region von D1 aus dem Code nicht verifizierbar. | — | Infrastruktur | Nicht mit Code lösbar. | Art. 28, Art. 44ff. | **LEGAL/PRIVACY REVIEW REQUIRED**: AVV abschließen, Verarbeitungsort klären, in `docs/privacy/third-parties.md` dokumentieren. | Offen |
 | REVIEW-02 | Keine Datenschutzerklärung, kein Verarbeitungsverzeichnis, keine dokumentierte Rechtsgrundlage für die Verarbeitung von Kindergesundheitsdaten durch den Verein. | — | Organisatorisch | Nicht mit Code lösbar. | Art. 6, Art. 9, Art. 30 | **LEGAL/PRIVACY REVIEW REQUIRED**: mit Datenschutzbeauftragte:m des Vereins/Verbands klären. | Offen |
 | **SEC-13** | **P0 — Cross-Tenant-Isolation-Fehler bei gruppenlosen Kindern.** `listChildrenForUser()` und `isChildWritable()` behandelten "Kind hat keine Gruppe" (`group_id IS NULL` - regulär z.B. bei der Vereins-Warteliste vor Gruppenzuteilung) fälschlich als "für jede*n authentifizierte*n Nutzer*in sichtbar/bearbeitbar, vereinsübergreifend" - eine als Alt-Bestand-Kompatibilität gedachte Öffnung, die auch neu angelegte Kinder ohne Gruppe traf. Fund der externen Production-Readiness-Prüfung 2026-08-27. | **War P0/Critical** | `worker/src/db.ts`, `worker/src/index.ts` | Bei mehr als einem Verein: jeder authentifizierte Nutzer konnte gruppenlose Kinder fremder Vereine sehen und bearbeiten. Zum Auffindungszeitpunkt 0 betroffene Datensätze in Produktion (1 Verein, 0 gruppenlose Kinder). | Art. 25, Art. 32 (Broken Object Level Authorization) | `children.club_id` als primäre, nicht mehr nur über die Gruppe abgeleitete Mandantengrenze eingeführt (Migration 0036, Backfill aller 38 Bestandskinder verifiziert). Wird beim Anlegen immer gesetzt (aus Zielgruppe oder Verein der anlegenden Person, `clubId` jetzt Pflichtfeld in `ChildInput`), bei Gruppenwechsel synchron mitgeführt (`moveChildToGroup()`). Sichtbarkeits-/Schreibprüfung komplett auf `club_id` umgestellt; verbleibende Kompatibilitätszweige nur noch für echten, vereinslosen Alt-Bestand (aktuell 0 Datensätze). Beim Schreiben der SQL-Query zunächst ein LEFT-JOIN-Artefakt eingebaut (NULL-Spalten aus fehlendem Gruppen-Join wurden fälschlich als "verwaiste Gruppe" gewertet) - durch den neuen Test sofort aufgefallen und vor Deployment korrigiert. 4 neue automatisierte Cross-Tenant-Tests (`worker/test/tenant-isolation.test.ts`). | **Behoben** (2026-08-27), remote migriert und deployt |

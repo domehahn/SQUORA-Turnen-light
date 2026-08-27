@@ -1,6 +1,6 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
+import { authHeaders, enableMfaForTest, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
 
 beforeAll(async () => {
   await ensureMigrated();
@@ -213,6 +213,58 @@ describe("IDOR/BOLA bei Kindern", () => {
   });
 });
 
+// Least-Privilege-Härtung (externe Production-Readiness-Prüfung
+// 2026-08-27): die vereinsweite Kinderliste enthielt bisher für jedes
+// zurückgegebene Kind auch die Notfallkontakte, unabhängig davon, ob die
+// anfragende Person eine Beziehung zur jeweiligen Gruppe hat.
+describe("Least Privilege bei Notfallkontakten in der Kinderliste", () => {
+  it("ein Turnleiter sieht die Notfallkontakte eines Kindes einer fremden Gruppe im selben Verein NICHT", async () => {
+    const club = await seedClub("Verein Least-Privilege A");
+    const owner = await seedUser({ email: "lp-owner@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    await seedUser({ email: "lp-outsider@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    const group = await seedGroup({ name: "Gruppe LP", ownerId: owner.id, clubId: club.id });
+    const child = await seedChild({ firstName: "Max", lastName: "LP", groupId: group.id, clubId: club.id });
+    await env.DB.prepare("UPDATE children SET emergency_contact_name = ?, emergency_contact_phone = ? WHERE id = ?")
+      .bind("Erika Mustermann", "0170 1234567", child.id)
+      .run();
+
+    const outsiderToken = await login(SELF, "lp-outsider@test.local", "password-123");
+    const res = await SELF.fetch("https://example.test/api/children", { headers: authHeaders(outsiderToken) });
+    const children = (await res.json()) as { id: string; emergencyContactName: string | null; emergencyContactPhone: string | null }[];
+    const seen = children.find((c) => c.id === child.id);
+    expect(seen).toBeDefined();
+    expect(seen!.emergencyContactName).toBeNull();
+    expect(seen!.emergencyContactPhone).toBeNull();
+  });
+
+  it("die Gruppenleitung selbst sieht die Notfallkontakte ihrer eigenen Gruppe weiterhin", async () => {
+    const club = await seedClub("Verein Least-Privilege B");
+    const owner = await seedUser({ email: "lp-owner-b@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    const group = await seedGroup({ name: "Gruppe LP B", ownerId: owner.id, clubId: club.id });
+    const child = await seedChild({ firstName: "Erika", lastName: "LP-B", groupId: group.id, clubId: club.id });
+    await env.DB.prepare("UPDATE children SET emergency_contact_name = ? WHERE id = ?").bind("Kontakt B", child.id).run();
+
+    const ownerToken = await login(SELF, "lp-owner-b@test.local", "password-123");
+    const res = await SELF.fetch("https://example.test/api/children", { headers: authHeaders(ownerToken) });
+    const children = (await res.json()) as { id: string; emergencyContactName: string | null }[];
+    expect(children.find((c) => c.id === child.id)?.emergencyContactName).toBe("Kontakt B");
+  });
+
+  it("die Jugendleitung sieht Notfallkontakte club-weit, auch für fremde Gruppen", async () => {
+    const club = await seedClub("Verein Least-Privilege C");
+    const owner = await seedUser({ email: "lp-owner-c@test.local", password: "password-123", clubId: club.id, clubRole: "member" });
+    await seedUser({ email: "lp-leader-c@test.local", password: "password-123", clubId: club.id, clubRole: "jugendleiter" });
+    const group = await seedGroup({ name: "Gruppe LP C", ownerId: owner.id, clubId: club.id });
+    const child = await seedChild({ firstName: "Max", lastName: "LP-C", groupId: group.id, clubId: club.id });
+    await env.DB.prepare("UPDATE children SET emergency_contact_name = ? WHERE id = ?").bind("Kontakt C", child.id).run();
+
+    const leaderToken = await login(SELF, "lp-leader-c@test.local", "password-123");
+    const res = await SELF.fetch("https://example.test/api/children", { headers: authHeaders(leaderToken) });
+    const children = (await res.json()) as { id: string; emergencyContactName: string | null }[];
+    expect(children.find((c) => c.id === child.id)?.emergencyContactName).toBe("Kontakt C");
+  });
+});
+
 describe("Admin-Rolle (Privilege Escalation)", () => {
   it("normaler Nutzer kann keine Admin-Routen aufrufen", async () => {
     await seedUser({ email: "not-admin@test.local", password: "password-123" });
@@ -232,18 +284,23 @@ describe("Admin-Rolle (Privilege Escalation)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("Admin-Rolle kann Admin-Routen aufrufen", async () => {
+  // Admin-Routen liegen hinter requireAuth, das für is_admin ohne aktivierte
+  // MFA blockt (s. test/mfa.test.ts, "MFA-Zwang für Platform-Admin") - MFA
+  // hier vorab einrichten, sonst würde dieser Test aus dem falschen Grund
+  // (MFA-Sperre statt der eigentlich geprüften Admin-Berechtigung) bestehen.
+  it("Admin-Rolle kann Admin-Routen aufrufen (mit aktivierter MFA)", async () => {
     await seedUser({ email: "real-admin@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "real-admin@test.local", "password-123");
+    await enableMfaForTest(token, "password-123");
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
     expect(res.status).toBe(200);
   });
 
-  it("Admin-Rolle kann Admin-Routen auch OHNE aktivierte MFA aufrufen (MFA ist Opt-in, nicht verpflichtend)", async () => {
+  it("Admin-Rolle OHNE aktivierte MFA wird von Admin-Routen blockiert (MFA ist für is_admin verpflichtend, s. mfa.test.ts)", async () => {
     await seedUser({ email: "admin-no-mfa@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "admin-no-mfa@test.local", "password-123");
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 });
 

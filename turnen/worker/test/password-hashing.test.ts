@@ -11,10 +11,17 @@ beforeAll(async () => {
 // global hartkodiert, damit bestehende Hashes mit ihrer ursprünglichen
 // (niedrigeren) Zahl gültig bleiben und sich transparent auf die neue,
 // höhere Zahl heben lassen.
+//
+// CURRENT_PBKDF2_ITERATIONS steht bei 100_000 (nicht der OWASP-Empfehlung
+// von 600_000), weil workerds crypto.subtle.deriveBits PBKDF2 oberhalb von
+// 100.000 Iterationen mit NotSupportedError ablehnt (in Produktion am
+// 27.08.2026 aufgefallen). Die Tests hier nutzen deshalb einen künstlich
+// niedrigeren Legacy-Wert (50_000), um den Rehashing-Mechanismus selbst zu
+// prüfen, unabhängig von der aktuell gültigen Ziel-Iterationszahl.
 describe("Passwort-Hashing (PBKDF2-Iterationen)", () => {
   it("ein mit der alten, niedrigeren Iterationszahl gehashtes Passwort funktioniert weiterhin beim Login und wird danach automatisch angehoben", async () => {
     const { hashPassword } = await import("../src/auth");
-    const LEGACY_ITERATIONS = 100_000;
+    const LEGACY_ITERATIONS = 50_000;
     const { hash, salt } = await hashPassword("legacy-password-123", LEGACY_ITERATIONS);
     const id = crypto.randomUUID();
     await env.DB.prepare(
@@ -49,11 +56,12 @@ describe("Passwort-Hashing (PBKDF2-Iterationen)", () => {
     expect(res2.status).toBe(200);
   });
 
-  it("neu angelegte Nutzer bekommen direkt die aktuelle, höhere Iterationszahl", async () => {
+  it("neu angelegte Nutzer bekommen direkt die aktuelle Iterationszahl", async () => {
+    const { CURRENT_PBKDF2_ITERATIONS } = await import("../src/auth");
     await seedUser({ email: "fresh-hash@test.local", password: "fresh-password-456" });
     const row = await env.DB.prepare("SELECT password_iterations FROM users WHERE email = ?")
       .bind("fresh-hash@test.local")
       .first<{ password_iterations: number }>();
-    expect(row!.password_iterations).toBeGreaterThanOrEqual(600_000);
+    expect(row!.password_iterations).toBe(CURRENT_PBKDF2_ITERATIONS);
   });
 });

@@ -245,7 +245,6 @@ export default function Dashboard() {
     { label: "Kapazitäts-Anfragen für deine Gruppen", count: incomingCapacityRequests.length, to: "/gruppen", tone: "red" as const },
     { label: "Platzvorschläge für deine Gruppen", count: incomingPlacementRequests.length, to: "/warteliste", tone: "amber" as const },
     { label: "Eigene offene Anfragen für abweichende Termine", count: myOverrideRequests.length, to: "/anwesenheit", tone: "amber" as const },
-    { label: "Eigene offene Verschiebe-Anfragen", count: myMoveRequests.length, to: "/kinder", tone: "amber" as const },
     { label: "Eigene offene Kapazitäts-Anfragen", count: myCapacityRequests.length, to: "/kinder", tone: "amber" as const },
     ...(isJugendleiter
       ? [
@@ -351,6 +350,34 @@ export default function Dashboard() {
                     </Link>
                   </li>
                 ))}
+              </ul>
+            </div>
+          )}
+
+          {myMoveRequests.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+              <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Eigene offene Verschiebe-Anfragen ({myMoveRequests.length})
+              </h3>
+              <ul className="space-y-1.5">
+                {myMoveRequests.map((r) => {
+                  const targetGroup = groups.find((g) => g.id === r.toGroupId);
+                  return (
+                    <li key={r.id}>
+                      <Link
+                        to="/kinder"
+                        className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm text-amber-900 hover:bg-white/60 dark:text-amber-200 dark:hover:bg-slate-900/40"
+                      >
+                        <span>
+                          {r.childName} → <span className="font-medium">{r.toGroupName}</span>
+                        </span>
+                        <span className="text-xs text-amber-700/80 dark:text-amber-300/70">
+                          Turnleitung dort: {targetGroup?.ownerName ?? "unbekannt"}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

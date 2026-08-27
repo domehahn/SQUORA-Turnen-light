@@ -34,8 +34,13 @@ if (password.length < 8) {
 
 // Muss mit CURRENT_PBKDF2_ITERATIONS in worker/src/auth.ts übereinstimmen
 // (Passwort-Hashing-Härtung) - dieses Skript kann dessen TS-Export nicht
-// direkt importieren, deshalb hier als eigene Konstante dupliziert.
-const PBKDF2_ITERATIONS = 600_000;
+// direkt importieren, deshalb hier als eigene Konstante dupliziert. Bei
+// 100_000 belassen: die Cloudflare-Workers-Runtime (workerd), die den
+// Hash beim Login mit crypto.subtle.deriveBits nachprüft, lehnt PBKDF2
+// oberhalb von 100.000 Iterationen ab (s. Kommentar in auth.ts) - ein hier
+// abweichender, höherer Wert würde den erstellten Account beim ersten
+// Login-Versuch mit einem Serverfehler aussperren.
+const PBKDF2_ITERATIONS = 100_000;
 
 const salt = randomBytes(16);
 const hash = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, "sha256");
@@ -48,7 +53,10 @@ function sqlString(value) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-const sql = `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations) VALUES (${sqlString(id)}, ${sqlString(normalizedEmail)}, ${sqlString(displayName)}, ${sqlString(hash.toString("hex"))}, ${sqlString(salt.toString("hex"))}, ${PBKDF2_ITERATIONS});`;
+// must_change_password = 1: dieses Skript vergibt das initiale Passwort,
+// nicht die Person selbst - beim ersten Login muss es durch ein nur ihr
+// bekanntes ersetzt werden (Nutzeranfrage 2026-08-27).
+const sql = `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, must_change_password) VALUES (${sqlString(id)}, ${sqlString(normalizedEmail)}, ${sqlString(displayName)}, ${sqlString(hash.toString("hex"))}, ${sqlString(salt.toString("hex"))}, ${PBKDF2_ITERATIONS}, 1);`;
 
 console.log("\nFühre dieses Kommando aus, um den Nutzer anzulegen:\n");
 console.log(`wrangler d1 execute DB --local --command "${sql.replace(/"/g, '\\"')}"`);

@@ -1,0 +1,16 @@
+-- Behebt eine Sicherheitsinvariante-Verletzung (externe Production-
+-- Readiness-Prüfung 2026-08-27, P1 "MFA SETUP / ROTATION ABSICHERN"):
+-- POST /api/me/mfa/setup schrieb das neue, noch unbestätigte Secret bisher
+-- direkt in users.totp_secret und setzte totp_enabled sofort auf 0 -
+-- unabhängig davon, ob bereits eine aktive, funktionierende MFA bestand.
+-- Ein einzelner authentifizierter Aufruf (keine Passwort-/TOTP-Bestätigung
+-- nötig) genügte damit, um die MFA einer fremden, bereits eingerichteten
+-- Person faktisch zu deaktivieren (totp_enabled=0), ohne dass diese das
+-- bemerkt hätte - ein direkter Angriff auf genau die gerade erst
+-- eingeführte MFA-Pflicht für Platform-Admin.
+--
+-- pending_totp_secret ist jetzt eine eigene Spalte: ein "setup"-Aufruf
+-- schreibt nur noch hierhin, die aktive totp_secret/totp_enabled/
+-- totp_backup_codes bleiben unverändert, bis ein neuer Code erfolgreich
+-- bestätigt wurde (POST /api/me/mfa/confirm) - erst dann atomarer Wechsel.
+ALTER TABLE users ADD COLUMN pending_totp_secret TEXT;

@@ -57,6 +57,44 @@ describe("Session-Management", () => {
     expect(res.status).toBe(401);
   });
 
+  // Externe Production-Readiness-Prüfung 2026-08-27: die Benachrichtigungs-
+  // glocke pollt alle 60s GET /api/notifications im Hintergrund, solange der
+  // Tab offen ist. Ohne Ausnahme hätte das den Idle-Timeout wirkungslos
+  // gemacht - die Sitzung wäre nie als inaktiv erkannt worden, obwohl
+  // niemand tatsächlich mit der App interagiert.
+  it("Idle-Timeout: wiederholtes GET /api/notifications (Hintergrund-Polling) hält die Sitzung NICHT künstlich am Leben", async () => {
+    await seedUser({ email: "session-idle-poll@test.local", password: "password-123" });
+    const cookie = await login(SELF, "session-idle-poll@test.local", "password-123");
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?")
+      .bind("session-idle-poll@test.local")
+      .first<{ id: string }>();
+
+    // Sitzung ist bereits 4 Minuten inaktiv (noch innerhalb des 5-Minuten-
+    // Fensters) - simuliert, dass die Person seit 4 Minuten weg ist.
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-4 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+
+    // Hintergrund-Poll darf last_activity_at nicht auf "jetzt" zurücksetzen.
+    const pollRes = await SELF.fetch("https://example.test/api/notifications", { headers: authHeaders(cookie) });
+    expect(pollRes.status).toBe(200);
+
+    const afterPoll = await env.DB.prepare("SELECT last_activity_at FROM sessions WHERE user_id = ?")
+      .bind(user!.id)
+      .first<{ last_activity_at: string }>();
+    // Weiterhin auf dem alten (vor 4 Minuten gesetzten) Stand - der Poll hat
+    // ihn nicht angehoben.
+    expect(new Date(`${afterPoll!.last_activity_at.replace(" ", "T")}Z`).getTime()).toBeLessThan(Date.now() - 3 * 60 * 1000);
+
+    // Jetzt insgesamt > 5 Minuten inaktiv - trotz des zwischenzeitlichen
+    // Polls muss die Sitzung als abgelaufen gelten.
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-6 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+    const meRes = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(cookie) });
+    expect(meRes.status).toBe(401);
+  });
+
   it("Absolute Timeout: eine Sitzung jenseits ihrer absoluten Gültigkeit wird abgelehnt, auch bei frischer Aktivität", async () => {
     await seedUser({ email: "session-absolute@test.local", password: "password-123" });
     const cookie = await login(SELF, "session-absolute@test.local", "password-123");

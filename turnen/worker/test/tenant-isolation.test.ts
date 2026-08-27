@@ -1,6 +1,6 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
+import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedFamily, seedGroup, seedUser } from "./helpers";
 
 beforeAll(async () => {
   await ensureMigrated();
@@ -159,5 +159,185 @@ describe("BOLA-Schutz bei der Anwesenheitserfassung", () => {
       body: JSON.stringify({ entries: [], ledBy: stranger.id }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// Zweiter P0-Fix (externe Production-Readiness-Prüfung 2026-08-27, Migration
+// 0039): families hatte keine eigene club_id, die Mandantengrenze wurde
+// dynamisch über created_by -> user.club_id berechnet - ein Vereinswechsel
+// der anlegenden Person hätte die Familie (und ihre über Kinder verknüpften
+// Notfallkontakte) logisch mit in den neuen Verein wandern lassen.
+describe("Cross-Tenant-Isolation bei Familien (P0)", () => {
+  it("Verein A sieht eine Familie aus Verein B NICHT in der Familienliste", async () => {
+    const clubA = await seedClub("Verein Family A");
+    const clubB = await seedClub("Verein Family B");
+    const creatorB = await seedUser({ email: "family-creator-b@test.local", password: "password-123", clubId: clubB.id });
+    await seedUser({ email: "family-a@test.local", password: "password-123", clubId: clubA.id });
+    await seedFamily({ name: "Familie B", createdBy: creatorB.id, clubId: clubB.id });
+
+    const tokenA = await login(SELF, "family-a@test.local", "password-123");
+    const res = await SELF.fetch("https://example.test/api/families", { headers: authHeaders(tokenA) });
+    const families = (await res.json()) as { name: string }[];
+    expect(families.some((f) => f.name === "Familie B")).toBe(false);
+  });
+
+  it("eine Familie bleibt bei ihrem ursprünglichen Verein, auch wenn die anlegende Person den Verein wechselt", async () => {
+    const clubA = await seedClub("Verein Family Switch A");
+    const clubB = await seedClub("Verein Family Switch B");
+    const creator = await seedUser({ email: "family-switcher@test.local", password: "password-123", clubId: clubA.id });
+    await seedFamily({ name: "Familie Switch", createdBy: creator.id, clubId: clubA.id });
+
+    // Die anlegende Person wechselt jetzt (z.B. als Trainer*in) zu Verein B.
+    const { env } = await import("cloudflare:test");
+    await env.DB.prepare("UPDATE users SET club_id = ? WHERE id = ?").bind(clubB.id, creator.id).run();
+
+    // Verein B (neuer Verein der Person) sieht die alte Familie NICHT.
+    await seedUser({ email: "family-other-b@test.local", password: "password-123", clubId: clubB.id });
+    const tokenB = await login(SELF, "family-other-b@test.local", "password-123");
+    const resB = await SELF.fetch("https://example.test/api/families", { headers: authHeaders(tokenB) });
+    const familiesB = (await resB.json()) as { name: string }[];
+    expect(familiesB.some((f) => f.name === "Familie Switch")).toBe(false);
+
+    // Verein A (ursprünglicher Verein) sieht sie weiterhin.
+    await seedUser({ email: "family-other-a@test.local", password: "password-123", clubId: clubA.id });
+    const tokenA = await login(SELF, "family-other-a@test.local", "password-123");
+    const resA = await SELF.fetch("https://example.test/api/families", { headers: authHeaders(tokenA) });
+    const familiesA = (await resA.json()) as { name: string }[];
+    expect(familiesA.some((f) => f.name === "Familie Switch")).toBe(true);
+  });
+
+  it("ein Kind aus Verein B kann NICHT mit einer Familie aus Verein A verknüpft werden (manipulierte familyId)", async () => {
+    const clubA = await seedClub("Verein Family Link A");
+    const clubB = await seedClub("Verein Family Link B");
+    const creatorA = await seedUser({ email: "family-link-creator-a@test.local", password: "password-123", clubId: clubA.id });
+    await seedUser({ email: "family-link-b@test.local", password: "password-123", clubId: clubB.id });
+    const familyA = await seedFamily({ name: "Familie Link A", createdBy: creatorA.id, clubId: clubA.id });
+    const childB = await seedChild({ firstName: "Kind", lastName: "B", groupId: null, clubId: clubB.id });
+
+    const tokenB = await login(SELF, "family-link-b@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/children/${childB.id}/family`, {
+      method: "PUT",
+      headers: authHeaders(tokenB),
+      body: JSON.stringify({ familyId: familyA.id }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("ein Kind kann mit einer Familie desselben Vereins verknüpft werden", async () => {
+    const club = await seedClub("Verein Family Link OK");
+    const creator = await seedUser({ email: "family-link-ok-creator@test.local", password: "password-123", clubId: club.id });
+    const family = await seedFamily({ name: "Familie OK", createdBy: creator.id, clubId: club.id });
+    const child = await seedChild({ firstName: "Kind", lastName: "OK", groupId: null, clubId: club.id });
+
+    const token = await login(SELF, "family-link-ok-creator@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/children/${child.id}/family`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({ familyId: family.id }),
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+// Fail-closed statt Fail-open (P1 "AUTHORIZATION MUSS FAIL CLOSED SEIN",
+// externe Production-Readiness-Prüfung 2026-08-27): frühere Ausnahmen für
+// unbekannte/kaputte Mandantenbeziehungen ("return true") wurden entfernt,
+// da im produktiven Datenbestand keine solchen Zeilen existieren (jedes
+// Kind hat club_id, jede group_id zeigt auf eine existierende Gruppe).
+describe("Fail-closed bei unbekannten/kaputten Mandantenbeziehungen", () => {
+  // Ein Test für "dangling group_id" (Kind zeigt auf eine nicht (mehr)
+  // existierende Gruppe) wurde bewusst NICHT ergänzt: children.group_id hat
+  // eine echte FOREIGN KEY-Constraint (REFERENCES groups(id) ON DELETE SET
+  // NULL, Migration 0001), die genau das strukturell verhindert - beim
+  // Löschen einer Gruppe wird group_id automatisch NULL, ein Insert/Update
+  // auf eine nicht existierende Gruppe schlägt sofort mit
+  // SQLITE_CONSTRAINT fehl. Der zugehörige "if (!group) return true"-Zweig
+  // in isChildWritable() wurde trotzdem auf fail-closed umgestellt
+  // (Defense-in-Depth, z.B. für den Fall künftiger Bulk-Importe mit
+  // `PRAGMA foreign_keys=OFF`), ist aber durch die DB-Constraint bereits
+  // strukturell unerreichbar - kein Testfall dafür simulierbar.
+  it("ein Kind ganz ohne Vereinszuordnung (club_id UND group_id beide NULL) ist NICHT bearbeitbar", async () => {
+    const club = await seedClub("Verein No-Tenant-Child");
+    await seedUser({ email: "no-tenant-child@test.local", password: "password-123", clubId: club.id });
+    // Direkt ohne club_id angelegt - simuliert einen theoretischen
+    // Alt-Bestand-Fall, der im echten Datenbestand nicht mehr vorkommt.
+    const child = await seedChild({ firstName: "Ohne", lastName: "Verein", groupId: null, clubId: null });
+
+    const token = await login(SELF, "no-tenant-child@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/children/${child.id}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        firstName: "Manipuliert",
+        lastName: "Verein",
+        birthDate: "2020-01-01",
+        groupId: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        familyId: null,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("eine Gruppe ohne Besitzer (owner_id NULL, club_id NULL) ist NICHT für beliebige Nutzer*innen bearbeitbar", async () => {
+    const club = await seedClub("Verein Orphan Group");
+    await seedUser({ email: "orphan-group-outsider@test.local", password: "password-123", clubId: club.id });
+    const groupId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO groups (id, name, min_age, max_age, sort_order, owner_id, club_id) VALUES (?, 'Herrenlos', 3, 10, 0, NULL, NULL)`
+    )
+      .bind(groupId)
+      .run();
+
+    const token = await login(SELF, "orphan-group-outsider@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/groups/${groupId}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        name: "Übernommen",
+        minAge: 3,
+        maxAge: 10,
+        sortOrder: 0,
+        maxChildren: 20,
+        weekday: 1,
+        startTime: "16:00",
+        endTime: "17:00",
+        location: "Halle 1",
+        color: null,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("unbekannte/kaputte Mandantenbeziehungen erzeugen einen Security-Event-Eintrag ohne personenbezogenen Inhalt", async () => {
+    const club = await seedClub("Verein Security Event");
+    const actor = await seedUser({ email: "security-event@test.local", password: "password-123", clubId: club.id });
+    const child = await seedChild({ firstName: "Geheim", lastName: "Nachname", groupId: null, clubId: null });
+
+    const token = await login(SELF, "security-event@test.local", "password-123");
+    await SELF.fetch(`https://example.test/api/children/${child.id}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        firstName: "X",
+        lastName: "Y",
+        birthDate: "2020-01-01",
+        groupId: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        familyId: null,
+      }),
+    });
+
+    const entry = await env.DB.prepare(
+      "SELECT action, target_label, actor_id FROM audit_log WHERE action = 'security.unknown_tenant_relation_denied' AND actor_id = ? ORDER BY created_at DESC LIMIT 1"
+    )
+      .bind(actor.id)
+      .first<{ action: string; target_label: string; actor_id: string }>();
+    expect(entry).toBeTruthy();
+    // Kein Name des betroffenen Kindes im Log-Eintrag.
+    expect(entry!.target_label).not.toContain("Geheim");
+    expect(entry!.target_label).not.toContain("Nachname");
   });
 });
