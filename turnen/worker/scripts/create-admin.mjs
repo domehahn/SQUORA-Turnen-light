@@ -32,8 +32,13 @@ if (password.length < 8) {
   process.exit(1);
 }
 
+// Muss mit CURRENT_PBKDF2_ITERATIONS in worker/src/auth.ts übereinstimmen
+// (Passwort-Hashing-Härtung) - dieses Skript kann dessen TS-Export nicht
+// direkt importieren, deshalb hier als eigene Konstante dupliziert.
+const PBKDF2_ITERATIONS = 600_000;
+
 const salt = randomBytes(16);
-const hash = pbkdf2Sync(password, salt, 100_000, 32, "sha256");
+const hash = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, "sha256");
 const id = randomUUID();
 const normalizedEmail = email.trim().toLowerCase();
 const displayName = name ? name.trim() : null;
@@ -43,7 +48,7 @@ function sqlString(value) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-const sql = `INSERT INTO users (id, email, name, password_hash, password_salt) VALUES (${sqlString(id)}, ${sqlString(normalizedEmail)}, ${sqlString(displayName)}, ${sqlString(hash.toString("hex"))}, ${sqlString(salt.toString("hex"))});`;
+const sql = `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations) VALUES (${sqlString(id)}, ${sqlString(normalizedEmail)}, ${sqlString(displayName)}, ${sqlString(hash.toString("hex"))}, ${sqlString(salt.toString("hex"))}, ${PBKDF2_ITERATIONS});`;
 
 console.log("\nFühre dieses Kommando aus, um den Nutzer anzulegen:\n");
 console.log(`wrangler d1 execute DB --local --command "${sql.replace(/"/g, '\\"')}"`);

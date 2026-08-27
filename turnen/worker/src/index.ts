@@ -6,6 +6,8 @@ import * as db from "./db";
 import {
   ABSOLUTE_SESSION_SECONDS,
   ACTIVITY_UPDATE_THROTTLE_SECONDS,
+  BACKUP_CODE_ITERATIONS,
+  CURRENT_PBKDF2_ITERATIONS,
   IDLE_TIMEOUT_SECONDS,
   hashPassword,
   isPasswordPwned,
@@ -63,6 +65,24 @@ const app = new Hono<AppEnv>();
 // eigentliche Isolation kommt ohnehin vom exakten Host (kein Domain-
 // Attribut gesetzt), nicht vom Pfad.
 const SESSION_COOKIE_NAME = "turnen_session";
+
+// API-seitige MFA-Durchsetzung (s. requireAuth unten): einzige Routen, die
+// eine Admin-/Jugendleitung-Person ohne aktivierte MFA noch aufrufen darf -
+// alles, was zum Herausfinden des eigenen Status, Abmelden und zur
+// MFA-Einrichtung selbst nötig ist. Absichtlich eine Positivliste (nicht
+// "alles außer X"), damit neue Routen standardmäßig gesperrt sind, bis sie
+// hier bewusst freigegeben werden.
+const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
+  "/api/me",
+  "/api/logout",
+  "/api/me/mfa",
+  "/api/me/mfa/setup",
+  "/api/me/mfa/confirm",
+  "/api/me/mfa/disable",
+  "/api/me/sessions",
+  "/api/me/sessions/revoke-all",
+  "/api/me/password",
+]);
 
 function isLocalRequest(c: { req: { url: string } }): boolean {
   const hostname = new URL(c.req.url).hostname;
@@ -155,7 +175,9 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
       clearSessionCookie(c);
       return c.json({ error: "Sitzung wegen Inaktivität beendet, bitte erneut anmelden" }, 401);
     }
-    const user = await db.getUserById(c.env.DB, session.user_id);
+    // getUserRowById statt getUserById: liefert totp_enabled direkt mit,
+    // ohne eine zweite Query nur für die MFA-Durchsetzung unten zu brauchen.
+    const user = await db.getUserRowById(c.env.DB, session.user_id);
     if (!user) {
       clearSessionCookie(c);
       return c.json({ error: "Nicht angemeldet" }, 401);
@@ -163,13 +185,27 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("userId", user.id);
     c.set("email", user.email);
     c.set("name", user.name);
-    c.set("clubId", user.clubId);
-    c.set("clubRole", user.clubRole);
-    c.set("isAdmin", user.isAdmin);
+    c.set("clubId", user.club_id);
+    c.set("clubRole", user.club_role);
+    c.set("isAdmin", Boolean(user.is_admin));
     c.set("sessionId", session.id);
 
     if (now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
       await db.touchSessionActivity(c.env.DB, session.id);
+    }
+
+    // API-seitige MFA-Durchsetzung (Finding aus der Production-Readiness-
+    // Prüfung: vorher blockierte nur das Frontend-Overlay, ein direkter
+    // API-Client konnte MFA umgehen). Admin/Jugendleitung ohne aktivierte
+    // MFA dürfen ausschließlich noch die Routen aufrufen, die für Login-
+    // Status, Abmelden und die MFA-Einrichtung selbst nötig sind - sonst
+    // könnte sich niemand mehr aus dem erzwungenen Zustand befreien.
+    const requiresMfa = (user.is_admin || user.club_role === "jugendleiter") && !user.totp_enabled;
+    if (requiresMfa && !MFA_ENFORCEMENT_EXEMPT_PATHS.has(new URL(c.req.url).pathname)) {
+      return c.json(
+        { error: "Zwei-Faktor-Authentifizierung ist für diese Rolle erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
+        403
+      );
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -471,10 +507,21 @@ app.post("/api/login", async (c) => {
   }
 
   const userRow = await db.getUserByEmail(c.env.DB, email);
-  const valid = userRow ? await verifyPassword(password, userRow.password_hash, userRow.password_salt) : false;
+  const valid = userRow
+    ? await verifyPassword(password, userRow.password_hash, userRow.password_salt, userRow.password_iterations)
+    : false;
   if (!userRow || !valid) {
     await db.recordLoginAttempt(c.env.DB, email, false);
     return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
+  }
+
+  // Transparentes Rehashing (Passwort-Hashing-Härtung): ein erfolgreicher
+  // Login mit einem noch auf der alten, niedrigeren Iterationszahl
+  // gehashten Passwort hebt den Hash automatisch auf die aktuelle Stufe -
+  // niemand muss dafür das Passwort erneut eingeben oder zurücksetzen.
+  if (userRow.password_iterations < CURRENT_PBKDF2_ITERATIONS) {
+    const rehashed = await hashPassword(password);
+    await db.updateUserPassword(c.env.DB, userRow.id, rehashed);
   }
 
   // Zweiter Faktor (Finding SEC-02): Passwort war korrekt, aber statt der
@@ -530,7 +577,7 @@ app.post("/api/login/mfa", async (c) => {
     const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
     const normalizedCode = code.toUpperCase().replace(/\s/g, "");
     for (let i = 0; i < hashedCodes.length; i++) {
-      if (await verifyPassword(normalizedCode, hashedCodes[i].hash, hashedCodes[i].salt)) {
+      if (await verifyPassword(normalizedCode, hashedCodes[i].hash, hashedCodes[i].salt, BACKUP_CODE_ITERATIONS)) {
         ok = true;
         hashedCodes.splice(i, 1);
         await db.consumeBackupCode(c.env.DB, userRow.id, JSON.stringify(hashedCodes));
@@ -604,7 +651,7 @@ app.post("/api/me/mfa/confirm", requireAuth, async (c) => {
   const backupCodes = generateBackupCodes();
   const hashedBackupCodes = await Promise.all(
     backupCodes.map(async (bc) => {
-      const { hash, salt } = await hashPassword(bc);
+      const { hash, salt } = await hashPassword(bc, BACKUP_CODE_ITERATIONS);
       return { hash, salt };
     })
   );
@@ -624,7 +671,7 @@ app.post("/api/me/mfa/disable", requireAuth, async (c) => {
   const password = typeof body?.password === "string" ? body.password : "";
   const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
   if (!userRow) return c.json({ error: "Nicht angemeldet" }, 401);
-  if (!(await verifyPassword(password, userRow.password_hash, userRow.password_salt))) {
+  if (!(await verifyPassword(password, userRow.password_hash, userRow.password_salt, userRow.password_iterations))) {
     return c.json({ error: "Passwort falsch" }, 403);
   }
   await db.disableTotp(c.env.DB, c.get("userId"));
@@ -822,8 +869,8 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   }
   const isAdmin = "isAdmin" in (body ?? {}) ? Boolean(validBool(body.isAdmin)) : false;
 
-  const { hash, salt } = await hashPassword(password);
-  const user = await db.createUserAdmin(c.env.DB, { email, name, hash, salt, clubId, clubRole, isAdmin });
+  const { hash, salt, iterations } = await hashPassword(password);
+  const user = await db.createUserAdmin(c.env.DB, { email, name, hash, salt, iterations, clubId, clubRole, isAdmin });
   await db.logAudit(c.env.DB, {
     clubId: null,
     actorId: c.get("userId"),
@@ -879,8 +926,7 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
   const targetUser = await db.getUserById(c.env.DB, id);
-  const { hash, salt } = await hashPassword(newPassword);
-  await db.updateUserPassword(c.env.DB, id, { hash, salt });
+  await db.updateUserPassword(c.env.DB, id, await hashPassword(newPassword));
   // Niemals das neue Passwort selbst loggen - nur, dass ein Reset stattfand.
   await db.logAudit(c.env.DB, {
     clubId: null,
@@ -970,7 +1016,7 @@ app.put("/api/me", requireAuth, async (c) => {
 
   if (email !== userRow.email) {
     const currentPassword = typeof body?.currentPassword === "string" ? body.currentPassword : "";
-    if (!(await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt))) {
+    if (!(await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt, userRow.password_iterations))) {
       return c.json({ error: "Zur Bestätigung der E-Mail-Änderung bitte aktuelles Passwort eingeben" }, 403);
     }
   }
@@ -1004,15 +1050,14 @@ app.put("/api/me/password", requireAuth, async (c) => {
   const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
   if (!userRow) return c.json({ error: "Nutzer nicht gefunden" }, 404);
 
-  const valid = await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt);
+  const valid = await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt, userRow.password_iterations);
   if (!valid) return c.json({ error: "Aktuelles Passwort ist falsch" }, 401);
 
   if (await isPasswordPwned(newPassword)) {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
 
-  const { hash, salt } = await hashPassword(newPassword);
-  await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword));
   // Session Revocation (Session-Management-Härtung): ein gestohlenes Token
   // auf einem anderen Gerät soll nach einer Passwortänderung nicht gültig
   // bleiben. Die aktuelle Sitzung (auf der die Änderung selbst gerade
@@ -1082,8 +1127,7 @@ app.post("/api/password-reset/confirm", async (c) => {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
 
-  const { hash, salt } = await hashPassword(newPassword);
-  await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword));
   // Ein Passwort-Reset ist ein Recovery-Vorgang (möglicher Kompromittierungs-
   // Verdacht) - anders als bei der normalen Passwortänderung werden hier
   // ALLE Sitzungen widerrufen, es gibt keine "aktuelle" auszunehmen (dieser

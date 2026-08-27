@@ -242,10 +242,14 @@ export async function consumeBackupCode(db: D1Database, id: string, remainingCod
   await db.prepare("UPDATE users SET totp_backup_codes = ? WHERE id = ?").bind(remainingCodesJson, id).run();
 }
 
-export async function updateUserPassword(db: D1Database, id: string, input: { hash: string; salt: string }): Promise<void> {
+export async function updateUserPassword(
+  db: D1Database,
+  id: string,
+  input: { hash: string; salt: string; iterations: number }
+): Promise<void> {
   await db
-    .prepare("UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?")
-    .bind(input.hash, input.salt, id)
+    .prepare("UPDATE users SET password_hash = ?, password_salt = ?, password_iterations = ? WHERE id = ?")
+    .bind(input.hash, input.salt, input.iterations, id)
     .run();
 }
 
@@ -1819,6 +1823,7 @@ export async function createUserAdmin(
     name: string | null;
     hash: string;
     salt: string;
+    iterations: number;
     clubId: string | null;
     clubRole: ClubRole;
     isAdmin: boolean;
@@ -1827,10 +1832,10 @@ export async function createUserAdmin(
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO users (id, email, name, password_hash, password_salt, club_id, club_role, is_admin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, club_id, club_role, is_admin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, input.email, input.name, input.hash, input.salt, input.clubId, input.clubRole, input.isAdmin ? 1 : 0)
+    .bind(id, input.email, input.name, input.hash, input.salt, input.iterations, input.clubId, input.clubRole, input.isAdmin ? 1 : 0)
     .run();
   return { id };
 }

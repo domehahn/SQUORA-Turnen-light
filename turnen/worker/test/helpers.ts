@@ -1,5 +1,6 @@
-import { applyD1Migrations, env } from "cloudflare:test";
+import { SELF, applyD1Migrations, env } from "cloudflare:test";
 import { hashPassword } from "../src/auth";
+import { base32Decode, generateTotp } from "../src/totp";
 
 // Test-Fixtures: legen Nutzer/Vereine/Gruppen/Kinder direkt über echte
 // db.ts/auth.ts-Funktionen bzw. minimale Rohinserts an, dieselbe Logik wie
@@ -28,12 +29,22 @@ export async function seedUser(input: {
   isAdmin?: boolean;
 }): Promise<{ id: string }> {
   const id = crypto.randomUUID();
-  const { hash, salt } = await hashPassword(input.password);
+  const { hash, salt, iterations } = await hashPassword(input.password);
   await env.DB.prepare(
-    `INSERT INTO users (id, email, name, password_hash, password_salt, club_id, club_role, is_admin)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, club_id, club_role, is_admin)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, input.email, input.name ?? null, hash, salt, input.clubId ?? null, input.clubRole ?? "member", input.isAdmin ? 1 : 0)
+    .bind(
+      id,
+      input.email,
+      input.name ?? null,
+      hash,
+      salt,
+      iterations,
+      input.clubId ?? null,
+      input.clubRole ?? "member",
+      input.isAdmin ? 1 : 0
+    )
     .run();
   return { id };
 }
@@ -102,4 +113,23 @@ export function extractSessionCookie(setCookieHeader: string): string {
 
 export function authHeaders(cookie: string): Record<string, string> {
   return { Cookie: cookie, "Content-Type": "application/json" };
+}
+
+// Richtet MFA für einen bereits eingeloggten Test-Nutzer ein (Finding
+// "API-seitige MFA-Durchsetzung": Admin/Jugendleitung ohne aktivierte MFA
+// werden jetzt auch serverseitig blockiert, nicht mehr nur im Frontend-
+// Overlay) - Tests, die eine privilegierte Rolle gegen eine "normale"
+// Route prüfen wollen, müssen vorher echte MFA einrichten, sonst greift
+// die Durchsetzung selbst und verfälscht das Testergebnis.
+export async function enableMfaForTest(cookie: string): Promise<void> {
+  const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(cookie) });
+  if (setupRes.status !== 200) throw new Error(`MFA-Setup fehlgeschlagen (${setupRes.status}): ${await setupRes.text()}`);
+  const { secret } = (await setupRes.json()) as { secret: string };
+  const code = await generateTotp(base32Decode(secret));
+  const confirmRes = await SELF.fetch("https://example.test/api/me/mfa/confirm", {
+    method: "POST",
+    headers: authHeaders(cookie),
+    body: JSON.stringify({ code }),
+  });
+  if (confirmRes.status !== 200) throw new Error(`MFA-Bestätigung fehlgeschlagen (${confirmRes.status}): ${await confirmRes.text()}`);
 }

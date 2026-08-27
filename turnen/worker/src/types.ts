@@ -37,6 +37,11 @@ export interface UserRow {
   name: string | null;
   password_hash: string;
   password_salt: string;
+  // Pro Nutzer statt global (Migration 0038, Passwort-Hashing-Härtung) -
+  // bestehende Hashes bleiben mit ihrer ursprünglichen Iterationszahl
+  // gültig, verifyPassword() braucht sie deshalb explizit statt sich auf
+  // eine feste Konstante zu verlassen.
+  password_iterations: number;
   club_id: string | null;
   club_role: ClubRole;
   is_admin: number;

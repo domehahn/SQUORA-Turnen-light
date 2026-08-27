@@ -1,6 +1,19 @@
 import { SignJWT, jwtVerify } from "jose";
 
-const PBKDF2_ITERATIONS = 100_000;
+// War einheitlich 100_000 (globale Konstante). OWASP empfiehlt für
+// PBKDF2-HMAC-SHA256 aktuell 600.000 Iterationen (Production-Readiness-
+// Prüfung 2026-08-27) - jetzt pro Nutzer in users.password_iterations
+// gespeichert (Migration 0038), damit bestehende Hashes mit ihrer
+// ursprünglichen Zahl gültig bleiben und sich beim nächsten erfolgreichen
+// Login transparent auf die neue Zahl heben lassen (s. index.ts, Login-Route).
+export const CURRENT_PBKDF2_ITERATIONS = 600_000;
+// NUR für MFA-Backup-Codes (s. index.ts) - bewusst von der Nutzer-Passwort-
+// Iterationszahl entkoppelt: Backup-Codes sind kurzlebige, hochentropische
+// Zufallswerte (keine von Menschen gewählten Passwörter), ihre Sicherheit
+// kommt aus der Entropie, nicht aus PBKDF2-Kosten. So bleibt die einmal
+// gewählte Zahl stabil, ohne pro Backup-Code eine eigene Iterationszahl
+// mitspeichern zu müssen.
+export const BACKUP_CODE_ITERATIONS = 100_000;
 
 function toHex(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
@@ -17,7 +30,7 @@ function fromHex(hex: string): Uint8Array {
   return bytes;
 }
 
-async function derive(password: string, salt: Uint8Array): Promise<ArrayBuffer> {
+async function derive(password: string, salt: Uint8Array, iterations: number): Promise<ArrayBuffer> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
@@ -25,17 +38,16 @@ async function derive(password: string, salt: Uint8Array): Promise<ArrayBuffer> 
     false,
     ["deriveBits"]
   );
-  return crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-    keyMaterial,
-    256
-  );
+  return crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, keyMaterial, 256);
 }
 
-export async function hashPassword(password: string): Promise<{ hash: string; salt: string }> {
+export async function hashPassword(
+  password: string,
+  iterations = CURRENT_PBKDF2_ITERATIONS
+): Promise<{ hash: string; salt: string; iterations: number }> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const derived = await derive(password, salt);
-  return { hash: toHex(derived), salt: toHex(salt) };
+  const derived = await derive(password, salt, iterations);
+  return { hash: toHex(derived), salt: toHex(salt), iterations };
 }
 
 // Have-I-Been-Pwned-Abgleich per k-Anonymity-API (Finding SEC-07, OWASP
@@ -64,8 +76,8 @@ export async function isPasswordPwned(password: string): Promise<boolean> {
   }
 }
 
-export async function verifyPassword(password: string, hash: string, salt: string): Promise<boolean> {
-  const derived = await derive(password, fromHex(salt));
+export async function verifyPassword(password: string, hash: string, salt: string, iterations: number): Promise<boolean> {
+  const derived = await derive(password, fromHex(salt), iterations);
   const expected = fromHex(hash);
   const actual = new Uint8Array(derived);
   if (actual.length !== expected.length) return false;
