@@ -1121,7 +1121,9 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
     to: email,
     toName: name,
     subject: "Dein Zugang für Turnen",
-    text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: ${email}\nEinmal-Passwort: ${password}\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst:\n${c.env.FRONTEND_URL}/login`,
+    text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: ${email}\nEinmal-Passwort: ${password}\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst.`,
+    link: `${c.env.FRONTEND_URL}/login`,
+    linkLabel: "Jetzt anmelden",
   });
   return c.json({ id: user.id, email, name, clubId, clubRole, isAdmin }, 201);
 });
@@ -1374,7 +1376,9 @@ app.post("/api/password-reset/request", async (c) => {
     to: userRow.email,
     toName: userRow.name,
     subject: "Passwort zurücksetzen",
-    text: `Zum Zurücksetzen deines Passworts: ${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${resetToken}\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail.`,
+    text: `Für dein Konto wurde ein Zurücksetzen des Passworts angefordert. Falls du das warst, kannst du dir über den folgenden Link ein neues Passwort vergeben.\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail - es ändert sich nichts an deinem Passwort.`,
+    link: `${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${resetToken}`,
+    linkLabel: "Neues Passwort festlegen",
   });
   return genericResponse;
 });
