@@ -30,13 +30,39 @@ REQUIRED / LEGAL-PRIVACY REVIEW REQUIRED.
 - [ ] **MANUAL VERIFICATION REQUIRED** — Rate Limiting Rules (Edge-Ebene) für `/api/login` und `/api/password-reset/request` als zusätzliche Schicht zum Anwendungs-Rate-Limiting
 - [ ] **MANUAL VERIFICATION REQUIRED** — Logpush/Analytics-Ziel (falls konfiguriert) enthält keine PII in URLs/Query-Strings
 
-## Betriebsmonitoring/Alerting (nicht in diesem Durchgang eingerichtet)
+## Betriebsmonitoring/Alerting
 
-- [ ] **MANUAL VERIFICATION REQUIRED** — Alert bei ungewöhnlich vielen Login-Failures (Cloudflare Notifications oder externes Monitoring)
-- [ ] **MANUAL VERIFICATION REQUIRED** — Alert bei ungewöhnlich vielen Passwort-Reset-Anfragen
-- [ ] **MANUAL VERIFICATION REQUIRED** — Alert bei 5xx-Spike (Workers Analytics)
-- [ ] **MANUAL VERIFICATION REQUIRED** — Alert bei D1-Fehlern
-- [ ] **MANUAL VERIFICATION REQUIRED** — Alert bei fehlgeschlagenen Migrationen
+Eingerichtet am 27.08.2026 (Cloudflare Alerting API, Account
+`7b4dcfafd89ff61355f5461aa31e779b`), Ziel: `develop.illuminati@gmail.com`.
+
+- [x] **Turnen-api Worker Errors** (`workers_observability_alert`,
+      Policy-ID `d8443650c306419da9d6f92231371d5f`) - benachrichtigt bei
+      `FIRING_FAILED`-Status eines Workers-Observability-Alerts.
+      **Wichtig**: diese Policy ist der Benachrichtigungskanal, nicht die
+      Schwellwert-Definition selbst - die zugrundeliegende Observability-
+      Alert-Regel (z.B. "Fehlerrate > X% über Y Minuten" für `turnen-api`)
+      muss **einmalig im Dashboard** unter Workers & Pages →
+      Observability → Alerts angelegt werden (kein REST-Endpunkt dafür in
+      der Cloudflare-API gefunden). **MANUAL VERIFICATION REQUIRED**:
+      diese zugrundeliegende Alert-Regel existiert und ist an diese
+      Notification-Policy gebunden.
+- [x] **Kostenanomalie-Indikator** (`billing_budget_alert`,
+      Policy-ID `f12816f9ccc5468aa6b07a2952e5035c`, Schwellwert 5 USD) -
+      diese App sollte im Free-Tier bleiben; ein Kostenanstieg ist ein
+      indirekter Hinweis auf einen Vorfall (Endlosschleife, Missbrauch).
+- [ ] **MANUAL VERIFICATION REQUIRED** — kein natives Cloudflare-Alerting
+      für D1-Fehler oder fehlgeschlagene Migrationen gefunden (kein
+      passender `alert_type` in `/alerting/v3/available_alerts`) - bleibt
+      offen, am ehesten über die Observability-Alert-Regel oben indirekt
+      miterfasst (D1-Fehler würden i.d.R. als Worker-5xx sichtbar).
+- Login-Failures und Passwort-Reset-Anfragen sind **Anwendungsdaten**
+  (`login_attempts`, `password_reset_requests` in D1), kein natives
+  Cloudflare-Alerting-Ziel - dafür bräuchte es entweder eine periodische
+  Worker-Cron-Auswertung mit E-Mail-Versand bei Überschreitung, oder ein
+  externes Monitoring-Tool mit D1-Lesezugriff. **Nicht in diesem
+  Durchgang umgesetzt** - die zugrundeliegenden Rate-Limits (10
+  Login-Fehlversuche/15min, 5 Reset-Anfragen/15min pro E-Mail) verhindern
+  bereits Missbrauch technisch, auch ohne aktives Alerting darauf.
 
 ## Audit-Log-Abdeckung (in `worker/src/index.ts` verifiziert)
 

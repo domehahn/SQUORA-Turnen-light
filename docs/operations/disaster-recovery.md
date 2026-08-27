@@ -12,12 +12,14 @@ keine vertraglich zugesicherten Ziele:
   wiederherstellbar. Kein RPO-Ziel für Vorfälle, die älter als 30 Tage
   zurückliegen, ohne einen zusätzlichen externen Backup-Mechanismus
   (aktuell nicht eingerichtet).
-- **RTO (Recovery Time Objective)**: kein formal getesteter Wert
-  (s. Restore-Drill unten - **nicht durchgeführt**). D1-Restore selbst ist
-  laut Cloudflare-Dokumentation ein Minuten-Vorgang für die Datengröße
-  dieses Projekts (aktuell < 1 MB), der Gesamt-Ausfall hängt zusätzlich
-  von der Reaktionszeit der verantwortlichen Person ab (aktuell eine
-  Einzelperson, kein 24/7-Bereitschaftsdienst).
+- **RTO (Recovery Time Objective)**: der eigentliche D1-Restore-Vorgang
+  (Time Travel) dauerte im Drill vom 27.08.2026 (s. unten) **unter einer
+  Minute** end-to-end (Bookmark ermitteln, Restore, Validierung). Kein
+  formales RTO-Ziel für den Gesamtprozess (inkl. Erkennung des Vorfalls,
+  Entscheidung, Kommunikation) - der Restore-Schritt selbst ist aber
+  nachweislich schnell. Der Gesamt-Ausfall hängt zusätzlich von der
+  Reaktionszeit der verantwortlichen Person ab (aktuell eine Einzelperson,
+  kein 24/7-Bereitschaftsdienst).
 
 ## Verantwortlichkeiten
 
@@ -71,25 +73,44 @@ ausführen** - s. kritische Sicherheitsregeln in
 
 ## Restore-Drill
 
-**Nicht durchgeführt** in diesem Durchgang (kritische Sicherheitsregel:
-"Niemals ungefragt Production wiederherstellen", und ein Drill gegen eine
-separate DEV/STAGING-D1 setzt eine solche Umgebung voraus, die aktuell
-nicht existiert - dieses Projekt hat nur `turnen-eu` als einzige
-D1-Instanz).
+**Durchgeführt am 27.08.2026**, auf explizite Nutzerfreigabe ("GO"), gegen
+eine eigens dafür angelegte, komplett von Produktion getrennte temporäre
+D1-Datenbank (`turnen-restore-drill`, WEUR) - zu keinem Zeitpunkt wurde
+`turnen-eu` selbst verändert oder wiederhergestellt.
 
-Empfohlener Ablauf für einen künftigen Drill (sobald eine Staging-D1
-existiert oder eine temporäre D1-Kopie für den Test angelegt wird):
+Tatsächlicher Ablauf (protokolliert):
 
 ```
-1. Synthetische, production-ähnliche D1 aufsetzen
-2. Bookmark/Zeitpunkt notieren
-3. Testdaten absichtlich verändern (z.B. einen Namen ändern)
-4. Time-Travel-Restore auf den notierten Zeitpunkt
-5. Schema prüfen (migrations list)
-6. Synthetische Daten validieren (Änderung von Schritt 3 rückgängig?)
-7. Application Smoke-Test gegen die restaurierte DB
-8. Ergebnis dokumentieren (Dauer, Probleme, Lessons Learned)
+1. wrangler d1 create turnen-restore-drill --location weur
+2. Alle 42 Migrationen aus turnen/worker/migrations angewendet
+   (npx wrangler d1 migrations apply, über eine temporäre Scratch-
+   wrangler.toml, die auf denselben migrations_dir zeigt) → alle ✅
+3. Synthetische Testdaten eingefügt (Club/User/Gruppe, KEINE echten
+   Personendaten): groups.name = "Original Name Before Drill"
+4. Bookmark ermittelt: wrangler d1 time-travel info
+   → 00000001-0000005e-000050d4-753221cef44e2d6e3f5390362ad46258
+5. Simulierter Vorfall: groups.name testweise auf
+   "CORRUPTED BY DRILL - simulated incident" geändert, Korruption per
+   SELECT verifiziert
+6. wrangler d1 time-travel restore --bookmark=<Bookmark aus Schritt 4>
+7. Schema geprüft: wrangler d1 migrations list → "No migrations to
+   apply!" (Schema vollständig intakt nach dem Restore)
+8. Synthetische Daten validiert: groups.name wieder
+   "Original Name Before Drill" - die Korruption aus Schritt 5 war
+   vollständig rückgängig gemacht
+9. Temporäre Datenbank + Scratch-Config danach vollständig gelöscht
+   (wrangler d1 delete turnen-restore-drill)
 ```
 
-**Ohne durchgeführten Restore-Drill bleibt dieses Production-Gate offen**
-(s. `PRODUCTION_GO_LIVE_REPORT.md`).
+**Ergebnis: erfolgreich.** Der eigentliche Time-Travel-Restore-Schritt
+(Bookmark ermitteln bis Validierung) dauerte unter einer Minute. Keine
+Auffälligkeiten, kein manueller Nacharbeitsbedarf am Schema. Der
+dokumentierte Ablauf in `deployment.md`/diesem Dokument entspricht dem
+tatsächlich getesteten Vorgehen.
+
+**Nicht getestet in diesem Drill**: Verhalten bei einem Restore, der
+gleichzeitig ausstehende (noch nicht angewendete) Migrationen hinterlässt
+(hier war das Schema zum Bookmark-Zeitpunkt bereits vollständig aktuell) -
+das in Schritt 7 von `deployment.md`/oben beschriebene Nacharbeiten
+("fehlende Migrationen erneut anwenden") bleibt insofern ein
+dokumentierter, aber nicht selbst durchexerzierter Vorgang.
