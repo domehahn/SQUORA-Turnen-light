@@ -668,21 +668,26 @@ app.post("/api/login/mfa", async (c) => {
   let ok = await verifyTotp(secretBytes, code);
 
   // Fallback: Backup-Code statt TOTP-Code (z.B. Authenticator-Gerät
-  // verloren) - einmal verwendbar, wird danach aus der Liste entfernt.
-  if (!ok && userRow.totp_backup_codes) {
-    const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
+  // verloren) - einmal verwendbar (AUTH-12/AUTH-13). Verbrauch erfolgt über
+  // db.tryConsumeBackupCode(): ein atomares `UPDATE ... WHERE used_at IS
+  // NULL`, das nur greift, wenn der Code JETZT noch unverbraucht ist. Bei
+  // zwei gleichzeitigen Login-Versuchen mit demselben Code gewinnt genau
+  // einer - der andere bekommt hier `false` zurück und der Login schlägt
+  // fehl, unabhängig davon, dass der Hash-Vergleich zuvor erfolgreich war.
+  if (!ok) {
+    const activeCodes = await db.listActiveBackupCodes(c.env.DB, userRow.id);
     const normalizedCode = code.toUpperCase().replace(/\s/g, "");
-    for (let i = 0; i < hashedCodes.length; i++) {
-      if (await verifyPassword(normalizedCode, hashedCodes[i].hash, hashedCodes[i].salt, BACKUP_CODE_ITERATIONS)) {
+    for (const hc of activeCodes) {
+      if (await verifyPassword(normalizedCode, hc.code_hash, hc.code_salt, BACKUP_CODE_ITERATIONS)) {
+        const consumed = await db.tryConsumeBackupCode(c.env.DB, hc.id);
+        if (!consumed) break; // Race verloren - Code wurde parallel bereits verbraucht.
         ok = true;
-        hashedCodes.splice(i, 1);
-        await db.consumeBackupCode(c.env.DB, userRow.id, JSON.stringify(hashedCodes));
         await db.logAudit(c.env.DB, {
           clubId: userRow.club_id,
           actorId: userRow.id,
           actorName: userRow.name,
           action: "mfa.backup_code_used",
-          targetLabel: `${hashedCodes.length} Backup-Codes verbleibend`,
+          targetLabel: `${activeCodes.length - 1} Backup-Codes verbleibend`,
         });
         break;
       }
@@ -727,18 +732,18 @@ app.get("/api/me/mfa", requireAuth, async (c) => {
 // weiterhin Zugriff auf den zweiten Faktor", kein Login-Vorgang) - anders
 // als beim eigentlichen Login mit Backup-Code (POST /api/login/mfa).
 async function verifyActiveMfaCode(
-  userRow: { totp_secret: string | null; totp_backup_codes: string | null },
+  db_: D1Database,
+  userRow: { id: string; totp_secret: string | null },
   code: string,
   encryptionKey: string
 ): Promise<boolean> {
   if (!userRow.totp_secret) return false;
   const secretBase32 = await decryptField(userRow.totp_secret, encryptionKey);
   if (secretBase32 && (await verifyTotp(base32Decode(secretBase32), code))) return true;
-  if (!userRow.totp_backup_codes) return false;
-  const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
+  const activeCodes = await db.listActiveBackupCodes(db_, userRow.id);
   const normalizedCode = code.toUpperCase().replace(/\s/g, "");
-  for (const hc of hashedCodes) {
-    if (await verifyPassword(normalizedCode, hc.hash, hc.salt, BACKUP_CODE_ITERATIONS)) return true;
+  for (const hc of activeCodes) {
+    if (await verifyPassword(normalizedCode, hc.code_hash, hc.code_salt, BACKUP_CODE_ITERATIONS)) return true;
   }
   return false;
 }
@@ -764,7 +769,7 @@ app.post("/api/me/mfa/setup", requireAuth, async (c) => {
   }
   if (userRow.totp_enabled) {
     if (!currentCode) return c.json({ error: "Aktueller MFA-Code erforderlich, um die MFA neu einzurichten" }, 400);
-    if (!(await verifyActiveMfaCode(userRow, currentCode, c.env.ENCRYPTION_KEY))) {
+    if (!(await verifyActiveMfaCode(c.env.DB, userRow, currentCode, c.env.ENCRYPTION_KEY))) {
       return c.json({ error: "Aktueller MFA-Code ungültig" }, 403);
     }
   }
@@ -804,10 +809,12 @@ app.post("/api/me/mfa/confirm", requireAuth, async (c) => {
       return { hash, salt };
     })
   );
-  // Atomar (einzelnes UPDATE in db.enableTotp): totp_secret <- pending,
-  // totp_enabled <- 1, neue Backup-Codes, pending_totp_secret geleert -
-  // kein Zwischenzustand, in dem beide oder keine Fassung aktiv wäre.
-  await db.enableTotp(c.env.DB, c.get("userId"), JSON.stringify(hashedBackupCodes));
+  // Atomar (db.batch() in db.enableTotp): totp_secret <- pending,
+  // totp_enabled <- 1, alte Backup-Code-Zeilen gelöscht, neue eingefügt,
+  // pending_totp_secret geleert - kein Zwischenzustand, in dem beide oder
+  // keine Fassung aktiv wäre, und keine Rotation, die alte UND neue Codes
+  // gleichzeitig gültig lässt.
+  await db.enableTotp(c.env.DB, c.get("userId"), hashedBackupCodes);
   if (wasRotation) {
     // Rotation ist ein Security-Recovery-Vorgang (z.B. Verdacht auf
     // kompromittierten zweiten Faktor) - andere Sitzungen widerrufen, analog
@@ -844,6 +851,30 @@ app.post("/api/me/mfa/disable", requireAuth, async (c) => {
     action: "mfa.disabled",
     targetLabel: c.get("email") ?? c.get("userId"),
   });
+  return c.json({ ok: true });
+});
+
+// Aktivitäts-Ping (P0 "SERVER-/CLIENT-IDLE SYNCHRONISIEREN", zweiter
+// Production-Readiness-Härtungsdurchgang 2026-08-27): schließt eine echte
+// Lücke zwischen dem clientseitigen Idle-Lock (IdleLockOverlay.tsx, rein
+// lokal) und dem serverseitigen 5-Minuten-Idle-Timeout (requireAuth). Wer
+// minutenlang ein Formular ausfüllt, ohne dass dabei irgendeine API-Anfrage
+// läuft (kein Zwischenspeichern, keine Navigation), erzeugte bisher keine
+// einzige Aktivitäts-Aktualisierung auf dem Server - der Client zeigte die
+// Person als aktiv, der Server hielt sie für inaktiv, und ein späteres
+// "Speichern" scheiterte mit 401 trotz durchgehender echter Aktivität.
+//
+// Absichtlich ohne eigene Nutzlast/Antwortdaten (nur `{ok:true}`) - der
+// eigentliche Effekt ist bereits die throttled last_activity_at-
+// Aktualisierung, die requireAuth für JEDE authentifizierte Anfrage ohnehin
+// durchführt (ACTIVITY_UPDATE_THROTTLE_SECONDS = 30s, s.o.). Das Frontend
+// ruft diese Route ausschließlich nach echter Nutzerinteraktion auf
+// (pointerdown/keydown/touchstart, s. IdleLockOverlay.tsx), selbst
+// zusätzlich auf ca. 45s gedrosselt - NIE durch einen reinen Timer,
+// Hintergrund-Fetch oder Notification-Polling. Verlängert bewusst nur den
+// Idle-Zustand, nie die absolute Sitzungsdauer (die hängt an
+// `sessions.absolute_expires_at`, das hier unverändert bleibt).
+app.post("/api/session/activity", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
@@ -1011,7 +1042,7 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   const password = validPassword(body?.password);
   if (!email) return c.json({ error: "E-Mail fehlt oder ist ungültig" }, 400);
   if (name === undefined) return c.json({ error: "Name ist zu lang" }, 400);
-  if (!password) return c.json({ error: "Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  if (!password) return c.json({ error: "Passwort ist ungültig (mind. 15 Zeichen)" }, 400);
   if (await isPasswordPwned(password)) {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
@@ -1082,7 +1113,7 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
   const body = await c.req.json().catch(() => null);
   const newPassword = validPassword(body?.newPassword);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
-  if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 15 Zeichen)" }, 400);
   if (await isPasswordPwned(newPassword)) {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
@@ -1217,7 +1248,7 @@ app.put("/api/me/password", requireAuth, async (c) => {
   const currentPassword = typeof body?.currentPassword === "string" ? body.currentPassword : undefined;
   const newPassword = validPassword(body?.newPassword);
   if (!currentPassword) return c.json({ error: "Aktuelles Passwort fehlt" }, 400);
-  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 15 Zeichen lang sein" }, 400);
 
   const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
   if (!userRow) return c.json({ error: "Nutzer nicht gefunden" }, 404);
@@ -1300,7 +1331,7 @@ app.post("/api/password-reset/confirm", async (c) => {
   const token = typeof body?.token === "string" ? body.token : null;
   const newPassword = validPassword(body?.newPassword);
   if (!token) return c.json({ error: "Token fehlt" }, 400);
-  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 15 Zeichen lang sein" }, 400);
 
   let payload: { userId: string; jti: string; expiresAt: number };
   try {

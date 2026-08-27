@@ -244,25 +244,68 @@ export async function setPendingTotpSecret(db: D1Database, id: string, encrypted
 
 // Atomarer Wechsel bei erfolgreicher Bestätigung (Initial-Setup oder
 // Rotation, identischer Mechanismus): pending_totp_secret wird zur neuen
-// aktiven totp_secret, neue Backup-Codes, pending_totp_secret geleert.
-export async function enableTotp(db: D1Database, id: string, hashedBackupCodesJson: string): Promise<void> {
-  await db
-    .prepare(
-      "UPDATE users SET totp_secret = pending_totp_secret, totp_enabled = 1, totp_backup_codes = ?, pending_totp_secret = NULL WHERE id = ?"
-    )
-    .bind(hashedBackupCodesJson, id)
-    .run();
+// aktiven totp_secret, alte Backup-Codes (falls vorhanden, z.B. bei
+// Rotation) werden gelöscht und durch die neuen ersetzt - alles in einem
+// db.batch() (D1-Transaktion), damit nie ein Zwischenzustand mit
+// widersprüchlichem totp_enabled/Backup-Code-Bestand sichtbar wird.
+//
+// Backup-Codes leben seit Migration 0044 in einer eigenen Tabelle
+// (mfa_backup_codes) statt einem JSON-Array in users.totp_backup_codes
+// (AUTH-12/AUTH-13, s. Migrationskommentar - das JSON-Array erlaubte keinen
+// atomaren Verbrauch, derselbe Code ließ sich bei gleichzeitigen Requests
+// zweimal erfolgreich verwenden). users.totp_backup_codes wird hier
+// zusätzlich explizit geleert (Alt-Spalte, wird nicht mehr gelesen).
+export async function enableTotp(db: D1Database, id: string, hashedBackupCodes: { hash: string; salt: string }[]): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        "UPDATE users SET totp_secret = pending_totp_secret, totp_enabled = 1, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?"
+      )
+      .bind(id),
+    db.prepare("DELETE FROM mfa_backup_codes WHERE user_id = ?").bind(id),
+    ...hashedBackupCodes.map((c) =>
+      db
+        .prepare("INSERT INTO mfa_backup_codes (id, user_id, code_hash, code_salt) VALUES (?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), id, c.hash, c.salt)
+    ),
+  ]);
 }
 
 export async function disableTotp(db: D1Database, id: string): Promise<void> {
-  await db
-    .prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?")
-    .bind(id)
-    .run();
+  await db.batch([
+    db
+      .prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?")
+      .bind(id),
+    db.prepare("DELETE FROM mfa_backup_codes WHERE user_id = ?").bind(id),
+  ]);
 }
 
-export async function consumeBackupCode(db: D1Database, id: string, remainingCodesJson: string): Promise<void> {
-  await db.prepare("UPDATE users SET totp_backup_codes = ? WHERE id = ?").bind(remainingCodesJson, id).run();
+export interface BackupCodeRow {
+  id: string;
+  code_hash: string;
+  code_salt: string;
+}
+
+// Alle noch nicht verbrauchten Backup-Codes einer Person - fürs
+// Durchprobieren beim Login/bei einer MFA-Rotation.
+export async function listActiveBackupCodes(db: D1Database, userId: string): Promise<BackupCodeRow[]> {
+  const { results } = await db
+    .prepare("SELECT id, code_hash, code_salt FROM mfa_backup_codes WHERE user_id = ? AND used_at IS NULL")
+    .bind(userId)
+    .all<BackupCodeRow>();
+  return results;
+}
+
+// Atomarer Verbrauch (AUTH-13): das UPDATE trifft nur, wenn der Code
+// JETZT noch unverbraucht ist (WHERE used_at IS NULL) - der Rückgabewert
+// von `changes` zeigt, ob DIESER Aufruf tatsächlich gewonnen hat. Bei zwei
+// gleichzeitigen Verbrauchsversuchen mit demselben Code gewinnt exakt
+// einer, der andere bekommt `false` und muss den Login/die Aktion als
+// fehlgeschlagen behandeln - unabhängig davon, in welcher Reihenfolge die
+// beiden Requests die Codeliste zuvor gelesen haben.
+export async function tryConsumeBackupCode(db: D1Database, id: string): Promise<boolean> {
+  const result = await db.prepare("UPDATE mfa_backup_codes SET used_at = datetime('now') WHERE id = ? AND used_at IS NULL").bind(id).run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 // mustChangePassword bewusst optional und standardmäßig NICHT gesetzt: das
