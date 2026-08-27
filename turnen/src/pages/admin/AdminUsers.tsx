@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Club, ClubRole } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
-import { MIN_PASSWORD_LENGTH } from "../../lib/passwordPolicy";
+import { MIN_PASSWORD_LENGTH, PASSWORD_POLICY_HINT } from "../../lib/passwordPolicy";
+import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 
 interface AdminUser {
   id: string;
@@ -198,65 +199,42 @@ export default function AdminUsers() {
           className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
         >
           <div className="grid gap-3 sm:grid-cols-2">
+            <FloatingInput
+              label="E-Mail *"
+              type="email"
+              required
+              value={createEmail}
+              onChange={(e) => setCreateEmail(e.target.value)}
+            />
+            <FloatingInput label="Name" type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} />
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">E-Mail *</label>
-              <input
-                type="email"
-                required
-                value={createEmail}
-                onChange={(e) => setCreateEmail(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
-              <input
-                type="text"
-                value={createName}
-                onChange={(e) => setCreateName(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                Passwort * (mind. {MIN_PASSWORD_LENGTH} Zeichen)
-              </label>
-              <input
+              <FloatingInput
+                label={`Passwort * (mind. ${MIN_PASSWORD_LENGTH} Zeichen)`}
                 type="password"
                 required
                 minLength={MIN_PASSWORD_LENGTH}
                 autoComplete="new-password"
                 value={createPassword}
                 onChange={(e) => setCreatePassword(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
               />
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{PASSWORD_POLICY_HINT}</p>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Verein</label>
-              <select
-                value={createClubId}
-                onChange={(e) => setCreateClubId(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
-              >
-                <option value="">– kein Verein –</option>
-                {clubs.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Rolle im Verein</label>
-              <select
-                value={createClubRole}
-                onChange={(e) => setCreateClubRole(e.target.value as ClubRole)}
-                className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"
-              >
-                <option value="member">Turnleiter*in</option>
-                <option value="jugendleiter">Jugendleitung</option>
-              </select>
-            </div>
+            <FloatingSelect label="Verein" value={createClubId} onChange={(e) => setCreateClubId(e.target.value)}>
+              <option value="">– kein Verein –</option>
+              {clubs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </FloatingSelect>
+            <FloatingSelect
+              label="Rolle im Verein"
+              value={createClubRole}
+              onChange={(e) => setCreateClubRole(e.target.value as ClubRole)}
+            >
+              <option value="member">Turnleiter*in</option>
+              <option value="jugendleiter">Jugendleitung</option>
+            </FloatingSelect>
             <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-slate-700 dark:text-slate-300">
               <input type="checkbox" checked={createIsAdmin} onChange={(e) => setCreateIsAdmin(e.target.checked)} />
               Admin-Rolle (vereinsübergreifend)
