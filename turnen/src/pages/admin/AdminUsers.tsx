@@ -286,7 +286,7 @@ export default function AdminUsers() {
                       value={u.clubId ?? ""}
                       onChange={(e) => handleClubChange(u, e.target.value)}
                       disabled={busyId === u.id}
-                      className="rounded-md border border-slate-300 bg-transparent px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800"
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark]"
                     >
                       <option value="">– kein Verein –</option>
                       {clubs.map((c) => (
