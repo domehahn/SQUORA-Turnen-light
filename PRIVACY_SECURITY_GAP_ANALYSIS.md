@@ -6,12 +6,27 @@ Schema). Sie ist die Grundlage für den Umsetzungsplan; **es wurden noch keine
 Code-Änderungen vorgenommen.** Rechtliche/organisatorische Entscheidungen sind
 mit `LEGAL/PRIVACY REVIEW REQUIRED` markiert und wurden nicht erfunden.
 
+**Achter Durchgang (2026-08-27) ausgelagert:** ein großer, eigenständiger
+Production-Readiness-Härtungsdurchgang (Session-Idle-Client-Lock,
+MFA-Setup/Rotations-Invariante, Admin-Reset-Session-Revocation,
+Passwort-Policy/Reset-Hardening, Fail-closed-Authorization,
+Family-Field-Encryption, CI-Security-Jobs) ist **nicht** in dieses
+Dokument eingearbeitet, sondern eigenständig in
+`PRODUCTION_READINESS_ANALYSIS.md` und `PRODUCTION_GO_LIVE_REPORT.md`
+dokumentiert (dortige Findings-Tabelle mit Status RESOLVED/OPEN pro
+Punkt) - dieses Dokument bleibt als Historie der ersten sieben Durchgänge
+bestehen, wird für künftige Prüfungen aber durch die beiden neuen
+Dokumente ergänzt/fortgeführt.
+
 Begleitdokumente:
 - `docs/privacy/cloudflare-data-flow.md` — Cloudflare-Infrastruktur im Detail (D1-Jurisdiktion, Worker-Verarbeitungsort, Email Service, Cache)
+- `docs/privacy/data-inventory.md`, `docs/privacy/data-flow.md`, `docs/privacy/retention-policy.md`, `docs/privacy/toms.md` — Privacy-Dokumentation (achter Durchgang)
 - `docs/security/cloudflare-security.md` — Sicherheitssicht auf dieselbe Infrastruktur
-- `docs/security/cloudflare-production-checklist.md` — Deploy-Checkliste
+- `docs/security/cloudflare-production-checklist.md`, `docs/security/production-security-checklist.md` — Deploy-Checklisten
+- `docs/security/tenant-model.md`, `docs/security/authorization-model.md`, `docs/security/session-management.md`, `docs/security/authentication.md`, `docs/security/threat-model.md`, `docs/security/security-test-report.md`, `docs/security/incident-response.md` — Sicherheitsmodell-Dokumentation (achter Durchgang)
+- `docs/operations/deployment.md`, `rollback.md`, `disaster-recovery.md`, `origin-migration.md`, `github-production-settings.md`, `production-runbook.md` — Betriebsdokumentation (achter Durchgang)
 - `scripts/privacy-check.ts` — automatisiertes, lesendes Prüfskript (getestet, siehe unten)
-- weitere `docs/privacy/*.md` gemäß Abschnitt 22 der Anfrage (Data Inventory, Data Flow, TOMs, Retention, Consent, Data Subject Rights, Third Parties, DPIA-Entwurf) sowie `docs/security/threat-model.md` und `docs/security/privacy-incident-response.md`
+- `scripts/production-readiness-check.ts` — automatisierter technischer Production-Readiness-Check (achter Durchgang, läuft in CI)
 
 ## Nachtrag: Externe Production-Readiness-Prüfung (2026-08-27)
 

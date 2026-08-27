@@ -207,8 +207,13 @@ Live erreichbar unter:
 - <https://squora.de/turnen-light/> (primär, per `[[routes]]`-Eintrag in
   `turnen/wrangler.toml` an die bestehende, Cloudflare-verwaltete Zone
   `squora.de` gebunden – analog zum Referenzprojekt `tournament-manager`)
-- <https://turnen-web.squora.workers.dev> (Standard-`workers.dev`-Subdomain,
-  bleibt zusätzlich aktiv)
+
+Die Standard-`workers.dev`-Subdomain ist seit der Production-Readiness-
+Härtung 2026-08-27 für beide Worker **deaktiviert**
+(`workers_dev = false`, `preview_urls = false` in beiden `wrangler.toml`) -
+weder `turnen-web.<account>.workers.dev` noch
+`turnen-api.<account>.workers.dev` sind erreichbar, s.
+`docs/security/production-security-checklist.md`.
 
 Der Produktions-Build referenziert seine eigenen Assets dafür unter dem
 Präfix `/turnen-light/...` (`VITE_APP_BASE_PATH` in `turnen/.env.production`);
