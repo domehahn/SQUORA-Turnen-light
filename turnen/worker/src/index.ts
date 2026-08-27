@@ -1,18 +1,21 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
 import * as db from "./db";
 import {
-  TOKEN_REFRESH_THRESHOLD_SECONDS,
+  ABSOLUTE_SESSION_SECONDS,
+  ACTIVITY_UPDATE_THROTTLE_SECONDS,
+  IDLE_TIMEOUT_SECONDS,
   hashPassword,
   isPasswordPwned,
   signMfaPendingToken,
   signPasswordResetToken,
-  signToken,
+  signSessionJwt,
   verifyMfaPendingToken,
   verifyPassword,
   verifyPasswordResetToken,
-  verifyToken,
+  verifySessionJwt,
 } from "./auth";
 import { notifyUser, sendEmailOnly } from "./notifications";
 import { encryptField, decryptField } from "./crypto";
@@ -45,11 +48,60 @@ type Variables = {
   clubId: string | null;
   clubRole: ClubRole;
   isAdmin: boolean;
+  sessionId: string;
 };
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
 const app = new Hono<AppEnv>();
+
+// Session-Cookie statt Bearer-JWT im localStorage (Session-Management-
+// Härtung, externe Production-Readiness-Prüfung 2026-08-27). HttpOnly
+// verhindert JS-Zugriff (auch bei einem künftigen XSS), Path-Scope wird
+// bewusst auf "/" statt "/turnen-light" gelassen, damit lokale Entwicklung
+// (Vite-Proxy auf 127.0.0.1:8787, ohne Präfix) funktioniert - die
+// eigentliche Isolation kommt ohnehin vom exakten Host (kein Domain-
+// Attribut gesetzt), nicht vom Pfad.
+const SESSION_COOKIE_NAME = "turnen_session";
+
+function isLocalRequest(c: { req: { url: string } }): boolean {
+  const hostname = new URL(c.req.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function toSqliteDatetime(date: Date): string {
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
+
+function parseSqliteDatetime(value: string): number {
+  return new Date(`${value.replace(" ", "T")}Z`).getTime();
+}
+
+async function issueSession(c: { req: { url: string; header: (name: string) => string | undefined }; env: Env }, userId: string) {
+  const absoluteExpiresAt = toSqliteDatetime(new Date(Date.now() + ABSOLUTE_SESSION_SECONDS * 1000));
+  const sessionId = await db.createSession(c.env.DB, {
+    userId,
+    absoluteExpiresAt,
+    userAgent: c.req.header("User-Agent") ?? null,
+    ip: c.req.header("CF-Connecting-IP") ?? null,
+  });
+  const jwt = await signSessionJwt(userId, sessionId, c.env.JWT_SECRET);
+  return { sessionId, jwt };
+}
+
+function setSessionCookie(c: Parameters<typeof setCookie>[0], jwt: string): void {
+  setCookie(c, SESSION_COOKIE_NAME, jwt, {
+    httpOnly: true,
+    secure: !isLocalRequest(c),
+    sameSite: "Strict",
+    path: "/",
+    maxAge: ABSOLUTE_SESSION_SECONDS,
+  });
+}
+
+function clearSessionCookie(c: Parameters<typeof deleteCookie>[0]): void {
+  deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
+}
 
 app.use("*", async (c, next) =>
   cors({
@@ -61,7 +113,8 @@ app.use("*", async (c, next) =>
       const isLocalFrontend = /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(origin);
       return isLocalApi && isLocalFrontend ? origin : null;
     },
-    allowHeaders: ["Authorization", "Content-Type"],
+    credentials: true,
+    allowHeaders: ["Content-Type"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     maxAge: 86400,
   })(c, next)
@@ -73,32 +126,50 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
+// Serverseitiges Session-Management (s.o.): das JWT trägt nur eine
+// Sitzungs-ID, Gültigkeit/Widerruf/Idle-Timeout leben in der `sessions`-
+// Tabelle - eine Sitzung kann damit aktiv beendet werden (Passwort ändern/
+// zurücksetzen, MFA deaktivieren, "alle Geräte abmelden"), nicht nur
+// passiv ablaufen. 5 Minuten Inaktivität ODER 8 Stunden absolute
+// Sitzungsdauer -> Logout, beides serverseitig geprüft, nicht nur im
+// Client-Timer.
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const header = c.req.header("Authorization");
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
+  const token = getCookie(c, SESSION_COOKIE_NAME);
   if (!token) return c.json({ error: "Nicht angemeldet" }, 401);
   try {
-    const payload = await verifyToken(token, c.env.JWT_SECRET);
-    const user = await db.getUserById(c.env.DB, payload.sub);
-    if (!user) return c.json({ error: "Nicht angemeldet" }, 401);
+    const payload = await verifySessionJwt(token, c.env.JWT_SECRET);
+    const session = await db.getSessionById(c.env.DB, payload.sid);
+    if (!session || session.revoked_at || session.user_id !== payload.sub) {
+      clearSessionCookie(c);
+      return c.json({ error: "Nicht angemeldet" }, 401);
+    }
+    const now = Date.now();
+    if (parseSqliteDatetime(session.absolute_expires_at) < now) {
+      await db.revokeSession(c.env.DB, session.id);
+      clearSessionCookie(c);
+      return c.json({ error: "Sitzung abgelaufen, bitte erneut anmelden" }, 401);
+    }
+    const lastActivityMs = parseSqliteDatetime(session.last_activity_at);
+    if (now - lastActivityMs > IDLE_TIMEOUT_SECONDS * 1000) {
+      await db.revokeSession(c.env.DB, session.id);
+      clearSessionCookie(c);
+      return c.json({ error: "Sitzung wegen Inaktivität beendet, bitte erneut anmelden" }, 401);
+    }
+    const user = await db.getUserById(c.env.DB, session.user_id);
+    if (!user) {
+      clearSessionCookie(c);
+      return c.json({ error: "Nicht angemeldet" }, 401);
+    }
     c.set("userId", user.id);
     c.set("email", user.email);
     c.set("name", user.name);
     c.set("clubId", user.clubId);
     c.set("clubRole", user.clubRole);
     c.set("isAdmin", user.isAdmin);
+    c.set("sessionId", session.id);
 
-    // Sliding-Refresh: Tokens leben nur noch 24h statt vormals 30 Tage
-    // (Finding aus der DSGVO-Nachprüfung, kürzeres Zeitfenster für ein
-    // gestohlenes Token). Damit aktiv genutzte Sitzungen trotzdem nicht
-    // ständig neu einloggen müssen, wird bei weniger als der halben
-    // Restlaufzeit transparent ein neues Token ausgestellt und über einen
-    // Response-Header mitgegeben; api.ts im Frontend übernimmt es
-    // automatisch. Inaktive Tokens laufen dagegen nach 24h wirklich ab.
-    const remainingSeconds = payload.exp - Math.floor(Date.now() / 1000);
-    if (remainingSeconds < TOKEN_REFRESH_THRESHOLD_SECONDS) {
-      const fresh = await signToken({ sub: user.id, email: user.email, name: user.name }, c.env.JWT_SECRET);
-      c.header("X-Refreshed-Token", fresh);
+    if (now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
+      await db.touchSessionActivity(c.env.DB, session.id);
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -415,13 +486,11 @@ app.post("/api/login", async (c) => {
     return c.json({ mfaRequired: true, mfaToken });
   }
 
-  const token = await signToken(
-    { sub: userRow.id, email: userRow.email, name: userRow.name },
-    c.env.JWT_SECRET
-  );
+  const { jwt } = await issueSession(c, userRow.id);
+  setSessionCookie(c, jwt);
   await db.recordLoginAttempt(c.env.DB, email, true);
   await db.touchLastLogin(c.env.DB, userRow.id);
-  return c.json({ token, user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+  return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });
 
 app.post("/api/login/mfa", async (c) => {
@@ -482,10 +551,25 @@ app.post("/api/login/mfa", async (c) => {
     return c.json({ error: "Code ungültig" }, 401);
   }
 
-  const token = await signToken({ sub: userRow.id, email: userRow.email, name: userRow.name }, c.env.JWT_SECRET);
+  const { jwt } = await issueSession(c, userRow.id);
+  setSessionCookie(c, jwt);
   await db.recordLoginAttempt(c.env.DB, userRow.email, true);
   await db.touchLastLogin(c.env.DB, userRow.id);
-  return c.json({ token, user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+  return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+});
+
+app.post("/api/logout", async (c) => {
+  const token = getCookie(c, SESSION_COOKIE_NAME);
+  if (token) {
+    try {
+      const payload = await verifySessionJwt(token, c.env.JWT_SECRET);
+      await db.revokeSession(c.env.DB, payload.sid);
+    } catch {
+      // Token ungültig/abgelaufen - Cookie trotzdem löschen, kein Fehler nötig.
+    }
+  }
+  clearSessionCookie(c);
+  return c.json({ ok: true });
 });
 
 app.get("/api/me/mfa", requireAuth, async (c) => {
@@ -544,6 +628,10 @@ app.post("/api/me/mfa/disable", requireAuth, async (c) => {
     return c.json({ error: "Passwort falsch" }, 403);
   }
   await db.disableTotp(c.env.DB, c.get("userId"));
+  // Defense in depth: falls ein Angreifer bereits eine (kompromittierte)
+  // Sitzung auf einem anderen Gerät hat, soll das Deaktivieren von MFA sie
+  // nicht behalten dürfen.
+  await db.revokeAllUserSessions(c.env.DB, c.get("userId"), c.get("sessionId"));
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
@@ -552,6 +640,33 @@ app.post("/api/me/mfa/disable", requireAuth, async (c) => {
     targetLabel: c.get("email") ?? c.get("userId"),
   });
   return c.json({ ok: true });
+});
+
+// "Alle anderen Geräte abmelden" - Selbstauskunft/Selbsthilfe, unabhängig
+// von einer konkreten Sicherheitsaktion (Passwort/MFA). Widerruft alle
+// Sitzungen außer der gerade verwendeten.
+app.post("/api/me/sessions/revoke-all", requireAuth, async (c) => {
+  await db.revokeAllUserSessions(c.env.DB, c.get("userId"), c.get("sessionId"));
+  await db.logAudit(c.env.DB, {
+    clubId: c.get("clubId"),
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "profile.sessions_revoked",
+    targetLabel: c.get("email") ?? c.get("userId"),
+  });
+  return c.json({ ok: true });
+});
+
+app.get("/api/me/sessions", requireAuth, async (c) => {
+  const sessions = await db.listActiveSessions(c.env.DB, c.get("userId"));
+  return c.json(
+    sessions.map((s) => ({
+      id: s.id,
+      createdAt: s.created_at,
+      lastActivityAt: s.last_activity_at,
+      current: s.id === c.get("sessionId"),
+    }))
+  );
 });
 
 app.get("/api/me", requireAuth, async (c) => {
@@ -834,17 +949,31 @@ app.post("/api/admin/backfill-health-encryption", requireAuth, requireAdmin, asy
   return c.json({ totalChildren: rows.length, updated });
 });
 
-// Name/E-Mail des eigenen Accounts ändern. Ändert sich einer der beiden
-// Werte, steckt das alte JWT noch die alten Werte fest (signToken schreibt
-// email/name mit rein) - deshalb wird hier immer ein frisches Token
-// ausgestellt, das das Frontend übernehmen muss (siehe refreshProfile in
-// AuthContext.tsx).
+// Name/E-Mail des eigenen Accounts ändern. Kein Token-Umtausch mehr nötig
+// (die Sitzung selbst kennt nur noch die User-ID, nicht mehr Name/E-Mail -
+// s. Session-Management-Härtung); das Frontend übernimmt die Antwort direkt
+// in seinen State statt ein neues JWT zu speichern.
+//
+// Ändert sich die E-Mail-Adresse tatsächlich, verlangt das zusätzlich das
+// aktuelle Passwort (Step-up-Authentifizierung) - vorher war das ungeschützt,
+// obwohl die E-Mail zugleich der Login-Name ist (Production-Readiness-
+// Prüfung 2026-08-27). Reiner Namenswechsel bleibt ohne Passwort möglich.
 app.put("/api/me", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   const email = normalizedEmail(body?.email);
   const name = optionalText(body?.name, 100);
   if (!email) return c.json({ error: "E-Mail fehlt oder ist ungültig" }, 400);
   if (name === undefined) return c.json({ error: "Name ist zu lang" }, 400);
+
+  const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
+  if (!userRow) return c.json({ error: "Nutzer nicht gefunden" }, 404);
+
+  if (email !== userRow.email) {
+    const currentPassword = typeof body?.currentPassword === "string" ? body.currentPassword : "";
+    if (!(await verifyPassword(currentPassword, userRow.password_hash, userRow.password_salt))) {
+      return c.json({ error: "Zur Bestätigung der E-Mail-Änderung bitte aktuelles Passwort eingeben" }, 403);
+    }
+  }
 
   const existing = await db.getUserByEmail(c.env.DB, email);
   if (existing && existing.id !== c.get("userId")) return c.json({ error: "E-Mail wird bereits verwendet" }, 409);
@@ -860,8 +989,7 @@ app.put("/api/me", requireAuth, async (c) => {
     targetLabel: email,
   });
 
-  const token = await signToken({ sub: user.id, email: user.email, name: user.name }, c.env.JWT_SECRET);
-  return c.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  return c.json({ user: { id: user.id, email: user.email, name: user.name } });
 });
 
 // Eigenes Passwort ändern - verlangt das aktuelle Passwort zur Bestätigung,
@@ -885,6 +1013,12 @@ app.put("/api/me/password", requireAuth, async (c) => {
 
   const { hash, salt } = await hashPassword(newPassword);
   await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
+  // Session Revocation (Session-Management-Härtung): ein gestohlenes Token
+  // auf einem anderen Gerät soll nach einer Passwortänderung nicht gültig
+  // bleiben. Die aktuelle Sitzung (auf der die Änderung selbst gerade
+  // läuft) bleibt bewusst ausgenommen, sonst wäre man sofort selbst
+  // ausgeloggt.
+  await db.revokeAllUserSessions(c.env.DB, userRow.id, c.get("sessionId"));
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
@@ -926,14 +1060,22 @@ app.post("/api/password-reset/confirm", async (c) => {
   if (!token) return c.json({ error: "Token fehlt" }, 400);
   if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
 
-  let userId: string;
+  let payload: { userId: string; jti: string; expiresAt: number };
   try {
-    userId = await verifyPasswordResetToken(token, c.env.JWT_SECRET);
+    payload = await verifyPasswordResetToken(token, c.env.JWT_SECRET);
   } catch {
     return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
   }
 
-  const userRow = await db.getUserById(c.env.DB, userId);
+  // Einmaligkeit (Production-Readiness-Prüfung 2026-08-27): der Token war
+  // vorher innerhalb seiner 30-Minuten-Gültigkeit mehrfach einlösbar. Erste
+  // Verwendung gewinnt, jeder weitere Versuch mit demselben Token schlägt
+  // fehl (PRIMARY KEY auf jti in used_password_reset_tokens).
+  const expiresAtIso = toSqliteDatetime(new Date(payload.expiresAt * 1000));
+  const firstUse = await db.consumePasswordResetJti(c.env.DB, payload.jti, expiresAtIso);
+  if (!firstUse) return c.json({ error: "Dieser Link wurde bereits verwendet. Bitte einen neuen anfordern." }, 401);
+
+  const userRow = await db.getUserById(c.env.DB, payload.userId);
   if (!userRow) return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
 
   if (await isPasswordPwned(newPassword)) {
@@ -942,6 +1084,11 @@ app.post("/api/password-reset/confirm", async (c) => {
 
   const { hash, salt } = await hashPassword(newPassword);
   await db.updateUserPassword(c.env.DB, userRow.id, { hash, salt });
+  // Ein Passwort-Reset ist ein Recovery-Vorgang (möglicher Kompromittierungs-
+  // Verdacht) - anders als bei der normalen Passwortänderung werden hier
+  // ALLE Sitzungen widerrufen, es gibt keine "aktuelle" auszunehmen (dieser
+  // Endpunkt ist nicht authentifiziert).
+  await db.revokeAllUserSessions(c.env.DB, userRow.id);
   await db.logAudit(c.env.DB, {
     clubId: userRow.clubId,
     actorId: userRow.id,

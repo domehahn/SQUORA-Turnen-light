@@ -6,7 +6,7 @@ import { ThemeToggle } from "../components/ThemeToggle";
 import SquoraBrand from "../components/SquoraBrand";
 
 export default function Login() {
-  const { isAuthenticated, signIn, verifyMfa } = useAuth();
+  const { isAuthenticated, authChecked, signIn, verifyMfa } = useAuth();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,6 +15,7 @@ export default function Login() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
 
+  if (!authChecked) return null;
   if (isAuthenticated) {
     const from = (location.state as { from?: string } | null)?.from ?? "/gruppen";
     return <Navigate to={from} replace />;

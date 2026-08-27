@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiPath, getToken } from "../../lib/api";
+import { apiPath } from "../../lib/api";
 import { useAuth } from "../../context/useAuth";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { appPath } from "../../lib/paths";
@@ -51,9 +51,8 @@ export default function Export() {
     setError(null);
     setBusy(true);
     try {
-      const token = getToken();
       const res = await fetch(apiPath(`/api/export/hours?from=${from}&to=${to}&scope=${scope}`), {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);

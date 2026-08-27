@@ -77,6 +77,11 @@ export async function seedChild(input: {
 
 // Login über den echten Endpunkt statt eines Test-Shortcuts - deckt damit
 // automatisch auch Rate Limiting (SEC-01) und die Login-Route selbst mit ab.
+// Seit der Session-Management-Härtung setzt der Login ein HttpOnly-Cookie
+// statt ein JWT im Response-Body zurückzugeben - SELF.fetch() hat (anders
+// als ein echter Browser) keinen eigenen Cookie-Jar, deshalb wird das
+// rohe Set-Cookie hier extrahiert und muss von den Tests manuell auf
+// folgende Requests gesetzt werden (s. authHeaders()).
 export async function login(SELF: Fetcher, email: string, password: string): Promise<string> {
   const res = await SELF.fetch("https://example.test/api/login", {
     method: "POST",
@@ -84,10 +89,17 @@ export async function login(SELF: Fetcher, email: string, password: string): Pro
     body: JSON.stringify({ email, password }),
   });
   if (res.status !== 200) throw new Error(`Login fehlgeschlagen (${res.status}): ${await res.text()}`);
-  const body = (await res.json()) as { token: string };
-  return body.token;
+  const setCookie = res.headers.get("set-cookie");
+  if (!setCookie) throw new Error("Login-Response ohne Set-Cookie");
+  return extractSessionCookie(setCookie);
 }
 
-export function authHeaders(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+export function extractSessionCookie(setCookieHeader: string): string {
+  const match = setCookieHeader.match(/turnen_session=([^;]+)/);
+  if (!match) throw new Error("turnen_session nicht im Set-Cookie-Header gefunden");
+  return `turnen_session=${match[1]}`;
+}
+
+export function authHeaders(cookie: string): Record<string, string> {
+  return { Cookie: cookie, "Content-Type": "application/json" };
 }

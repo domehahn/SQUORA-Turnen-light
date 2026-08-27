@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { authHeaders, ensureMigrated, login, seedClub, seedUser } from "./helpers";
+import { authHeaders, ensureMigrated, extractSessionCookie, login, seedClub, seedUser } from "./helpers";
 import { base32Decode, generateTotp } from "../src/totp";
 
 beforeAll(async () => {
@@ -62,9 +62,9 @@ describe("MFA (TOTP)", () => {
       body: JSON.stringify({ mfaToken: loginBody.mfaToken, code: mfaCode }),
     });
     expect(mfaLoginRes.status).toBe(200);
-    const { token: sessionToken } = (await mfaLoginRes.json()) as { token: string };
+    const sessionCookie = extractSessionCookie(mfaLoginRes.headers.get("set-cookie") as string);
 
-    const meRes = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(sessionToken) });
+    const meRes = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(sessionCookie) });
     expect(meRes.status).toBe(200);
 
     // Ein Backup-Code funktioniert alternativ zum TOTP-Code und danach nicht
@@ -149,9 +149,9 @@ describe("MFA (TOTP)", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "mfa-disable@test.local", password: "password-123" }),
     });
-    const body = (await loginRes.json()) as { token?: string; mfaRequired?: boolean };
+    const body = (await loginRes.json()) as { mfaRequired?: boolean };
     expect(body.mfaRequired).toBeUndefined();
-    expect(body.token).toBeTruthy();
+    expect(loginRes.headers.get("set-cookie")).toBeTruthy();
   });
 
   it("mfaSetupRequired ist true für Jugendleitung ohne MFA und false nach Aktivierung (SEC-02 Durchsetzung)", async () => {

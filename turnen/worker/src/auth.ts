@@ -77,49 +77,41 @@ export async function verifyPassword(password: string, hash: string, salt: strin
   return diff === 0;
 }
 
-export interface UserJwtPayload {
-  sub: string;
-  email: string;
-  name: string | null;
-}
+// Serverseitiges Session-Management (externe Production-Readiness-Prüfung
+// 2026-08-27): löst das vorherige rein zustandslose JWT (30 Tage, dann 24h
+// mit Sliding-Refresh) ab. Das JWT selbst trägt nur noch eine Sitzungs-ID
+// (sid) - Gültigkeit/Widerruf/Idle-Timeout leben in der neuen `sessions`-
+// Tabelle (db.ts), damit eine Sitzung aktiv beendet werden kann (Passwort
+// ändern, MFA deaktivieren, "alle Geräte abmelden"), nicht nur passiv
+// abläuft. Das JWT ist auf die absolute Session-Lebensdauer begrenzt, rein
+// als zusätzliche kryptographische Absicherung falls die DB-Prüfung je
+// übersprungen würde.
+export const IDLE_TIMEOUT_SECONDS = 5 * 60; // 5 Minuten Inaktivität -> Logout
+export const ABSOLUTE_SESSION_SECONDS = 8 * 60 * 60; // 8 Stunden harte Obergrenze
+// Throttle für last_activity_at-Updates - nicht bei jedem Request schreiben.
+export const ACTIVITY_UPDATE_THROTTLE_SECONDS = 30;
 
-// Vorher 30 Tage - für eine App mit Kinderdaten ein unangemessen langes
-// Zeitfenster, in dem ein gestohlenes Token verwendbar bliebe (Art. 32
-// DSGVO, Finding aus der DSGVO-Nachprüfung). requireAuth stellt aktiv
-// genutzten Sitzungen unterhalb TOKEN_REFRESH_THRESHOLD_SECONDS
-// transparent ein neues Token aus (siehe unten) - inaktive Tokens laufen
-// dagegen nach TOKEN_LIFETIME_SECONDS wirklich ab.
-export const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24; // 24h
-export const TOKEN_REFRESH_THRESHOLD_SECONDS = TOKEN_LIFETIME_SECONDS / 2; // ab 12h Restlaufzeit erneuern
-
-export async function signToken(payload: UserJwtPayload, secret: string): Promise<string> {
-  return new SignJWT({ email: payload.email, name: payload.name, typ: "session" })
+export async function signSessionJwt(userId: string, sessionId: string, secret: string): Promise<string> {
+  return new SignJWT({ typ: "session", sid: sessionId })
     .setProtectedHeader({ alg: "HS256" })
-    .setSubject(payload.sub)
+    .setSubject(userId)
     .setIssuedAt()
-    .setExpirationTime(`${TOKEN_LIFETIME_SECONDS}s`)
+    .setExpirationTime(`${ABSOLUTE_SESSION_SECONDS}s`)
     .sign(new TextEncoder().encode(secret));
 }
 
-export interface TokenPayload {
+export interface SessionJwtPayload {
   sub: string;
-  email: string;
-  name: string | null;
-  exp: number;
+  sid: string;
 }
 
 // Nur "typ: session"-Tokens sind vollwertige Sitzungen - verhindert, dass
 // ein MFA-Pre-Auth-Token (typ: "mfa_pending", siehe unten) versehentlich
 // requireAuth passiert, bevor der zweite Faktor bestätigt wurde.
-export async function verifyToken(token: string, secret: string): Promise<TokenPayload> {
+export async function verifySessionJwt(token: string, secret: string): Promise<SessionJwtPayload> {
   const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-  if (payload.typ !== "session") throw new Error("Kein Sitzungs-Token");
-  return {
-    sub: payload.sub as string,
-    email: payload.email as string,
-    name: (payload.name as string | null) ?? null,
-    exp: payload.exp as number,
-  };
+  if (payload.typ !== "session" || typeof payload.sid !== "string") throw new Error("Kein Sitzungs-Token");
+  return { sub: payload.sub as string, sid: payload.sid };
 }
 
 // Kurzlebiges Zwischen-Token für den zweiten MFA-Schritt (Finding SEC-02) -
@@ -141,14 +133,22 @@ export async function verifyMfaPendingToken(token: string, secret: string): Prom
   return payload.sub as string;
 }
 
-// Self-Service-Passwort-Reset (Finding SEC-07) - kurzlebiges, signiertes
-// Token statt einer DB-Tabelle: einfacher, und die 30-Minuten-Gültigkeit
-// macht eine Revocation-Liste für den Regelfall entbehrlich (dasselbe
-// Prinzip wie beim MFA-Zwischen-Token oben).
+// Self-Service-Passwort-Reset (Finding SEC-07). Jeder Token trägt jetzt eine
+// eindeutige jti (Finding aus der Production-Readiness-Prüfung 2026-08-27:
+// der Token war vorher innerhalb seiner 30-Minuten-Gültigkeit mehrfach
+// einlösbar) - db.consumePasswordResetJti() trägt sie beim Einlösen atomar
+// in `used_password_reset_tokens` ein, ein zweiter Versuch mit demselben
+// Token schlägt fehl (PRIMARY-KEY-Konflikt).
 const PASSWORD_RESET_LIFETIME_SECONDS = 30 * 60;
 
+export interface PasswordResetTokenPayload {
+  userId: string;
+  jti: string;
+  expiresAt: number;
+}
+
 export async function signPasswordResetToken(userId: string, secret: string): Promise<string> {
-  return new SignJWT({ typ: "password_reset" })
+  return new SignJWT({ typ: "password_reset", jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setIssuedAt()
@@ -156,8 +156,10 @@ export async function signPasswordResetToken(userId: string, secret: string): Pr
     .sign(new TextEncoder().encode(secret));
 }
 
-export async function verifyPasswordResetToken(token: string, secret: string): Promise<string> {
+export async function verifyPasswordResetToken(token: string, secret: string): Promise<PasswordResetTokenPayload> {
   const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-  if (payload.typ !== "password_reset") throw new Error("Kein Passwort-Reset-Token");
-  return payload.sub as string;
+  if (payload.typ !== "password_reset" || typeof payload.jti !== "string" || typeof payload.exp !== "number") {
+    throw new Error("Kein Passwort-Reset-Token");
+  }
+  return { userId: payload.sub as string, jti: payload.jti, expiresAt: payload.exp };
 }

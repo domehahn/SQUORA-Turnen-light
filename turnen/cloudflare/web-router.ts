@@ -17,12 +17,43 @@ export interface Env {
 
 const APP_PREFIX = "/turnen-light";
 
+// CSP/HSTS ergänzt (externe Production-Readiness-Prüfung 2026-08-27).
+// script-src bewusst OHNE 'unsafe-inline' - das einzige vormals inline
+// eingebettete Script (Theme-Vorabsetzung, index.html) wurde dafür nach
+// public/theme-init.js ausgelagert. style-src braucht 'unsafe-inline':
+// mehrere Komponenten setzen echte Laufzeit-Werte per style={{...}}
+// (Dropdown-Positionierung, Druckansichten-Farbschema) - das lässt sich
+// nicht sinnvoll durch statische Klassen ersetzen; CSS-Injection ist ein
+// deutlich kleineres Risiko als Script-Injection, daher dieser bewusste
+// Kompromiss statt eines Nonce-Systems (das bei statisch ausgelieferten
+// Assets ohne Pro-Request-HTML-Templating nicht ohne größeren Umbau geht).
+// img-src braucht data: für den MFA-QR-Code (qrcode-Paket rendert als
+// Data-URI, s. src/components/QrCode.tsx).
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join("; ");
+
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
+  "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  // Nur wirksam, wenn der Browser die Antwort über HTTPS empfangen hat -
+  // über lokales http:// (Dev) ignorieren Browser diesen Header ohnehin.
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 };
 
 function withSecurityHeaders(response: Response): Response {

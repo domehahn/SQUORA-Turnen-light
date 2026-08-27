@@ -5,7 +5,34 @@ import { FloatingInput } from "../components/FloatingField";
 import { QrCode } from "../components/QrCode";
 
 export default function Profile() {
-  const { userName, userEmail, clubName, clubRole, isAdmin, applyProfileToken } = useAuth();
+  const { userName, userEmail, clubName, clubRole, isAdmin, refreshClub } = useAuth();
+
+  const [activeSessions, setActiveSessions] = useState<number | null>(null);
+  const [sessionsBusy, setSessionsBusy] = useState(false);
+  const [sessionsInfo, setSessionsInfo] = useState<string | null>(null);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ id: string; current: boolean }[]>("/api/me/sessions")
+      .then((sessions) => setActiveSessions(sessions.length))
+      .catch(() => setActiveSessions(null));
+  }, []);
+
+  async function handleRevokeOtherSessions() {
+    setSessionsError(null);
+    setSessionsInfo(null);
+    setSessionsBusy(true);
+    try {
+      await api.post("/api/me/sessions/revoke-all", {});
+      setSessionsInfo("Alle anderen Sitzungen wurden abgemeldet.");
+      setActiveSessions(1);
+    } catch (err) {
+      setSessionsError(err instanceof Error ? err.message : "Fehler beim Abmelden anderer Geräte");
+    } finally {
+      setSessionsBusy(false);
+    }
+  }
 
   const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null);
   const [mfaSetup, setMfaSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
@@ -70,9 +97,11 @@ export default function Profile() {
 
   const [name, setName] = useState(userName ?? "");
   const [email, setEmail] = useState(userEmail ?? "");
+  const [profileCurrentPassword, setProfileCurrentPassword] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileInfo, setProfileInfo] = useState<string | null>(null);
+  const emailChanged = email.trim() !== (userEmail ?? "");
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -87,8 +116,16 @@ export default function Profile() {
     setProfileInfo(null);
     setProfileBusy(true);
     try {
-      const result = await api.put<{ token: string }>("/api/me", { name: name.trim() || null, email: email.trim() });
-      applyProfileToken(result.token);
+      await api.put("/api/me", {
+        name: name.trim() || null,
+        email: email.trim(),
+        // Step-up-Authentifizierung (Production-Readiness-Prüfung
+        // 2026-08-27): nur nötig, wenn sich die E-Mail-Adresse tatsächlich
+        // ändert - sie ist zugleich der Login-Name.
+        ...(emailChanged ? { currentPassword: profileCurrentPassword } : {}),
+      });
+      setProfileCurrentPassword("");
+      await refreshClub();
       setProfileInfo("Profil aktualisiert.");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Fehler beim Speichern");
@@ -160,11 +197,22 @@ export default function Profile() {
             <FloatingInput label="E-Mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
         </div>
+        {emailChanged && (
+          <div className="max-w-xs">
+            <FloatingInput
+              label="Aktuelles Passwort (zur Bestätigung der E-Mail-Änderung)"
+              type="password"
+              required
+              value={profileCurrentPassword}
+              onChange={(e) => setProfileCurrentPassword(e.target.value)}
+            />
+          </div>
+        )}
         {profileError && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {profileError}</p>}
         {profileInfo && <p className="text-sm text-emerald-700 dark:text-emerald-400">{profileInfo}</p>}
         <button
           type="submit"
-          disabled={profileBusy || !email.trim()}
+          disabled={profileBusy || !email.trim() || (emailChanged && !profileCurrentPassword)}
           className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
         >
           Speichern
@@ -321,6 +369,30 @@ export default function Profile() {
             </div>
           </form>
         ) : null}
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Sitzungen</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Aus Sicherheitsgründen wird eine Sitzung nach 5 Minuten Inaktivität automatisch beendet, spätestens nach 8
+          Stunden in jedem Fall.
+          {activeSessions !== null && (
+            <>
+              {" "}
+              Aktuell {activeSessions} aktive {activeSessions === 1 ? "Sitzung" : "Sitzungen"}.
+            </>
+          )}
+        </p>
+        {sessionsError && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {sessionsError}</p>}
+        {sessionsInfo && <p className="text-sm text-emerald-700 dark:text-emerald-400">{sessionsInfo}</p>}
+        <button
+          type="button"
+          onClick={handleRevokeOtherSessions}
+          disabled={sessionsBusy}
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          Alle anderen Geräte abmelden
+        </button>
       </div>
     </div>
   );

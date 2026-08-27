@@ -11,17 +11,7 @@
     <link rel="icon" type="image/png" href="/squora-favicon.png" />
     <link rel="apple-touch-icon" href="/squora-favicon.png" />
     <title>Turnen – Gruppenverwaltung</title>
-    <script>
-      // Theme vor dem ersten Paint setzen, um ein kurzes Aufblitzen des
-      // falschen Farbschemas zu vermeiden (siehe src/lib/theme.ts).
-      (function () {
-        try {
-          var stored = localStorage.getItem("turnen_theme");
-          var dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-          if (dark) document.documentElement.classList.add("dark");
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

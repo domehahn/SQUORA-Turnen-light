@@ -4,6 +4,13 @@
 name = "turnen-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-01"
+# War implizit true (kein workers_dev/keine routes gesetzt) - der API-Worker
+# war dadurch direkt unter turnen-api.<account>.workers.dev erreichbar,
+# unabhängig vom Web-Worker und dessen Security-Headern/CSP (externe
+# Production-Readiness-Prüfung 2026-08-27). Service Bindings funktionieren
+# unabhängig von workers_dev weiter - der Web-Worker kann diesen Worker
+# also weiterhin ansprechen.
+workers_dev = false
 
 [[d1_databases]]
 binding = "DB"

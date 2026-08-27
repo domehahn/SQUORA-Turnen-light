@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { decodeJwt } from "jose";
-import { api, clearToken, getToken, setToken } from "../lib/api";
+import { api } from "../lib/api";
 import { AuthContext, type AuthState } from "./auth-context";
 import type { ClubRole } from "../lib/types";
 import { loadCustomHolidays } from "../lib/holidays";
-
-interface TokenPayload {
-  sub: string;
-  email: string;
-  name: string | null;
-  exp?: number;
-}
 
 interface MeResponse {
   id: string;
@@ -23,8 +15,17 @@ interface MeResponse {
   mfaSetupRequired: boolean;
 }
 
+// Session-Management-Härtung (externe Production-Readiness-Prüfung
+// 2026-08-27): die Sitzung lebt jetzt in einem HttpOnly-Cookie, das JS
+// nicht lesen kann - der Auth-Status lässt sich also nicht mehr synchron
+// aus einem gespeicherten JWT dekodieren, sondern nur noch per
+// GET /api/me herausfinden. `authChecked` markiert, ob diese erste Prüfung
+// beim Laden der App schon durchgelaufen ist - RequireAuth/Login warten
+// darauf, statt vorschnell auf /login umzuleiten oder das Formular kurz
+// aufblitzen zu lassen.
 const EMPTY_STATE: AuthState = {
   isAuthenticated: false,
+  authChecked: false,
   userId: null,
   userEmail: null,
   userName: null,
@@ -35,79 +36,51 @@ const EMPTY_STATE: AuthState = {
   mfaSetupRequired: false,
 };
 
-function readState(token: string | null): AuthState {
-  if (!token) return EMPTY_STATE;
-  try {
-    const payload = decodeJwt(token) as TokenPayload;
-    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return EMPTY_STATE;
-    return {
-      isAuthenticated: true,
-      userId: payload.sub,
-      userEmail: payload.email,
-      userName: payload.name,
-      clubId: null,
-      clubName: null,
-      clubRole: null,
-      isAdmin: false,
-      mfaSetupRequired: false,
-    };
-  } catch {
-    return EMPTY_STATE;
-  }
+function stateFromMe(me: MeResponse): AuthState {
+  return {
+    isAuthenticated: true,
+    authChecked: true,
+    userId: me.id,
+    userEmail: me.email,
+    userName: me.name,
+    clubId: me.clubId,
+    clubName: me.clubName,
+    clubRole: me.clubRole,
+    isAdmin: me.isAdmin,
+    mfaSetupRequired: me.mfaSetupRequired,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>(() => readState(getToken()));
+  const [state, setState] = useState<AuthState>(EMPTY_STATE);
 
-  async function loadClub() {
-    if (!getToken()) return;
+  // Lädt den vollständigen Profil-/Vereinsstatus neu (Name, E-Mail, Verein,
+  // Rolle, MFA-Status) - beim App-Start für die erste Auth-Prüfung, danach
+  // wiederverwendbar nach Profiländerungen (kein Token-Umtausch mehr nötig,
+  // s. PUT /api/me).
+  async function refresh() {
     try {
       const me = await api.get<MeResponse>("/api/me");
-      setState((prev) =>
-        prev.isAuthenticated
-          ? {
-              ...prev,
-              clubId: me.clubId,
-              clubName: me.clubName,
-              clubRole: me.clubRole,
-              isAdmin: me.isAdmin,
-              mfaSetupRequired: me.mfaSetupRequired,
-            }
-          : prev
-      );
+      setState(stateFromMe(me));
       await loadCustomHolidays();
     } catch {
-      // Netzwerk-/Auth-Fehler beim Nachladen ignorieren wir hier bewusst -
-      // die Kernanmeldung basiert allein auf dem JWT im Local Storage.
+      setState({ ...EMPTY_STATE, authChecked: true });
     }
   }
 
   useEffect(() => {
-    function onStorage() {
-      setState(readState(getToken()));
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  useEffect(() => {
-    if (state.isAuthenticated) loadClub();
+    refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.isAuthenticated, state.userId]);
+  }, []);
 
   const value = useMemo(
     () => ({
       ...state,
       async signIn(email: string, password: string) {
         try {
-          const res = await api.post<{ token?: string; mfaRequired?: boolean; mfaToken?: string }>("/api/login", {
-            email,
-            password,
-          });
+          const res = await api.post<{ mfaRequired?: boolean; mfaToken?: string }>("/api/login", { email, password });
           if (res.mfaRequired && res.mfaToken) return { mfaToken: res.mfaToken };
-          if (!res.token) return { error: "Anmeldung fehlgeschlagen" };
-          setToken(res.token);
-          setState(readState(res.token));
+          await refresh();
           return {};
         } catch (err) {
           return { error: err instanceof Error ? err.message : "Anmeldung fehlgeschlagen" };
@@ -115,29 +88,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async verifyMfa(mfaToken: string, code: string) {
         try {
-          const res = await api.post<{ token: string }>("/api/login/mfa", { mfaToken, code });
-          setToken(res.token);
-          setState(readState(res.token));
+          await api.post("/api/login/mfa", { mfaToken, code });
+          await refresh();
           return {};
         } catch (err) {
           return { error: err instanceof Error ? err.message : "Code ungültig" };
         }
       },
-      signOut() {
-        clearToken();
+      async signOut() {
+        try {
+          await api.post("/api/logout", {});
+        } catch {
+          // Sitzung serverseitig widerrufen ist best effort - der lokale
+          // Zustand wird unten in jedem Fall zurückgesetzt.
+        }
         // Aufräumen eines evtl. noch vorhandenen alten "api-cache" (vor der
         // Entfernung des Workbox-runtimeCaching für /api/* konnten dort bis
         // zu 24h personenbezogene Daten liegen, s. vite.config.ts).
         if (typeof caches !== "undefined") {
           caches.delete("api-cache").catch(() => {});
         }
-        setState(readState(null));
+        setState({ ...EMPTY_STATE, authChecked: true });
       },
-      refreshClub: loadClub,
-      applyProfileToken(token: string) {
-        setToken(token);
-        setState(readState(token));
-      },
+      refreshClub: refresh,
     }),
     [state]
   );

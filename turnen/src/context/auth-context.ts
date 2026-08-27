@@ -3,6 +3,11 @@ import type { ClubRole } from "../lib/types";
 
 export interface AuthState {
   isAuthenticated: boolean;
+  // Session-Management-Härtung: true, sobald die erste GET-/api/me-Prüfung
+  // beim App-Start durchgelaufen ist (egal ob erfolgreich oder nicht) - der
+  // Auth-Status lässt sich nicht mehr synchron aus einem gespeicherten JWT
+  // lesen (HttpOnly-Cookie statt localStorage).
+  authChecked: boolean;
   userId: string | null;
   userEmail: string | null;
   userName: string | null;
@@ -21,11 +26,13 @@ export interface AuthContextValue extends AuthState {
   // Zweiter Schritt bei aktiviertem MFA (Finding SEC-02) - mfaToken kommt
   // aus signIn(), code ist der 6-stellige TOTP- oder ein Backup-Code.
   verifyMfa: (mfaToken: string, code: string) => Promise<{ error?: string }>;
-  signOut: () => void;
+  // Widerruft die Sitzung serverseitig (POST /api/logout) und setzt den
+  // lokalen Zustand zurück.
+  signOut: () => Promise<void>;
+  // Lädt Profil-/Vereinsstatus (Name, E-Mail, Verein, Rolle, MFA-Status)
+  // neu - für den initialen Auth-Check und nach Profiländerungen (kein
+  // Token-Umtausch mehr nötig, PUT /api/me gibt direkt den Nutzer zurück).
   refreshClub: () => Promise<void>;
-  // Nach einer Profiländerung (PUT /api/me) übernimmt das ein frisches JWT -
-  // das alte Token trägt Name/E-Mail noch fest im Payload.
-  applyProfileToken: (token: string) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

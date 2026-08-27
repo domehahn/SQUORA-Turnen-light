@@ -338,6 +338,86 @@ export async function touchLastLogin(db: D1Database, userId: string): Promise<vo
   await db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").bind(userId).run();
 }
 
+// --- Serverseitige Sitzungen (Session-Management-Härtung) --------------------
+// Löst das vorherige rein zustandslose JWT ab - siehe auth.ts. Jede Zeile
+// hier ist eine aktive Sitzung, die eigenständig widerrufen werden kann.
+
+export interface SessionRow {
+  id: string;
+  user_id: string;
+  created_at: string;
+  last_activity_at: string;
+  absolute_expires_at: string;
+  revoked_at: string | null;
+  user_agent: string | null;
+  ip: string | null;
+}
+
+export async function createSession(
+  db: D1Database,
+  input: { userId: string; absoluteExpiresAt: string; userAgent: string | null; ip: string | null }
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO sessions (id, user_id, absolute_expires_at, user_agent, ip) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(id, input.userId, input.absoluteExpiresAt, input.userAgent, input.ip)
+    .run();
+  return id;
+}
+
+export async function getSessionById(db: D1Database, id: string): Promise<SessionRow | null> {
+  return db.prepare("SELECT * FROM sessions WHERE id = ?").bind(id).first<SessionRow>();
+}
+
+// Throttled aufgerufen (siehe ACTIVITY_UPDATE_THROTTLE_SECONDS in auth.ts) -
+// nicht bei jedem einzelnen Request schreiben.
+export async function touchSessionActivity(db: D1Database, id: string): Promise<void> {
+  await db.prepare("UPDATE sessions SET last_activity_at = datetime('now') WHERE id = ?").bind(id).run();
+}
+
+export async function revokeSession(db: D1Database, id: string): Promise<void> {
+  await db.prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL").bind(id).run();
+}
+
+// Für Passwort ändern/zurücksetzen, MFA deaktivieren, "alle Geräte
+// abmelden" - widerruft alle Sitzungen eines Nutzers, optional außer der
+// aktuell verwendeten (damit man sich nicht selbst mitten in der Aktion
+// aussperrt).
+export async function revokeAllUserSessions(db: D1Database, userId: string, exceptSessionId?: string): Promise<void> {
+  if (exceptSessionId) {
+    await db
+      .prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ? AND id != ? AND revoked_at IS NULL")
+      .bind(userId, exceptSessionId)
+      .run();
+  } else {
+    await db.prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL").bind(userId).run();
+  }
+}
+
+export async function listActiveSessions(db: D1Database, userId: string): Promise<SessionRow[]> {
+  const { results } = await db
+    .prepare(
+      "SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND absolute_expires_at > datetime('now') ORDER BY last_activity_at DESC"
+    )
+    .bind(userId)
+    .all<SessionRow>();
+  return results;
+}
+
+// Einmaligkeit des Passwort-Reset-Tokens (s. auth.ts) - PRIMARY KEY auf jti
+// sorgt dafür, dass ein zweiter Einlöseversuch mit demselben Token
+// fehlschlägt. Gibt false zurück, wenn die jti bereits verwendet wurde.
+export async function consumePasswordResetJti(db: D1Database, jti: string, expiresAtIso: string): Promise<boolean> {
+  try {
+    await db.prepare("INSERT INTO used_password_reset_tokens (jti, expires_at) VALUES (?, ?)").bind(jti, expiresAtIso).run();
+    return true;
+  } catch {
+    return false; // schon verwendet
+  }
+}
+
 // Rate Limiting/Brute-Force-Schutz für den Login (Finding SEC-01) und
 // LOGIN/FAILED_LOGIN-Audit-Trail (Finding SEC-10).
 export async function recordLoginAttempt(db: D1Database, email: string, success: boolean): Promise<void> {

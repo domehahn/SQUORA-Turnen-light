@@ -1,22 +1,16 @@
-const TOKEN_KEY = "turnen_auth_token";
-
 // Leer am Domain-Root (lokale Entwicklung), "/turnen-light" im
 // Produktions-Build (siehe .env.production) - die App läuft dort unter
 // squora.de/turnen-light/ statt am Root, API-Aufrufe müssen also denselben
 // Präfix tragen.
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
+// Session-Management-Härtung (externe Production-Readiness-Prüfung
+// 2026-08-27): kein JWT mehr im localStorage/Authorization-Header - die
+// Sitzung lebt jetzt in einem HttpOnly-Cookie, das der Browser automatisch
+// mitschickt. `credentials: "include"` stellt das auch für den lokalen
+// Entwicklungsaufbau sicher (Vite-Proxy zu 127.0.0.1:8787 ist aus
+// Browser-Sicht zwar same-origin, aber explizit ist hier sicherer als
+// implizit).
 
 // Trägt bei Fehlern zusätzlich zur Nachricht den vollständigen JSON-Body der
 // API-Antwort mit (z.B. `code` und Detailfelder), damit UI-Code strukturiert
@@ -33,20 +27,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  // Sliding-Refresh: bei kürzerer Token-Lebensdauer (24h statt vormals 30
-  // Tage) stellt das Backend bei weniger als der halben Restlaufzeit
-  // transparent ein neues Token aus (siehe worker/src/index.ts requireAuth).
-  const refreshed = res.headers.get("X-Refreshed-Token");
-  if (refreshed) setToken(refreshed);
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new ApiError((data as { error?: string } | null)?.error ?? `Fehler ${res.status}`, res.status, data);
