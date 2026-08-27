@@ -54,8 +54,8 @@ ALTER TABLE families_new RENAME TO families;
 
 CREATE INDEX idx_families_club ON families(club_id);
 
--- POSTFLIGHT (in der Anwendung nach der Migration zu verifizieren, s.
--- docs/operations/deployment.md): Zeilenzahl vor/nach identisch,
+-- POSTFLIGHT (nach Anwendung auf Produktion manuell zu verifizieren):
+-- Zeilenzahl vor/nach identisch,
 -- `PRAGMA foreign_key_check` liefert keine Zeilen, `GET /api/families`
 -- funktioniert weiterhin normal, ein Insert ohne club_id schlägt jetzt mit
 -- einem NOT-NULL-Constraint-Fehler fehl statt stillschweigend eine
