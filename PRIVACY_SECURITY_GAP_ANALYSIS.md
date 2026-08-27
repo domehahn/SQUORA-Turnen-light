@@ -56,10 +56,80 @@ inkl. Architekturumstellung):
 - ~~SEC-19 (PBKDF2-Iterationen)~~ — **teilweise zurückgenommen** (2026-08-27, fünfter Durchgang): ursprünglich von global 100.000 auf 600.000 (OWASP-Empfehlung) angehoben, mit `password_iterations` pro Nutzer (`users.password_iterations`, Migration 0038). In Produktion stellte sich heraus, dass die Cloudflare-Workers-Runtime (`workerd`) `crypto.subtle.deriveBits` mit PBKDF2 oberhalb von 100.000 Iterationen mit `NotSupportedError: iteration counts above 100000 are not supported` ablehnt - jeder Login mit transparentem Rehashing (also praktisch jeder Bestandsaccount) endete in einem 500er und sperrte die Person faktisch aus. `CURRENT_PBKDF2_ITERATIONS` deshalb wieder auf 100.000 (die von der Laufzeit unterstützte Obergrenze) gesetzt und neu deployt. Die Infrastruktur (pro-Nutzer-Iterationszahl, transparentes Rehashing) bleibt bestehen und funktioniert weiter, greift aktuell aber nicht, weil Ziel- und Bestandswert identisch sind - ließe sich nutzen, falls workerd künftig höhere Werte erlaubt oder auf einen anderen KDF (z. B. Argon2id über eine externe Bibliothek) umgestellt wird. MFA-Backup-Codes weiterhin auf einer eigenen, stabilen Konstante (100.000) - unverändert vom Vorfall betroffen. Tests entsprechend angepasst (Legacy-Test nutzt jetzt einen künstlich niedrigeren Wert, um den Rehashing-Mechanismus selbst zu prüfen, unabhängig vom aktuell gültigen Zielwert).
 - **SEC-20 (CI-Pipeline)**: `.github/workflows/ci.yml` - läuft bei jedem Push/PR auf main, je ein Job für API-Worker (Typecheck, Lint, 43 Tests) und Frontend-Worker (Lint, Typecheck, Build). Deckte sofort eine echte Lücke auf: `oxlint` war im Worker-Paket nie als Dependency deklariert, lief bisher nur dank einer lokal auflösbaren `npx`-Version - im CI-Runner schlug der erste Durchlauf entsprechend fehl, gefixt durch Nachtragen als devDependency. **Branch Protection bewusst NICHT aktiviert** - Nutzerentscheidung: CI-Status soll nur sichtbar sein, `main` bleibt für direkte Pushes offen (kein PR-Zwang), um den etablierten Arbeitsablauf dieser Session nicht zu brechen.
 
-**Bewusst weiterhin NICHT umgesetzt:**
+**Nachtrag (2026-08-27, sechster Durchgang):** Zweite externe Prüfung des
+Stands nach Commit `171d16a` (CI grün) kam zum Ergebnis "noch kein
+Production-Go" wegen zwei neuer Findings + mehrerer P1s. Auf Bestätigung
+umgesetzt:
 
-- **IaC (`cloudflare-turnen-iac/`) entspricht nicht der echten Infrastruktur** - lt. früherer expliziter Nutzeranweisung unangetastet lassen.
-- Backup/Restore-Test, externer Pentest, DAST - organisatorische Prozesse, nicht code-seitig lösbar ohne dedizierte Tools/Beauftragung.
+- 🔴 **"5-Minuten-Idle-Timeout funktioniert real nicht"**: Backend-Logik war
+  korrekt, aber die Benachrichtigungsglocke pollt alle 60s
+  `GET /api/notifications` im Hintergrund, solange der Tab offen ist - jeder
+  Poll hat `last_activity_at` mit-aktualisiert und damit den Idle-Timeout
+  faktisch wirkungslos gemacht (Session blieb beliebig lange "aktiv", auch
+  wenn niemand am Gerät saß). Fix: `requireAuth` nimmt `GET /api/notifications`
+  jetzt explizit von der Aktivitäts-Aktualisierung aus (`isIdleExempt()`,
+  `worker/src/index.ts`) - der Idle-Timeout selbst prüft weiterhin gegen die
+  letzte ECHTE Aktivität. Neuer Test reproduziert exakt das gemeldete
+  Szenario (wiederholtes Polling hält die Sitzung nicht künstlich am Leben).
+- 🔴 **Zweite Cross-Tenant-Lücke bei `families`**: `families` hatte keine
+  eigene `club_id`, die Mandantengrenze wurde dynamisch über
+  `created_by -> user.club_id` berechnet - wechselt die anlegende Person den
+  Verein, wäre die Familie (und darüber querverfügbare Notfallkontakte
+  verknüpfter Kinder) logisch mitgewandert. Fix (Migration 0039):
+  `families.club_id` fest beim Anlegen gesetzt, nicht mehr aus dem aktuellen
+  Konto der anlegenden Person abgeleitet; Backfill für die 3 produktiven
+  Bestandsfamilien anhand ihrer verknüpften Kinder bzw. ersatzweise des
+  aktuellen Vereins der anlegenden Person. Cross-Tenant-Verknüpfung von Kind
+  und Familie (`familyId` beim Anlegen/Bearbeiten eines Kindes sowie
+  `PUT /api/children/:id/family`) wird jetzt serverseitig gegen `club_id`
+  geprüft und abgelehnt. 4 neue Tests in `tenant-isolation.test.ts`.
+- 🟠 **Least Privilege bei Notfallkontakten**: `GET /api/children` lieferte
+  bisher für JEDES vereinsweit sichtbare Kind auch die entschlüsselten
+  Notfallkontakte, unabhängig davon, ob die anfragende Person eine Beziehung
+  zur jeweiligen Gruppe hat. Fix: Notfallkontakte werden jetzt nur noch
+  ausgeliefert, wenn die Person das Kind bearbeiten darf (eigene/Mit-
+  Trainer*innen-Gruppe) oder Jugendleitung ist (braucht den vereinsweiten
+  Überblick tatsächlich) - sonst `null` statt Klartext. Bewusst keine
+  separaten `ChildSummary`/`ChildDetail`-Endpunkte (größerer Umbau), sondern
+  Redaktion pro Element in derselben Liste - alle anderen Felder (Name,
+  Gruppe, Alter) bleiben unverändert sichtbar. 3 neue Tests.
+- 🟠 **CSRF Defense-in-Depth**: zusätzlich zu `SameSite=Strict` prüft der
+  Server jetzt bei `POST`/`PUT`/`DELETE`/`PATCH` explizit `Origin` (Fallback
+  `Sec-Fetch-Site`) gegen den eigenen Frontend-Origin, lehnt sonst mit 403 ab
+  (`worker/src/index.ts`, `isSameOriginRequest()`). 4 neue Tests.
+- 🔴 **Web-Worker weiterhin über `workers.dev` erreichbar**: `workers_dev`
+  stand beim Web-Worker (anders als beim API-Worker) noch auf `true`, dazu
+  waren Preview-URLs aktiv. Fix: `workers_dev = false` und
+  `preview_urls = false` in `turnen/wrangler.toml`, deployt und verifiziert
+  (die `workers.dev`-URL ist jetzt nicht mehr erreichbar).
+- 🔴 **Retention produktiv aktiviert**: `ARCHIVED_CHILD_RETENTION_DAYS` war
+  im Code fertig (s. PRIV-05), in Produktion aber bewusst nicht gesetzt.
+  Nutzerentscheidung: 1095 Tage (3 Jahre). Zusätzlich neuer täglicher
+  Cleanup für die Security-Tabellen (`sessions`, `login_attempts`,
+  `used_password_reset_tokens`), die bisher unbegrenzt wuchsen -
+  `SECURITY_LOG_RETENTION_DAYS = 90` (Nutzerentscheidung), abgelaufene/
+  widerrufene Sessions werden unabhängig davon sofort entfernt.
+
+**Bewusst weiterhin NICHT umgesetzt (unverändert seit dem letzten Durchgang):**
+
+- **Eigene Origin (`turnen.squora.de` statt `squora.de/turnen-light`)** -
+  auf Nutzerentscheidung (2026-08-27) explizit zurückgestellt: eine echte
+  DNS-/Zonen-Änderung mit Abstimmungsbedarf mit anderen Projekten auf
+  derselben Zone, kein reiner Code-Fix. Bleibt ein offenes P1.
+- **MFA-Zwang für Platform-Admin** - MFA ist weiterhin reines Opt-in für
+  jede Rolle, wie zweimal explizit vom Nutzer angewiesen. Bei einer strengen
+  Security-Bewertung als **akzeptiertes Restrisiko** zu dokumentieren, nicht
+  als "Best Practice erfüllt".
+- **Branch Protection / Required Status Checks** - unverändert bewusst
+  nicht aktiviert (Nutzerentscheidung: `main` bleibt für direkte Pushes
+  offen).
+- **SAST/SCA/Secret-Scan, Action-SHA-Pinning, SBOM** - nicht umgesetzt.
+- **Remote-State-Backend für Terraform/OpenTofu** - State liegt weiterhin
+  lokal.
+- Backup/Restore-Test (Recovery-Drill, RPO/RTO-Definition), externer
+  Pentest, DAST, strukturiertes Betriebsmonitoring/Alerting -
+  organisatorische Prozesse, nicht code-seitig lösbar ohne dedizierte
+  Tools/Beauftragung.
 
 Diese Punkte bleiben **offen und sind nicht vergessen** - sie sind bewusst
 zurückgestellt (niedrige Priorität bzw. außerhalb des Code-Scopes), nicht

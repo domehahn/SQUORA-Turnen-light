@@ -446,6 +446,27 @@ export async function countRecentFailedLogins(db: D1Database, email: string, win
   return row?.n ?? 0;
 }
 
+// Speicherbegrenzung für die Security-Tabellen (externe Production-
+// Readiness-Prüfung 2026-08-27, Finding "Retention" - sessions,
+// login_attempts, used_password_reset_tokens wuchsen bisher unbegrenzt).
+// Läuft täglich per Cron (s. index.ts, scheduled()). Abgelaufene/widerrufene
+// Sessions werden unabhängig von der Frist gelöscht (sie sind für nichts
+// mehr nutzbar), login_attempts und reset-Tokens erst nach retentionDays -
+// beide dienen als Audit-/Forensik-Spur für den Zeitraum danach.
+export async function cleanupSecurityLogs(db: D1Database, retentionDays: number): Promise<void> {
+  await db
+    .prepare("DELETE FROM sessions WHERE revoked_at IS NOT NULL OR absolute_expires_at <= datetime('now')")
+    .run();
+  await db
+    .prepare(`DELETE FROM login_attempts WHERE created_at < datetime('now', ?1)`)
+    .bind(`-${retentionDays} days`)
+    .run();
+  await db
+    .prepare(`DELETE FROM used_password_reset_tokens WHERE expires_at < datetime('now', ?1)`)
+    .bind(`-${retentionDays} days`)
+    .run();
+}
+
 // Anzahl der Jugendleitungen im Verein, optional einen Nutzer ausschließend
 // (z.B. um zu prüfen, ob nach einem Rollenwechsel noch jemand übrig bleibt).
 export async function countClubLeaders(db: D1Database, clubId: string, excludeUserId?: string): Promise<number> {
@@ -1627,6 +1648,7 @@ function rowToFamily(row: FamilyRow): Family {
     contactPhone: row.contact_phone,
     contactEmail: row.contact_email,
     createdAt: row.created_at,
+    clubId: row.club_id,
   };
 }
 
@@ -1637,13 +1659,22 @@ export interface FamilyInput {
   contactEmail: string | null;
 }
 
-export async function createFamily(db: D1Database, input: FamilyInput, createdBy: string): Promise<Family> {
+// clubId wird beim Anlegen fest gesetzt (Migration 0039) - anders als bei
+// createdBy ändert sich die Mandantenzuordnung einer Familie danach nicht
+// mehr automatisch mit, selbst wenn die anlegende Person später den Verein
+// wechselt.
+export async function createFamily(
+  db: D1Database,
+  input: FamilyInput,
+  createdBy: string,
+  clubId: string | null
+): Promise<Family> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO families (id, name, contact_name, contact_phone, contact_email, created_by) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO families (id, name, contact_name, contact_phone, contact_email, created_by, club_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(id, input.name, input.contactName, input.contactPhone, input.contactEmail, createdBy)
+    .bind(id, input.name, input.contactName, input.contactPhone, input.contactEmail, createdBy, clubId)
     .run();
   const row = await db.prepare("SELECT * FROM families WHERE id = ?").bind(id).first<FamilyRow>();
   return rowToFamily(row as FamilyRow);
@@ -1659,21 +1690,22 @@ export async function getFamilyRowById(db: D1Database, id: string): Promise<Fami
 // Kind bei der eigenen Gruppe und sein Geschwisterkind bei einer anderen
 // Übungsleitung im selben Verein trainiert. Ohne Verein (Alt-Konten) bleibt
 // es bei den eigenen Familien.
+//
+// Filtert direkt über families.club_id (Migration 0039) statt über den
+// AKTUELLEN Verein der anlegenden Person - sonst würde ein Vereinswechsel
+// von Trainer*innen bereits angelegte Familien nachträglich falsch
+// zuordnen (Cross-Tenant-Leak, externe Production-Readiness-Prüfung
+// 2026-08-27).
 export async function listFamiliesForUser(db: D1Database, userId: string, clubId: string | null): Promise<Family[]> {
   if (clubId) {
     const { results } = await db
-      .prepare(
-        `SELECT f.* FROM families f
-         JOIN users u ON u.id = f.created_by
-         WHERE u.club_id = ?
-         ORDER BY f.name ASC`
-      )
+      .prepare(`SELECT * FROM families WHERE club_id = ? ORDER BY name ASC`)
       .bind(clubId)
       .all<FamilyRow>();
     return results.map(rowToFamily);
   }
   const { results } = await db
-    .prepare("SELECT * FROM families WHERE created_by = ? ORDER BY name ASC")
+    .prepare("SELECT * FROM families WHERE created_by = ? AND club_id IS NULL ORDER BY name ASC")
     .bind(userId)
     .all<FamilyRow>();
   return results.map(rowToFamily);

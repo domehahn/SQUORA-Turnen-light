@@ -128,6 +128,37 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
+// CSRF Defense-in-Depth (externe Production-Readiness-Prüfung 2026-08-27):
+// SameSite=Strict auf dem Session-Cookie verhindert bereits, dass ein
+// fremder Origin das Cookie bei einem Cross-Site-Request mitschickt - laut
+// OWASP soll das aber nicht die einzige Schutzschicht sein (ältere Browser,
+// künftige SameSite-Änderungen, Subdomain-Sonderfälle). Zusätzliche
+// serverseitige Prüfung für alle zustandsändernden Methoden: Origin (bzw.
+// ersatzweise Sec-Fetch-Site für Browser, die bei manchen Requests keinen
+// Origin-Header senden) muss auf den eigenen Frontend-Origin bzw. "same-
+// origin" zeigen. GET/HEAD/OPTIONS sind lesend und bleiben unangetastet.
+const CSRF_UNSAFE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+
+function isSameOriginRequest(c: { req: { url: string; header: (name: string) => string | undefined } }, env: Env): boolean {
+  const secFetchSite = c.req.header("Sec-Fetch-Site");
+  if (secFetchSite) return secFetchSite === "same-origin" || secFetchSite === "none";
+
+  const origin = c.req.header("Origin");
+  if (!origin) return true; // kein Origin/Sec-Fetch-Site: z.B. direkte curl-Requests, nicht browserbasiertes CSRF
+
+  if (origin === new URL(env.FRONTEND_URL).origin) return true;
+  const apiHostname = new URL(c.req.url).hostname;
+  const isLocalApi = apiHostname === "localhost" || apiHostname === "127.0.0.1";
+  return isLocalApi && /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(origin);
+}
+
+app.use("/api/*", async (c, next) => {
+  if (CSRF_UNSAFE_METHODS.has(c.req.method) && !isSameOriginRequest(c, c.env)) {
+    return c.json({ error: "Anfrage von fremder Herkunft abgelehnt" }, 403);
+  }
+  await next();
+});
+
 // Serverseitiges Session-Management (s.o.): das JWT trägt nur eine
 // Sitzungs-ID, Gültigkeit/Widerruf/Idle-Timeout leben in der `sessions`-
 // Tabelle - eine Sitzung kann damit aktiv beendet werden (Passwort ändern/
@@ -135,6 +166,20 @@ app.use("/api/*", async (c, next) => {
 // passiv ablaufen. 5 Minuten Inaktivität ODER 8 Stunden absolute
 // Sitzungsdauer -> Logout, beides serverseitig geprüft, nicht nur im
 // Client-Timer.
+// Passiver Hintergrund-Traffic, der NICHT als Benutzeraktivität für den
+// Idle-Timeout zählen darf (externe Production-Readiness-Prüfung
+// 2026-08-27, Finding "5-Minuten-Idle-Timeout funktioniert real nicht"):
+// die Benachrichtigungsglocke pollt alle 60 Sekunden GET /api/notifications
+// im Hintergrund, solange der Tab offen ist - das hätte jede Session
+// unbegrenzt am Leben gehalten, selbst wenn die Person längst nicht mehr
+// am Gerät sitzt. Bewusst nur GET (reines Auslesen) exemptiert, nicht die
+// POST-Routen zum Als-gelesen-Markieren - das ist eine echte Interaktion.
+const IDLE_EXEMPT_GET_PATHS = new Set(["/api/notifications"]);
+
+function isIdleExempt(c: { req: { method: string; path: string } }): boolean {
+  return c.req.method === "GET" && IDLE_EXEMPT_GET_PATHS.has(c.req.path);
+}
+
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const token = getCookie(c, SESSION_COOKIE_NAME);
   if (!token) return c.json({ error: "Nicht angemeldet" }, 401);
@@ -172,7 +217,7 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("isAdmin", Boolean(user.is_admin));
     c.set("sessionId", session.id);
 
-    if (now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
+    if (!isIdleExempt(c) && now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
       await db.touchSessionActivity(c.env.DB, session.id);
     }
   } catch {
@@ -1712,10 +1757,29 @@ app.delete("/api/groups/:id/co-leaders/:userId", requireAuth, async (c) => {
 
 // --- Kinder --------------------------------------------------------------
 
+// Least-Privilege-Härtung (externe Production-Readiness-Prüfung
+// 2026-08-27): die Kinderliste ist vereinsweit sichtbar (auch für Kinder
+// fremder Gruppen, damit z.B. Geschwister-Verknüpfung oder Warteliste
+// funktionieren), enthielt bisher aber für JEDES zurückgegebene Kind auch
+// die entschlüsselten Notfallkontakte - unabhängig davon, ob die
+// anfragende Person überhaupt eine Beziehung zu dieser Gruppe hat. Wer ein
+// Kind nicht bearbeiten darf UND nicht Jugendleitung ist (die braucht den
+// vereinsweiten Überblick tatsächlich, z.B. für Vertretungsplanung),
+// bekommt die Notfallkontakte jetzt als null statt im Klartext - alle
+// anderen Felder (Name, Gruppe, Alter) bleiben unverändert sichtbar, die
+// sind fürs bloße Auflisten/Zuordnen nötig.
 app.get("/api/children", requireAuth, async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
   const children = await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived);
-  return c.json(await Promise.all(children.map((child) => decryptChild(child, c.env.ENCRYPTION_KEY))));
+  const isJugendleiter = c.get("clubRole") === "jugendleiter";
+  const decrypted = await Promise.all(
+    children.map(async (child) => {
+      const full = await decryptChild(child, c.env.ENCRYPTION_KEY);
+      if (full.canEdit || isJugendleiter) return full;
+      return { ...full, emergencyContactName: null, emergencyContactPhone: null };
+    })
+  );
+  return c.json(decrypted);
 });
 
 // Entschlüsselt die verschlüsselt gespeicherten Felder eines Child-Objekts
@@ -1799,6 +1863,16 @@ app.post("/api/children", requireAuth, async (c) => {
   } else {
     clubIdForChild = c.get("clubId");
     if (!clubIdForChild) return c.json({ error: "Kein Verein zugeordnet" }, 400);
+  }
+
+  // Cross-Tenant-Verknüpfung verhindern (Migration 0039, s. auch
+  // PUT /api/children/:id/family) - auch schon beim Anlegen prüfen, nicht
+  // nur beim nachträglichen Ändern der Familien-Zuordnung.
+  if (familyId) {
+    const family = await db.getFamilyRowById(c.env.DB, familyId);
+    if (!family || family.club_id === null || family.club_id !== clubIdForChild) {
+      return c.json({ error: "Familie gehört nicht zu diesem Verein" }, 403);
+    }
   }
 
   // Notfallkontakte verschlüsselt ablegen (auch im Kapazitäts-Anfrage-
@@ -1891,6 +1965,14 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     targetGroup = await db.getGroupRowById(c.env.DB, groupId);
     if (!targetGroup) return c.json({ error: "Gruppe nicht gefunden" }, 404);
     clubIdForChild = targetGroup.club_id;
+  }
+
+  // Cross-Tenant-Verknüpfung verhindern (Migration 0039).
+  if (familyId) {
+    const family = await db.getFamilyRowById(c.env.DB, familyId);
+    if (!family || family.club_id === null || family.club_id !== clubIdForChild) {
+      return c.json({ error: "Familie gehört nicht zu diesem Verein" }, 403);
+    }
   }
 
   const childInput = {
@@ -2075,6 +2157,18 @@ app.put("/api/children/:id/family", requireAuth, async (c) => {
   }
   if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
+  // Cross-Tenant-Verknüpfung verhindern (Migration 0039): eine Familie darf
+  // nur mit Kindern desselben Vereins verknüpft werden, sonst könnte eine
+  // manipulierte familyId Kinder unterschiedlicher Vereine in derselben
+  // Familie zusammenführen und damit deren Notfallkontakte querverfügbar
+  // machen.
+  if (familyId) {
+    const family = await db.getFamilyRowById(c.env.DB, familyId);
+    if (!family || family.club_id === null || family.club_id !== existing.club_id) {
+      return c.json({ error: "Familie gehört nicht zu diesem Verein" }, 403);
+    }
+  }
+
   const child = await db.setChildFamily(c.env.DB, id, familyId);
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -2099,7 +2193,7 @@ app.post("/api/families", requireAuth, async (c) => {
   if (contactPhone === undefined) return c.json({ error: "Telefonnummer ist zu lang" }, 400);
   if (contactEmail === undefined) return c.json({ error: "E-Mail ist zu lang" }, 400);
 
-  const family = await db.createFamily(c.env.DB, { name, contactName, contactPhone, contactEmail }, c.get("userId"));
+  const family = await db.createFamily(c.env.DB, { name, contactName, contactPhone, contactEmail }, c.get("userId"), c.get("clubId"));
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
@@ -2125,7 +2219,15 @@ app.put("/api/families/:id", requireAuth, async (c) => {
 
   const existing = await db.getFamilyRowById(c.env.DB, id);
   if (!existing) return c.json({ error: "Familie nicht gefunden" }, 404);
-  if (existing.created_by !== c.get("userId")) return c.json({ error: "Keine Berechtigung für diese Familie" }, 403);
+  // Tenant-Grenze zuerst prüfen (Migration 0039, fest gesetztes club_id) -
+  // eine fremde Vereins-ID darf niemals als "nicht gefunden" von einer
+  // eigenen unterscheidbar sein oder umgekehrt Berechtigungsdetails leaken.
+  // Innerhalb des eigenen Vereins bleibt es bei der bisherigen, strengeren
+  // Regel (nur die anlegende Person darf bearbeiten).
+  const sameClub = existing.club_id !== null && existing.club_id === c.get("clubId");
+  if (!sameClub || existing.created_by !== c.get("userId")) {
+    return c.json({ error: "Keine Berechtigung für diese Familie" }, 403);
+  }
 
   const family = await db.updateFamily(c.env.DB, id, { name, contactName, contactPhone, contactEmail });
   if (!family) return c.json({ error: "Familie nicht gefunden" }, 404);
@@ -3972,10 +4074,22 @@ async function deleteStaleArchivedChildren(env: Env): Promise<void> {
   }
 }
 
+// Speicherbegrenzung für Security-Tabellen (externe Production-Readiness-
+// Prüfung 2026-08-27, Finding "Retention"): sessions/login_attempts/
+// used_password_reset_tokens wuchsen bisher unbegrenzt. Gleiche
+// Opt-in-Logik wie bei deleteStaleArchivedChildren - ohne gesetzte
+// SECURITY_LOG_RETENTION_DAYS läuft kein Cleanup.
+async function cleanupSecurityLogs(env: Env): Promise<void> {
+  const retentionDays = Number(env.SECURITY_LOG_RETENTION_DAYS);
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return;
+  await db.cleanupSecurityLogs(env.DB, retentionDays);
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(remindStaleRequests(env));
     ctx.waitUntil(deleteStaleArchivedChildren(env));
+    ctx.waitUntil(cleanupSecurityLogs(env));
   },
 } satisfies ExportedHandler<Env>;

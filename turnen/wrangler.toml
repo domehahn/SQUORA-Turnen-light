@@ -1,10 +1,17 @@
 # Web-Worker für die Turnen-SPA (statische Assets + SPA-Fallback + API-
 # Weiterleitung per Service Binding). Getrennt vom API-Worker in
 # worker/wrangler.toml.
+# War true (kein workers_dev/keine preview_urls gesetzt) - die SPA war
+# dadurch zusätzlich unter turnen-web.<account>.workers.dev erreichbar,
+# außerhalb der Zone squora.de und ohne die dort per DNS/Zone geltenden
+# Erwartungen (externe Production-Readiness-Prüfung 2026-08-27, Finding
+# "Web Worker workers.dev / Preview"). Die Route auf squora.de bleibt
+# unberührt, Deploys laufen weiterhin normal über wrangler deploy.
 name = "turnen-web"
 main = "cloudflare/web-router.ts"
 compatibility_date = "2026-07-01"
-workers_dev = true
+workers_dev = false
+preview_urls = false
 
 [[routes]]
 pattern = "squora.de/turnen-light*"

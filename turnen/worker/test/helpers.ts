@@ -86,6 +86,18 @@ export async function seedChild(input: {
   return { id };
 }
 
+export async function seedFamily(input: {
+  name: string;
+  createdBy: string | null;
+  clubId?: string | null;
+}): Promise<{ id: string }> {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(`INSERT INTO families (id, name, created_by, club_id) VALUES (?, ?, ?, ?)`)
+    .bind(id, input.name, input.createdBy, input.clubId ?? null)
+    .run();
+  return { id };
+}
+
 // Login über den echten Endpunkt statt eines Test-Shortcuts - deckt damit
 // automatisch auch Rate Limiting (SEC-01) und die Login-Route selbst mit ab.
 // Seit der Session-Management-Härtung setzt der Login ein HttpOnly-Cookie
