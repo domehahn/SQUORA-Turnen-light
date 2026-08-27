@@ -341,3 +341,28 @@ describe("Fail-closed bei unbekannten/kaputten Mandantenbeziehungen", () => {
     expect(entry!.target_label).not.toContain("Nachname");
   });
 });
+
+// TENANT-04/TENANT-11/TENANT-12 (zweiter Production-Readiness-
+// Härtungsdurchgang 2026-08-27, Migration 0043): families.club_id ist jetzt
+// eine echte DB-Invariante (NOT NULL), nicht nur eine Anwendungsebenen-
+// Annahme - Defense-in-Depth zusätzlich zu den Fail-closed-Checks in
+// worker/src/index.ts.
+describe("Datenbank-Invariante: families.club_id ist NOT NULL", () => {
+  it("ein direkter INSERT ohne club_id schlägt mit einem Constraint-Fehler fehl", async () => {
+    const club = await seedClub("Verein DB-Constraint");
+    const creator = await seedUser({ email: "db-constraint-family@test.local", password: "password-123", clubId: club.id });
+    await expect(
+      env.DB.prepare("INSERT INTO families (id, name, created_by) VALUES (?, ?, ?)")
+        .bind(crypto.randomUUID(), "Familie ohne Verein", creator.id)
+        .run()
+    ).rejects.toThrow();
+  });
+
+  it("ein INSERT mit club_id funktioniert weiterhin normal", async () => {
+    const club = await seedClub("Verein DB-Constraint OK");
+    const creator = await seedUser({ email: "db-constraint-family-ok@test.local", password: "password-123", clubId: club.id });
+    const family = await seedFamily({ name: "Familie mit Verein", createdBy: creator.id, clubId: club.id });
+    const row = await env.DB.prepare("SELECT club_id FROM families WHERE id = ?").bind(family.id).first<{ club_id: string }>();
+    expect(row!.club_id).toBe(club.id);
+  });
+});
