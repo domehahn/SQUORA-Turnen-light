@@ -34,7 +34,7 @@ import {
   validTime,
   validWeekday,
 } from "./validation";
-import type { CapacityRequestRow, Child, ChildRow, ClubRole, Env } from "./types";
+import type { CapacityRequestRow, Child, ChildRow, ClubRole, Env, GroupRow } from "./types";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -113,22 +113,28 @@ const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-// Ein Kind ist bearbeitbar, wenn es keiner Gruppe zugeordnet ist (Alt-Bestand,
-// weiterhin für alle offen), die zugehörige Gruppe für den Nutzer
-// beschreibbar ist (Besitz/Mit-Trainerschaft), oder der Nutzer Jugendleitung
-// des Vereins ist, dem die Gruppe gehört - die Jugendleitung (und damit auch
-// die vereinsübergreifende Admin-Rolle, die sich als Jugendleitung in einen
-// Verein einwechselt) darf jedes Kind ihres Vereins bearbeiten, nicht nur
-// die eigener Gruppen. Vorher fehlte dieser Bypass hier (anders als bei
-// Gruppen selbst, siehe rowToGroup/canEdit) - Jugendleitung/Admin konnten
-// Gruppen zwar bearbeiten, aber nicht die Kinder darin.
+// Ein Kind ist bearbeitbar, wenn die zugehörige Gruppe für den Nutzer
+// beschreibbar ist (Besitz/Mit-Trainerschaft), der Nutzer Jugendleitung des
+// Vereins ist, dem die Gruppe gehört, oder - bei einem noch gruppenlosen
+// Kind (z.B. Vereins-Warteliste vor Gruppenzuteilung) - der Nutzer im
+// selben Verein ist wie das Kind (child.club_id, s. Migration 0036).
+//
+// WICHTIG (P0-Fix, externe Production-Readiness-Prüfung 2026-08-27): vorher
+// galt "keine Gruppe -> für jede*n authentifizierte*n Nutzer*in bearbeitbar,
+// vereinsübergreifend" - ein echter Cross-Tenant-Fehler, sobald mehr als
+// ein Verein existiert. Die einzige verbleibende Ausnahme (club_id UND
+// group_id beide NULL) ist reine Absicherung für echten, vereinslosen
+// Alt-Bestand - im aktuellen Datenbestand existiert das nicht mehr.
 async function isChildWritable(
   dbEnv: D1Database,
-  child: { group_id: string | null },
+  child: { group_id: string | null; club_id: string | null },
   userId: string,
   ctx?: { clubId: string | null; clubRole: string | null }
 ): Promise<boolean> {
-  if (!child.group_id) return true;
+  if (!child.group_id) {
+    if (child.club_id === null) return true; // echter Alt-Bestand ohne jede Vereinszuordnung
+    return Boolean(ctx?.clubId && ctx.clubId === child.club_id);
+  }
   const group = await db.getGroupRowById(dbEnv, child.group_id);
   if (!group) return true;
   if (ctx && ctx.clubRole === "jugendleiter" && group.club_id && group.club_id === ctx.clubId) return true;
@@ -1623,6 +1629,22 @@ app.post("/api/children", requireAuth, async (c) => {
   if (emergencyContactPhone === undefined) return c.json({ error: "Notfallkontakt (Telefon) ist zu lang" }, 400);
   if (familyId === undefined) return c.json({ error: "Familie ist ungültig" }, 400);
 
+  // Mandantengrenze (P0-Fix, s. Migration 0036): bei Zielgruppe deren
+  // Verein, sonst der Verein der anlegenden Person - ein Kind ganz ohne
+  // Vereinszuordnung darf nicht neu entstehen, sonst wäre es sofort wieder
+  // für niemanden mehr sinnvoll zuordenbar bzw. je nach Zufall der
+  // OR-Kette in listChildrenForUser für alle offen.
+  let clubIdForChild: string | null = null;
+  let targetGroup: GroupRow | null = null;
+  if (groupId) {
+    targetGroup = await db.getGroupRowById(c.env.DB, groupId);
+    if (!targetGroup) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    clubIdForChild = targetGroup.club_id;
+  } else {
+    clubIdForChild = c.get("clubId");
+    if (!clubIdForChild) return c.json({ error: "Kein Verein zugeordnet" }, 400);
+  }
+
   // Notfallkontakte verschlüsselt ablegen (auch im Kapazitäts-Anfrage-
   // Payload, falls diese Aktion erst nach Freigabe ausgeführt wird) - siehe
   // worker/src/crypto.ts, Finding PRIV-02. Bewusst KEIN Freitext-Notizfeld
@@ -1634,14 +1656,14 @@ app.post("/api/children", requireAuth, async (c) => {
     lastName,
     birthDate,
     groupId,
+    clubId: clubIdForChild,
     emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
     emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
     familyId,
   };
 
   if (groupId) {
-    const group = await db.getGroupRowById(c.env.DB, groupId);
-    if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    const group = targetGroup as GroupRow;
     const canWriteTarget =
       (await db.canWriteGroupAsync(c.env.DB, group, c.get("userId"))) ||
       (c.get("clubRole") === "jugendleiter" && Boolean(group.club_id) && group.club_id === c.get("clubId"));
@@ -1704,19 +1726,30 @@ app.put("/api/children/:id", requireAuth, async (c) => {
   if (!(await isChildWritable(c.env.DB, existing, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
+  // Mandantengrenze (P0-Fix, s. Migration 0036): bei Zielgruppe deren
+  // Verein, sonst unverändert (isChildWritable hat oben bereits verifiziert,
+  // dass der/die Bearbeitende zum bisherigen club_id-Verein passt).
+  let clubIdForChild = existing.club_id;
+  let targetGroup: GroupRow | null = null;
+  if (groupId) {
+    targetGroup = await db.getGroupRowById(c.env.DB, groupId);
+    if (!targetGroup) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    clubIdForChild = targetGroup.club_id;
+  }
+
   const childInput = {
     firstName,
     lastName,
     birthDate,
     groupId,
+    clubId: clubIdForChild,
     emergencyContactName: await encryptField(emergencyContactName, c.env.ENCRYPTION_KEY),
     emergencyContactPhone: await encryptField(emergencyContactPhone, c.env.ENCRYPTION_KEY),
     familyId,
   };
 
   if (groupId) {
-    const group = await db.getGroupRowById(c.env.DB, groupId);
-    if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    const group = targetGroup as GroupRow;
     const canWriteTarget =
       (await db.canWriteGroupAsync(c.env.DB, group, c.get("userId"))) ||
       (c.get("clubRole") === "jugendleiter" && Boolean(group.club_id) && group.club_id === c.get("clubId"));
@@ -3388,8 +3421,33 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
     entries.push({ childId, present });
   }
 
+  // BOLA-Schutz (Production-Readiness-Prüfung 2026-08-27): eine syntaktisch
+  // gültige UUID ist keine Autorisierung - jede übermittelte childId muss
+  // tatsächlich zur Zielgruppe gehören, sonst könnte ein manipulierter
+  // Request Anwesenheit für ein fremdes Kind (anderer Gruppe/anderem
+  // Verein) eintragen.
+  if (entries.length > 0) {
+    const validChildIds = await db.listChildIdsInGroup(c.env.DB, groupId);
+    if (entries.some((e) => !validChildIds.has(e.childId))) {
+      return c.json({ error: "Mindestens ein Kind gehört nicht zu dieser Gruppe" }, 403);
+    }
+  }
+
+  // ledBy: das Frontend erlaubt hier bewusst jedes Vereinsmitglied ("wer hat
+  // geleitet?" listet alle Mitglieder, nicht nur Besitzer*in/Mit-Trainer*in
+  // - z.B. spontane Aushilfe). Autorisierung heißt hier also "gehört zum
+  // selben Verein wie die Gruppe", nicht "darf die Gruppe sonst bearbeiten"
+  // - sonst könnte ein manipulierter Request aber immer noch eine beliebige
+  // fremde User-ID als Leitung zuschreiben (Stundenerfassung/Nachweis-
+  // Relevanz), das war die eigentliche Lücke.
   const ledBy = body?.ledBy === undefined ? c.get("userId") : optionalId(body.ledBy);
   if (ledBy === undefined) return c.json({ error: "Ungültige Übungsleiter-ID" }, 400);
+  if (ledBy !== null && ledBy !== c.get("userId")) {
+    const ledByUser = await db.getUserById(c.env.DB, ledBy);
+    if (!ledByUser || !group.club_id || ledByUser.clubId !== group.club_id) {
+      return c.json({ error: "Ungültige Übungsleiter-ID" }, 400);
+    }
+  }
 
   // Termin-spezifische Abweichungen von den Gruppen-Vorgaben, z.B. für
   // Turniere - leer/null bedeutet "wie in der Gruppe hinterlegt".

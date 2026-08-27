@@ -152,8 +152,11 @@ npm run dev                       # startet wrangler dev auf Port 8787
 Ersten Login-Nutzer anlegen:
 
 ```sh
-node scripts/create-admin.mjs admin@example.com "MeinSicheresPasswort" "Vorname Nachname"
+node scripts/create-admin.mjs admin@example.com "Vorname Nachname"
 ```
+
+Das Passwort wird danach interaktiv abgefragt (nicht als Argument), damit es
+nicht in der Shell-History landet.
 
 Das Skript gibt ein fertiges `wrangler d1 execute ... --local`-Kommando aus,
 das einmalig ausgeführt wird.
@@ -177,7 +180,9 @@ Beide Worker werden unabhängig deployed:
 ```sh
 # API-Worker (besitzt die D1-Datenbank)
 cd turnen/worker
-wrangler d1 create turnen          # einmalig, database_id in wrangler.toml eintragen
+wrangler d1 create <name> --jurisdiction eu   # einmalig, database_id in wrangler.toml eintragen -
+                                               # jurisdiction=eu ist Pflicht (Finding CF-01), nicht
+                                               # nur ein --location-Hint
 npm run db:migrate:remote
 wrangler secret put JWT_SECRET
 npm run deploy
@@ -206,5 +211,5 @@ Neue D1-Migrationen werden aus `turnen/worker/` heraus ausgeführt:
 
 ```sh
 cd turnen/worker
-wrangler d1 migrations apply turnen --remote
+npm run db:migrate:remote
 ```

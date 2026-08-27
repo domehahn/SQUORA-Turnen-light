@@ -60,12 +60,17 @@ export async function seedGroup(input: {
   return { id };
 }
 
-export async function seedChild(input: { firstName: string; lastName: string; groupId: string | null }): Promise<{ id: string }> {
+export async function seedChild(input: {
+  firstName: string;
+  lastName: string;
+  groupId: string | null;
+  clubId?: string | null;
+}): Promise<{ id: string }> {
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT INTO children (id, first_name, last_name, birth_date, group_id) VALUES (?, ?, ?, '2020-01-01', ?)`
+    `INSERT INTO children (id, first_name, last_name, birth_date, group_id, club_id) VALUES (?, ?, ?, '2020-01-01', ?, ?)`
   )
-    .bind(id, input.firstName, input.lastName, input.groupId)
+    .bind(id, input.firstName, input.lastName, input.groupId, input.clubId ?? null)
     .run();
   return { id };
 }

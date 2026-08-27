@@ -13,6 +13,43 @@ Begleitdokumente:
 - `scripts/privacy-check.ts` — automatisiertes, lesendes Prüfskript (getestet, siehe unten)
 - weitere `docs/privacy/*.md` gemäß Abschnitt 22 der Anfrage (Data Inventory, Data Flow, TOMs, Retention, Consent, Data Subject Rights, Third Parties, DPIA-Entwurf) sowie `docs/security/threat-model.md` und `docs/security/privacy-incident-response.md`
 
+## Nachtrag: Externe Production-Readiness-Prüfung (2026-08-27)
+
+Eine externe Prüfung des damaligen Stands (Commit `8b0f06d`) kam zum Ergebnis
+**"NO-GO für uneingeschränkten Produktivbetrieb"** wegen eines Cross-Tenant-
+Fehlers (P0) sowie mehrerer Production-Blocker. Diese Session hat daraufhin
+behoben:
+
+- **SEC-13 (P0, Cross-Tenant-Isolation bei gruppenlosen Kindern)** — siehe
+  Finding unten. Der schwerwiegendste Fund, vollständig behoben inkl.
+  Schema-Änderung, Backfill und 4 neuen Tests.
+- **SEC-14 (BOLA bei der Anwesenheitserfassung)** — siehe Finding unten.
+- MFA-Einrichtung um QR-Code ergänzt (`qrcode`-Paket, clientseitig).
+
+**Bewusst noch NICHT umgesetzt** (aus der externen Prüfung, größere
+Architektur-/Betriebsentscheidungen, nicht in einem Durchgang mit
+vertretbarem Risiko umsetzbar):
+
+- **Passwort-Reset-Token-Einmaligkeit**: aktuell ein signiertes 30-Minuten-JWT ohne Revocation-Tabelle - theoretisch mehrfach innerhalb der Gültigkeit nutzbar.
+- **Session Revocation / `session_version`**: Passwort ändern/zurücksetzen invalidiert bestehende JWTs anderer Geräte nicht.
+- **`localStorage`-JWT → HttpOnly-Cookie-Session**: würde eine grundlegend andere Auth-Architektur bedeuten (Cookie-Handling über die Service-Binding-Kette `turnen-web` → `turnen-api`, CORS/SameSite/Path), hohes Risiko für bestehende Produktivnutzer*innen ohne vorherige explizite Freigabe.
+- **Idle-/Absolute-Session-Timeout serverseitig**: setzt eine Sessions-Tabelle voraus (dieselbe Architekturfrage wie oben).
+- **MFA API-seitige statt UI-seitige Durchsetzung**: aktuell blockiert nur das Frontend-Overlay; ein direkter API-Client könnte MFA umgehen.
+- **`workers_dev`/Preview-URLs explizit deaktivieren** in beiden `wrangler.toml` (Konfigurationsänderung, aber Auswirkung auf bestehende Deploy-URLs nicht ungeprüft vorgenommen).
+- **`db:migrate:remote`/`create-admin.mjs` zeigen noch auf den alten DB-Namen `turnen`** statt `turnen-eu` (Skript-Fix, s. TODO unten).
+- **PBKDF2-Iterationen** (100k → OWASP-Empfehlung 600k) - niedrige Priorität, bereits als Beobachtung (INFO-03) dokumentiert.
+- **CSP/HSTS-Header** fehlen noch.
+- **CI/CD-Pipeline, Branch Protection, Required Status Checks** - GitHub-Repo-Einstellungen, kein Code.
+- **IaC (`cloudflare-turnen-iac/`) entspricht nicht der echten Infrastruktur** - lt. früherer expliziter Nutzeranweisung unangetastet lassen.
+- Backup/Restore-Test, externer Pentest, DAST - organisatorische Prozesse, nicht code-seitig lösbar.
+
+Diese Punkte bleiben **offen und sind nicht vergessen** - sie sind bewusst
+zurückgestellt, weil sie entweder eine grundlegende Architekturentscheidung
+mit Ausfallrisiko für bestehende Nutzer*innen bedeuten, GitHub-
+Repo-Konfiguration statt Code sind, oder explizit außerhalb des Scopes
+liegen (IaC). Vor einer Freigabe für einen zweiten/dritten Verein sollten
+mindestens die Session-Management-Punkte nachgezogen werden.
+
 ## Nachtrag: Gesundheitshinweise als Feature entfernt (2026-08-26)
 
 Auf ausdrücklichen Wunsch wurde `children.health_notes` (freies Textfeld für
@@ -73,6 +110,8 @@ verifizierenden Tests. Das ist selbst ein Finding (siehe SEC-08).
 | INFO-03 | Passwort-Hashing ist bereits solide: PBKDF2-SHA256, 100.000 Iterationen, zufälliges 16-Byte-Salt pro Nutzer, timing-safe Vergleich (`worker/src/auth.ts`). Kein Klartext-Passwort wird je gespeichert oder geloggt. | Info (positiv) | Auth | — | Art. 32, OWASP ASVS V2 | Argon2id wäre aktueller Best-Practice-Standard (Abschnitt 17 der Anfrage) — **Migration nur mit Plan** (bestehende Hashes müssten schrittweise migriert werden), niedrige Priorität angesichts bereits ausreichender Iterationszahl. | Beobachtung |
 | REVIEW-01 | Kein Auftragsverarbeitungsvertrag (AVV) mit Cloudflare (D1, Workers, Email Sending) dokumentiert; Verarbeitungsort/Region von D1 aus dem Code nicht verifizierbar. | — | Infrastruktur | Nicht mit Code lösbar. | Art. 28, Art. 44ff. | **LEGAL/PRIVACY REVIEW REQUIRED**: AVV abschließen, Verarbeitungsort klären, in `docs/privacy/third-parties.md` dokumentieren. | Offen |
 | REVIEW-02 | Keine Datenschutzerklärung, kein Verarbeitungsverzeichnis, keine dokumentierte Rechtsgrundlage für die Verarbeitung von Kindergesundheitsdaten durch den Verein. | — | Organisatorisch | Nicht mit Code lösbar. | Art. 6, Art. 9, Art. 30 | **LEGAL/PRIVACY REVIEW REQUIRED**: mit Datenschutzbeauftragte:m des Vereins/Verbands klären. | Offen |
+| **SEC-13** | **P0 — Cross-Tenant-Isolation-Fehler bei gruppenlosen Kindern.** `listChildrenForUser()` und `isChildWritable()` behandelten "Kind hat keine Gruppe" (`group_id IS NULL` - regulär z.B. bei der Vereins-Warteliste vor Gruppenzuteilung) fälschlich als "für jede*n authentifizierte*n Nutzer*in sichtbar/bearbeitbar, vereinsübergreifend" - eine als Alt-Bestand-Kompatibilität gedachte Öffnung, die auch neu angelegte Kinder ohne Gruppe traf. Fund der externen Production-Readiness-Prüfung 2026-08-27. | **War P0/Critical** | `worker/src/db.ts`, `worker/src/index.ts` | Bei mehr als einem Verein: jeder authentifizierte Nutzer konnte gruppenlose Kinder fremder Vereine sehen und bearbeiten. Zum Auffindungszeitpunkt 0 betroffene Datensätze in Produktion (1 Verein, 0 gruppenlose Kinder). | Art. 25, Art. 32 (Broken Object Level Authorization) | `children.club_id` als primäre, nicht mehr nur über die Gruppe abgeleitete Mandantengrenze eingeführt (Migration 0036, Backfill aller 38 Bestandskinder verifiziert). Wird beim Anlegen immer gesetzt (aus Zielgruppe oder Verein der anlegenden Person, `clubId` jetzt Pflichtfeld in `ChildInput`), bei Gruppenwechsel synchron mitgeführt (`moveChildToGroup()`). Sichtbarkeits-/Schreibprüfung komplett auf `club_id` umgestellt; verbleibende Kompatibilitätszweige nur noch für echten, vereinslosen Alt-Bestand (aktuell 0 Datensätze). Beim Schreiben der SQL-Query zunächst ein LEFT-JOIN-Artefakt eingebaut (NULL-Spalten aus fehlendem Gruppen-Join wurden fälschlich als "verwaiste Gruppe" gewertet) - durch den neuen Test sofort aufgefallen und vor Deployment korrigiert. 4 neue automatisierte Cross-Tenant-Tests (`worker/test/tenant-isolation.test.ts`). | **Behoben** (2026-08-27), remote migriert und deployt |
+| **SEC-14** | **BOLA bei der Anwesenheitserfassung.** `PUT /api/attendance/:groupId/:date` prüfte nur, ob der Nutzer die Zielgruppe beschreiben darf, validierte aber nie, ob die im Body übermittelten `childId`-Werte tatsächlich zu dieser Gruppe gehören - ein manipulierter Request hätte Anwesenheit für ein beliebiges (auch fremdes) Kind eintragen können. `ledBy` (Übungsleiter*in) war ebenfalls nur auf UUID-Format geprüft, nicht auf Vereinszugehörigkeit. Fund der externen Production-Readiness-Prüfung 2026-08-27. | **War High** | `worker/src/index.ts` (Attendance-Route) | Anwesenheitsdaten für fremde Kinder eintragbar; beliebige User-ID als Übungsleitung zuschreibbar (Stundenerfassungs-Relevanz). | OWASP API-Security BOLA | Neue `db.listChildIdsInGroup()`: jede übermittelte `childId` wird gegen die tatsächlichen Kinder der Zielgruppe geprüft, sonst 403. `ledBy` (falls abweichend vom anfragenden Nutzer) muss zum selben Verein wie die Gruppe gehören - das Frontend erlaubt bewusst jedes Vereinsmitglied als Übungsleitung ("wer hat geleitet?"), nicht nur Besitz/Mit-Trainerschaft, die Prüfung spiegelt das. 3 neue Tests. | **Behoben** (2026-08-27) |
 | **CF-01** | **`D1_DATABASE_WITHOUT_EU_JURISDICTION`** — die vorherige produktive D1-Datenbank `turnen` (`60c1750c-a2c9-4036-b217-1376ea80f216`) lief mit `jurisdiction: null`, nur `running_in_region: WEUR`. | War **High** | Cloudflare D1 (Infrastruktur) | Keine vertraglich/technisch harte EU-Datengrenze. | Art. 44ff. DSGVO | Nutzerentscheidung 2026-08-26: sofortige Migration freigegeben. Neue Datenbank `turnen-eu` mit `jurisdiction = "eu"` angelegt, Schema+Daten migriert (Zeilenzahlen aller 21 Tabellen + `PRAGMA foreign_key_check` vor Cutover verifiziert), `wrangler.toml` umgestellt, deployt, alte Datenbank inkl. Time-Travel-Historie gelöscht. Details: `docs/privacy/cloudflare-data-flow.md`. | **Behoben** (2026-08-26) |
 | **CF-02** | `CLOUDFLARE_WORKER_GLOBAL_PROCESSING` — beide Worker (`turnen-web`, `turnen-api`) laufen ohne Cloudflare Regional Services/Data Localization; Anfragen (inkl. Gesundheitsdaten im Request-Body) werden am jeweils nächstgelegenen globalen Edge-Standort verarbeitet, nicht auf die EU beschränkt. | **High** (Gesundheitsdaten Minderjähriger) | Cloudflare Workers (Infrastruktur) | Verarbeitung besonderer Kategorien außerhalb der EU technisch möglich. | Art. 44ff. DSGVO | Regional Services (Business/Enterprise-Feature) aktivieren **oder** architektonisch akzeptieren, dass Health-Daten am Edge verarbeitet werden (Transit, nicht Storage) — Abwägung siehe `docs/privacy/cloudflare-data-flow.md`. **LEGAL/PRIVACY REVIEW REQUIRED.** | Nicht behoben — nur dokumentiert |
 | CF-03 | Cache-Verhalten für `/api/*` ist im Worker-Code korrekt auf `Cache-Control: no-store` gesetzt (`worker/src/index.ts`, globale Middleware) — das schützt vor Caching am Origin. Ob eine dashboard-seitige Cloudflare **Cache Rule** ("Cache Everything") dies für die Zone `squora.de` überschreiben könnte, ist aus dem Repo nicht verifizierbar (Cache Rules sind kein Code-Artefakt). | Medium (Verifikationslücke) | Cloudflare Cache/CDN | Falls eine dashboard-Regel existiert, könnten API-Antworten (inkl. Gesundheitsdaten) am Edge gecacht werden, obwohl der Code das verhindern will. | Art. 32 | **VERIFY IN CLOUDFLARE DASHBOARD**: Cache Rules für `squora.de/turnen-light/api/*` prüfen, ggf. explizite „Bypass Cache"-Regel setzen. | Offen — Dashboard-Prüfung nötig |

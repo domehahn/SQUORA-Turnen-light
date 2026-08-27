@@ -123,6 +123,11 @@ export interface ChildRow {
   last_name: string;
   birth_date: string;
   group_id: string | null;
+  // Primäre Mandantengrenze (Finding aus der Production-Readiness-Prüfung,
+  // P0) - group_id allein reicht nicht, weil ein Kind vorübergehend ohne
+  // Gruppe existieren kann (z.B. Vereins-Warteliste vor Gruppenzuteilung).
+  // Nicht Teil des öffentlichen Child-Typs (rein interne Tenant-Prüfung).
+  club_id: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   family_id: string | null;

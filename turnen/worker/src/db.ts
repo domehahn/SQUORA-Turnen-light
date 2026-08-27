@@ -558,13 +558,22 @@ export async function listChildrenForUser(
   const [{ results }, coLeaderGroupIds] = await Promise.all([
     db
       .prepare(
+        // Mandantengrenze ist children.club_id, NICHT mehr "hat keine
+        // Gruppe" (P0-Fix, s. Migration 0036/PRIVACY_SECURITY_GAP_ANALYSIS.md).
+        // Ein gruppenloses Kind (z.B. auf der Vereins-Warteliste) ist nur
+        // innerhalb des eigenen Vereins sichtbar, nicht mehr für jede*n
+        // authentifizierte*n Nutzer*in. Die letzten beiden OR-Zweige bleiben
+        // als Kompatibilitäts-Öffnung für echte Alt-Bestand-Datensätze ohne
+        // jede Vereinszuordnung bestehen (club_id UND group_id beide NULL,
+        // bzw. eine Gruppe ganz ohne Besitzer/Verein) - im aktuellen
+        // Datenbestand gibt es davon keine, das ist reine Absicherung.
         `SELECT c.*, g.owner_id as group_owner_id, g.club_id as group_club_id
          FROM children c
          LEFT JOIN groups g ON g.id = c.group_id
-         WHERE (c.group_id IS NULL
+         WHERE ((c.club_id IS NOT NULL AND c.club_id = ?2)
             OR g.owner_id = ?1
-            OR (g.club_id IS NOT NULL AND g.club_id = ?2)
-            OR (g.owner_id IS NULL AND g.club_id IS NULL))
+            OR (c.club_id IS NULL AND c.group_id IS NULL)
+            OR (c.group_id IS NOT NULL AND g.owner_id IS NULL AND g.club_id IS NULL))
            AND (?3 OR c.status = 'active')
          ORDER BY c.last_name ASC, c.first_name ASC`
       )
@@ -574,9 +583,10 @@ export async function listChildrenForUser(
   ]);
   return results.map((row) => {
     const canEdit =
-      row.group_id === null ||
+      (row.group_id === null && row.club_id !== null && row.club_id === clubId) ||
+      (row.group_id === null && row.club_id === null) ||
       canWriteGroup({ owner_id: row.group_owner_id, club_id: row.group_club_id }, userId) ||
-      coLeaderGroupIds.has(row.group_id);
+      (row.group_id !== null && coLeaderGroupIds.has(row.group_id));
     return rowToChild(row, canEdit);
   });
 }
@@ -651,6 +661,10 @@ export interface ChildInput {
   lastName: string;
   birthDate: string;
   groupId: string | null;
+  // Primäre Mandantengrenze (P0-Fix, s. Migration 0036) - MUSS vom Aufrufer
+  // gesetzt werden (aus der Zielgruppe oder dem Verein der anlegenden
+  // Person), niemals implizit aus group_id abgeleitet hier in db.ts.
+  clubId: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
   familyId: string | null;
@@ -661,8 +675,8 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
   await db
     .prepare(
       `INSERT INTO children
-         (id, first_name, last_name, birth_date, group_id, emergency_contact_name, emergency_contact_phone, family_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         (id, first_name, last_name, birth_date, group_id, club_id, emergency_contact_name, emergency_contact_phone, family_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -670,6 +684,7 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
       input.lastName,
       input.birthDate,
       input.groupId,
+      input.clubId,
       input.emergencyContactName,
       input.emergencyContactPhone,
       input.familyId
@@ -682,7 +697,7 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
 export async function updateChild(db: D1Database, id: string, input: ChildInput): Promise<Child | null> {
   await db
     .prepare(
-      `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?,
+      `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, club_id = ?,
               emergency_contact_name = ?, emergency_contact_phone = ?, family_id = ? WHERE id = ?`
     )
     .bind(
@@ -690,6 +705,7 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
       input.lastName,
       input.birthDate,
       input.groupId,
+      input.clubId,
       input.emergencyContactName,
       input.emergencyContactPhone,
       input.familyId,
@@ -882,6 +898,16 @@ export interface SessionOverrides {
   note: string | null;
 }
 
+// Für die serverseitige BOLA-Prüfung beim Speichern der Anwesenheit
+// (Finding aus der Production-Readiness-Prüfung 2026-08-27): der Client
+// darf keine childId einer fremden Gruppe/eines fremden Vereins
+// unterschieben können - vorher wurde jede syntaktisch gültige UUID
+// ungeprüft in attendance_entries geschrieben.
+export async function listChildIdsInGroup(db: D1Database, groupId: string): Promise<Set<string>> {
+  const { results } = await db.prepare("SELECT id FROM children WHERE group_id = ?").bind(groupId).all<{ id: string }>();
+  return new Set(results.map((r) => r.id));
+}
+
 export async function saveAttendance(
   db: D1Database,
   groupId: string,
@@ -1062,7 +1088,14 @@ export async function listAllLedSessionsForUser(db: D1Database, userId: string):
 // --- Gruppenwechsel / Verschiebe-Anfragen ---------------------------------
 
 export async function moveChildToGroup(db: D1Database, childId: string, groupId: string): Promise<void> {
-  await db.prepare("UPDATE children SET group_id = ? WHERE id = ?").bind(groupId, childId).run();
+  // club_id muss mit umziehen (P0-Fix, s. Migration 0036) - sonst bliebe
+  // ein Kind nach einem Gruppenwechsel in eine andere Vereinsgruppe mit dem
+  // club_id des alten Vereins stehen, was die Mandantengrenze verletzt.
+  const group = await db.prepare("SELECT club_id FROM groups WHERE id = ?").bind(groupId).first<{ club_id: string | null }>();
+  await db
+    .prepare("UPDATE children SET group_id = ?, club_id = ? WHERE id = ?")
+    .bind(groupId, group?.club_id ?? null, childId)
+    .run();
 }
 
 export async function getPendingMoveRequestForChild(db: D1Database, childId: string): Promise<MoveRequestRow | null> {
