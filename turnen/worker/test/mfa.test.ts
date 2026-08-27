@@ -42,7 +42,7 @@ describe("MFA (TOTP)", () => {
     // Normaler Login liefert jetzt nur noch ein Zwischen-Token, keine Sitzung.
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-full@test.local", password: "password-123" }),
     });
     expect(loginRes.status).toBe(200);
@@ -59,7 +59,7 @@ describe("MFA (TOTP)", () => {
     const mfaCode = await generateTotp(base32Decode(secret));
     const mfaLoginRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken: loginBody.mfaToken, code: mfaCode }),
     });
     expect(mfaLoginRes.status).toBe(200);
@@ -72,26 +72,26 @@ describe("MFA (TOTP)", () => {
     // noch einmal (einmalig verwendbar).
     const loginRes2 = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-full@test.local", password: "password-123" }),
     });
     const loginBody2 = (await loginRes2.json()) as { mfaToken: string };
     const backupRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken: loginBody2.mfaToken, code: backupCodes[0] }),
     });
     expect(backupRes.status).toBe(200);
 
     const loginRes3 = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-full@test.local", password: "password-123" }),
     });
     const loginBody3 = (await loginRes3.json()) as { mfaToken: string };
     const reuseRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken: loginBody3.mfaToken, code: backupCodes[0] }),
     });
     expect(reuseRes.status).toBe(401);
@@ -115,13 +115,13 @@ describe("MFA (TOTP)", () => {
 
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-wrong@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const wrongRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: "000000" }),
     });
     expect(wrongRes.status).toBe(401);
@@ -155,7 +155,7 @@ describe("MFA (TOTP)", () => {
     // Nach Deaktivierung wieder normaler Login ohne zweiten Faktor.
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-disable@test.local", password: "password-123" }),
     });
     const body = (await loginRes.json()) as { mfaRequired?: boolean };
@@ -327,14 +327,14 @@ describe("MFA-Setup/Rotation gehärtet (Sicherheitsinvariante)", () => {
     // Der ursprüngliche TOTP-Code funktioniert weiterhin normal beim Login.
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-rot-invariant@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const freshCode = await generateTotp(base32Decode(secret));
     const mfaLoginRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: freshCode }),
     });
     expect(mfaLoginRes.status).toBe(200);
@@ -390,14 +390,14 @@ describe("MFA-Setup/Rotation gehärtet (Sicherheitsinvariante)", () => {
     // Alter Code funktioniert beim Login weiterhin.
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-rot-wrong-code@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const freshOldCode = await generateTotp(base32Decode(oldSecret));
     const mfaLoginRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: freshOldCode }),
     });
     expect(mfaLoginRes.status).toBe(200);
@@ -441,14 +441,14 @@ describe("MFA-Setup/Rotation gehärtet (Sicherheitsinvariante)", () => {
     expect(meBody.mfaEnabled).toBe(true);
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-rot-wrong-confirm@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const finalCode = await generateTotp(base32Decode(oldSecret));
     const mfaLoginRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: finalCode }),
     });
     expect(mfaLoginRes.status).toBe(200);
@@ -492,14 +492,14 @@ describe("MFA-Setup/Rotation gehärtet (Sicherheitsinvariante)", () => {
     // Neuer Code funktioniert beim Login.
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-rot-success@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const freshNewCode = await generateTotp(base32Decode(newSecret));
     const mfaLoginRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: freshNewCode }),
     });
     expect(mfaLoginRes.status).toBe(200);
@@ -507,13 +507,13 @@ describe("MFA-Setup/Rotation gehärtet (Sicherheitsinvariante)", () => {
     // Alter Backup-Code ist danach ungültig.
     const loginRes2 = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-rot-success@test.local", password: "password-123" }),
     });
     const { mfaToken: mfaToken2 } = (await loginRes2.json()) as { mfaToken: string };
     const oldBackupRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken: mfaToken2, code: oldBackupCodes[0] }),
     });
     expect(oldBackupRes.status).toBe(401);
@@ -561,7 +561,7 @@ describe("MFA-Backup-Codes: atomarer, echter One-Time-Verbrauch (AUTH-12/AUTH-13
     const getMfaToken = async () => {
       const res = await SELF.fetch("https://example.test/api/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ email: "mfa-race@test.local", password: "password-123" }),
       });
       const body = (await res.json()) as { mfaToken: string };
@@ -572,12 +572,12 @@ describe("MFA-Backup-Codes: atomarer, echter One-Time-Verbrauch (AUTH-12/AUTH-13
     const [resA, resB] = await Promise.all([
       SELF.fetch("https://example.test/api/login/mfa", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ mfaToken: mfaTokenA, code: raceCode }),
       }),
       SELF.fetch("https://example.test/api/login/mfa", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ mfaToken: mfaTokenB, code: raceCode }),
       }),
     ]);
@@ -613,14 +613,14 @@ describe("MFA-Backup-Codes: atomarer, echter One-Time-Verbrauch (AUTH-12/AUTH-13
 
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-row@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const freshCode = await generateTotp(base32Decode(secret));
     await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: freshCode }),
     });
 
@@ -740,13 +740,13 @@ describe("MFA-Backup-Codes: atomarer, echter One-Time-Verbrauch (AUTH-12/AUTH-13
     // dieselbe Codeliste, ruft aber nie tryConsumeBackupCode() auf.
     const loginRes = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "mfa-rotate-consume@test.local", password: "password-123" }),
     });
     const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
     const reuseRes = await SELF.fetch("https://example.test/api/login/mfa", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ mfaToken, code: backupCodes[0] }),
     });
     expect(reuseRes.status).toBe(401);

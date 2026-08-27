@@ -16,7 +16,7 @@ describe("Session-Management", () => {
     await seedUser({ email: "session-cookie@test.local", password: "password-123" });
     const res = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "session-cookie@test.local", password: "password-123" }),
     });
     expect(res.status).toBe(200);
@@ -155,14 +155,14 @@ describe("Session-Management", () => {
 
     const firstConfirm = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "brandnew-password-111" }),
     });
     expect(firstConfirm.status).toBe(200);
 
     const secondConfirm = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "another-password-222" }),
     });
     expect(secondConfirm.status).toBe(401);
@@ -179,7 +179,7 @@ describe("Session-Management", () => {
 
     await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "yet-another-password-333" }),
     });
 

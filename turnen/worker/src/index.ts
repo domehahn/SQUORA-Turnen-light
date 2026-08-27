@@ -128,15 +128,31 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
-// CSRF Defense-in-Depth (externe Production-Readiness-Prüfung 2026-08-27):
-// SameSite=Strict auf dem Session-Cookie verhindert bereits, dass ein
-// fremder Origin das Cookie bei einem Cross-Site-Request mitschickt - laut
-// OWASP soll das aber nicht die einzige Schutzschicht sein (ältere Browser,
-// künftige SameSite-Änderungen, Subdomain-Sonderfälle). Zusätzliche
-// serverseitige Prüfung für alle zustandsändernden Methoden: Origin (bzw.
-// ersatzweise Sec-Fetch-Site für Browser, die bei manchen Requests keinen
-// Origin-Header senden) muss auf den eigenen Frontend-Origin bzw. "same-
-// origin" zeigen. GET/HEAD/OPTIONS sind lesend und bleiben unangetastet.
+// CSRF Defense-in-Depth (externe Production-Readiness-Prüfung 2026-08-27,
+// CSRF-11-Härtung im zweiten Durchgang 2026-08-27): SameSite=Strict auf dem
+// Session-Cookie verhindert bereits, dass ein fremder Origin das Cookie bei
+// einem Cross-Site-Request mitschickt - laut OWASP soll das aber nicht die
+// einzige Schutzschicht sein (ältere Browser, künftige SameSite-Änderungen,
+// Subdomain-Sonderfälle). Zusätzliche serverseitige Prüfung für alle
+// zustandsändernden Methoden: Origin (bzw. ersatzweise Sec-Fetch-Site für
+// Browser, die bei manchen Requests keinen Origin-Header senden) muss auf
+// den eigenen Frontend-Origin bzw. "same-origin" zeigen. GET/HEAD/OPTIONS
+// sind lesend und bleiben unangetastet.
+//
+// Fail-closed bei FEHLENDEN Headern (CSRF-11): früher galt "weder Origin
+// noch Sec-Fetch-Site gesetzt -> erlaubt" (Begründung: nicht-browserbasierte
+// Clients wie curl). Das ist ein unnötiger Fail-open-Pfad: jeder moderne,
+// evergreen Browser sendet bei einem zustandsändernden fetch/XHR/Formular-
+// Request IMMER mindestens einen der beiden Header, ob same-origin oder
+// cross-origin (seit mehreren Jahren Standardverhalten). Ein Request ganz
+// ohne beide Header ist damit so gut wie nie echter, durch eine Person
+// ausgelöster Browser-Traffic - sondern typischerweise ein direkter
+// HTTP-Client (curl/Postman/Skript). Diese App hat KEINEN legitimen
+// nicht-browserbasierten Aufrufer für zustandsändernde Routen (der
+// scheduled()-Handler ruft interne Funktionen direkt auf, nie per HTTP
+// gegen sich selbst - s. `export default { scheduled }` unten) - der
+// Fail-open-Pfad hätte also nur Angriffsfläche ohne echten Nutzen bewahrt.
+// Jetzt: fehlen beide Header, wird der Request abgelehnt.
 const CSRF_UNSAFE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
 
 function isSameOriginRequest(c: { req: { url: string; header: (name: string) => string | undefined } }, env: Env): boolean {
@@ -144,7 +160,7 @@ function isSameOriginRequest(c: { req: { url: string; header: (name: string) => 
   if (secFetchSite) return secFetchSite === "same-origin" || secFetchSite === "none";
 
   const origin = c.req.header("Origin");
-  if (!origin) return true; // kein Origin/Sec-Fetch-Site: z.B. direkte curl-Requests, nicht browserbasiertes CSRF
+  if (!origin) return false; // weder Origin noch Sec-Fetch-Site gesetzt: kein bekannter legitimer Aufrufer (s.o.)
 
   if (origin === new URL(env.FRONTEND_URL).origin) return true;
   const apiHostname = new URL(c.req.url).hostname;

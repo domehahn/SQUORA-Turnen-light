@@ -31,7 +31,7 @@ describe("Authentifizierung", () => {
     await seedUser({ email: "auth-wrong-pw@test.local", password: "correct-password-123" });
     const res = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "auth-wrong-pw@test.local", password: "wrong-password" }),
     });
     expect(res.status).toBe(401);
@@ -47,7 +47,7 @@ describe("Rate Limiting (SEC-01)", () => {
     for (let i = 0; i < 10; i++) {
       const res = await SELF.fetch("https://example.test/api/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ email, password: "wrong-password" }),
       });
       lastStatus = res.status;
@@ -56,7 +56,7 @@ describe("Rate Limiting (SEC-01)", () => {
 
     const blocked = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email, password: "correct-password-123" }), // sogar mit korrektem Passwort
     });
     expect(blocked.status).toBe(429);

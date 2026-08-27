@@ -13,12 +13,12 @@ describe("Passwort-Reset per E-Mail", () => {
 
     const resExists = await SELF.fetch("https://example.test/api/password-reset/request", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "reset-exists@test.local" }),
     });
     const resMissing = await SELF.fetch("https://example.test/api/password-reset/request", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "does-not-exist@test.local" }),
     });
     expect(resExists.status).toBe(200);
@@ -29,7 +29,7 @@ describe("Passwort-Reset per E-Mail", () => {
   it("Reset-Confirm mit ungültigem Token schlägt fehl", async () => {
     const res = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token: "not-a-real-token", newPassword: "brandnew-password-456" }),
     });
     expect(res.status).toBe(401);
@@ -108,7 +108,7 @@ describe("Passwort-Reset Rate Limiting", () => {
     for (let i = 0; i < 6; i++) {
       lastRes = await SELF.fetch("https://example.test/api/password-reset/request", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ email: "rl-same-email@test.local" }),
       });
       expect(lastRes.status).toBe(200);
@@ -124,7 +124,7 @@ describe("Passwort-Reset Rate Limiting", () => {
     for (let i = 0; i < 6; i++) {
       lastRes = await SELF.fetch("https://example.test/api/password-reset/request", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ email: "rl-unknown-email@test.local" }),
       });
       expect(lastRes.status).toBe(200);
@@ -148,14 +148,14 @@ describe("Passwort-Reset: Token-Verbrauchsreihenfolge", () => {
 
     const rejectedRes = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "zu-kurz" }),
     });
     expect(rejectedRes.status).toBe(400);
 
     const successRes = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "jetzt-lang-genug-123" }),
     });
     expect(successRes.status).toBe(200);
@@ -169,14 +169,14 @@ describe("Passwort-Reset: Token-Verbrauchsreihenfolge", () => {
 
     const firstRes = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "erster-wechsel-123" }),
     });
     expect(firstRes.status).toBe(200);
 
     const secondRes = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "zweiter-wechsel-456" }),
     });
     expect(secondRes.status).toBe(401);
@@ -191,12 +191,12 @@ describe("Passwort-Reset: Token-Verbrauchsreihenfolge", () => {
     const [res1, res2] = await Promise.all([
       SELF.fetch("https://example.test/api/password-reset/confirm", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ token, newPassword: "paralleler-wechsel-a" }),
       }),
       SELF.fetch("https://example.test/api/password-reset/confirm", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
         body: JSON.stringify({ token, newPassword: "paralleler-wechsel-b" }),
       }),
     ]);
