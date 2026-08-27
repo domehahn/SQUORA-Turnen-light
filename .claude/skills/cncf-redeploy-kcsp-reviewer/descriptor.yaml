@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Redeploy (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We know Azure AKS.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Redeploy (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We know Azure AKS.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-redeploy-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

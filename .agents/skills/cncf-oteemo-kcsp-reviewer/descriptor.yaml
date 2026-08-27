@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Oteemo (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Oteemo is a digital product engineering firm delivering Agentic AI solutions through human-centered design. Our services include operationalization of Kubernetes platforms, application container migrations and development on cloud native architectures.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Oteemo (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Oteemo is a digital product engineering firm delivering Agentic AI solutions through human-centered design. Our services include operationalization of Kubernetes platforms, application container migrations and development on cloud native architectures.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-oteemo-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

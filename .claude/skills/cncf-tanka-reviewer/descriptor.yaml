@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Tanka using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Tanka is a composable configuration utility for Kubernetes. It leverages the Jsonnet language to realize flexible, reusable and concise configuration.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Tanka using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Tanka is a composable configuration utility for Kubernetes. It leverages the Jsonnet language to realize flexible, reusable and concise configuration.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-tanka-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

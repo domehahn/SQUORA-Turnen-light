@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-huawei-convergent-billing-system-cbs-reviewer
+version: 0.1.0
+description: Review Huawei Convergent Billing System (CBS) using its official documentation and repository in the Special / Certified CNFs category. The next-generation convergent billing system(CBS) helps carriers reduce costs and improve efficiency with leading 5G monetization practices and cloud-native technologies, enabling carriers to monetize 5G productivity beyond connectivity.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Huawei Convergent Billing System (CBS) using its official documentation and repository in the Special / Certified CNFs category. The next-generation convergent billing system(CBS) helps carriers reduce costs and improve efficiency with leading 5G monetization practices and cloud-native technologies, enabling carriers to monetize 5G productivity beyond connectivity.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

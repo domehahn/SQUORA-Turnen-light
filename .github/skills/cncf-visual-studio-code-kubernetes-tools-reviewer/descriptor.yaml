@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-visual-studio-code-kubernetes-tools-reviewer
+version: 0.1.0
+description: Review Visual Studio Code Kubernetes Tools using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. The extension for developers building applications to run in Kubernetes clusters and for DevOps staff troubleshooting Kubernetes applications.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Visual Studio Code Kubernetes Tools using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. The extension for developers building applications to run in Kubernetes clusters and for DevOps staff troubleshooting Kubernetes applications.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

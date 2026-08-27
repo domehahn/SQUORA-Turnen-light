@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Apolicy using its official documentation and repository in the Provisioning / Security & Compliance category. Apolicy fuses security and compliance into your cloud native development pipeline. Using policy-as-code,  we automate risk, policy and remediation from source to production
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Apolicy using its official documentation and repository in the Provisioning / Security & Compliance category. Apolicy fuses security and compliance into your cloud native development pipeline. Using policy-as-code,  we automate risk, policy and remediation from source to production
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-apolicy-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

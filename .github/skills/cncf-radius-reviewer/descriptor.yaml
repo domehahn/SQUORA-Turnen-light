@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-radius-reviewer
+version: 0.1.0
+description: Review Radius using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Radius is a cloud-native application platform that enables developers and the platform engineers that support them to collaborate on delivering and managing cloud-native applications that follow organizational best practices for cost, operations and security, by default.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Radius using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Radius is a cloud-native application platform that enables developers and the platform engineers that support them to collaborate on delivering and managing cloud-native applications that follow organizational best practices for cost, operations and security, by default.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

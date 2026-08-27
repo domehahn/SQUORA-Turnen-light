@@ -1,0 +1,30 @@
+schema_version: "2"
+name: devsecops-maturity-reviewer
+version: 0.1.0
+description: Assess maturity across plan, code, build, test, release, deploy, and operate with automation, security gates, ownership, and feedback loops.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Assess maturity across plan, code, build, test, release, deploy, and operate with automation, security gates, ownership, and feedback loops.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

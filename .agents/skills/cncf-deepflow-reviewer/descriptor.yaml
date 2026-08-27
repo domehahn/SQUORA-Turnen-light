@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review DeepFlow using its official documentation and repository in the AI Native Infra / Observability category. DeepFlow leverages eBPF to collect signals such as performance metrics, distributed tracing, and CPU & GPU profiling. Its goal is to provide zero-code observability for complex cloud-native and AI applications, particularly those involving LLM training and inference using frameworks like PyTorch.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review DeepFlow using its official documentation and repository in the AI Native Infra / Observability category. DeepFlow leverages eBPF to collect signals such as performance metrics, distributed tracing, and CPU & GPU profiling. Its goal is to provide zero-code observability for complex cloud-native and AI applications, particularly those involving LLM training and inference using frameworks like PyTorch.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-deepflow-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

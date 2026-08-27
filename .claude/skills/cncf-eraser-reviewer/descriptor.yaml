@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Eraser using its official documentation and repository in the Orchestration & Management / Scheduling & Orchestration category. Eraser uses vulnerability data to remove non-running images from all Kubernetes nodes in a cluster.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Eraser using its official documentation and repository in the Orchestration & Management / Scheduling & Orchestration category. Eraser uses vulnerability data to remove non-running images from all Kubernetes nodes in a cluster.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-eraser-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

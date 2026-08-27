@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review VMware NSX using its official documentation and repository in the Runtime / Cloud Native Network category. VMware NSX® Data Center delivers virtualized networking and security entirely in software, completing a key pillar of the Software-defined Data Center (SDDC), and enabling the virtual cloud network to connect and protect across data centers, clouds, and applications.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review VMware NSX using its official documentation and repository in the Runtime / Cloud Native Network category. VMware NSX® Data Center delivers virtualized networking and security entirely in software, completing a key pillar of the Software-defined Data Center (SDDC), and enabling the virtual cloud network to connect and protect across data centers, clouds, and applications.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-vmware-nsx-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

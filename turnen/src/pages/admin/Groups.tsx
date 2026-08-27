@@ -473,22 +473,35 @@ export default function Groups() {
                   </td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300">
                     {g.editableAsLeadership && g.ownerId !== null ? (
-                      <span
-                        className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-                        title={`Als Jugendleitung bearbeitbar – Gruppenleitung: ${g.ownerName ?? "unbekannt"}`}
-                      >
-                        Jugendleitung ({g.ownerName ?? "unbekannt"})
+                      // Wichtig: "Jugendleitung" beschreibt hier den eigenen
+                      // Zugriff der aktuell eingeloggten Person (bearbeitbar
+                      // KRAFT der Jugendleitung-Rolle), NICHT die Rolle der
+                      // Gruppenleitung selbst - die steht separat als Name.
+                      // War zuvor als "Jugendleitung (Name)" in EINER Zeile
+                      // formuliert und dadurch missverständlich lesbar wie
+                      // "diese Person hat die Rolle Jugendleitung".
+                      <span className="flex flex-col text-xs leading-tight">
+                        <span className="text-slate-600 dark:text-slate-300">Gruppenleitung: {g.ownerName ?? "unbekannt"}</span>
+                        <span
+                          className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+                          title="Bearbeitbar, weil du selbst die Jugendleitungs-Rolle im Verein hast"
+                        >
+                          Dein Zugriff: Jugendleitung
+                        </span>
                       </span>
                     ) : g.canEdit && g.ownerId !== null && g.ownerId !== userId ? (
-                      <span
-                        className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
-                        title={`Mit-Trainer*in – Gruppenleitung: ${g.ownerName ?? "unbekannt"}`}
-                      >
-                        Mit-Trainer*in ({g.ownerName ?? "unbekannt"})
+                      <span className="flex flex-col text-xs leading-tight">
+                        <span className="text-slate-600 dark:text-slate-300">Gruppenleitung: {g.ownerName ?? "unbekannt"}</span>
+                        <span
+                          className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                          title="Bearbeitbar, weil du als Mit-Trainer*in eingetragen bist"
+                        >
+                          Dein Zugriff: Mit-Trainer*in
+                        </span>
                       </span>
                     ) : g.canEdit && g.ownerId !== null ? (
                       <span className="flex flex-col text-xs leading-tight">
-                        <span className="text-slate-400 dark:text-slate-500">eigene Gruppe</span>
+                        <span className="text-slate-400 dark:text-slate-500">eigene Gruppe ({g.ownerName ?? "unbekannt"})</span>
                         {g.clubId ? (
                           <span
                             className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-unstructured-reviewer
+version: 0.1.0
+description: Review Unstructured using its official documentation and repository in the AI Agent / RAG category. Convert documents to structured data effortlessly. Unstructured is open-source ETL solution for transforming complex documents into clean, structured formats for language models. Visit our website to learn more about our enterprise grade Platform product for production grade workflows, partitioning, enrichments, chunking and embedding.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Unstructured using its official documentation and repository in the AI Agent / RAG category. Convert documents to structured data effortlessly. Unstructured is open-source ETL solution for transforming complex documents into clean, structured formats for language models. Visit our website to learn more about our enterprise grade Platform product for production grade workflows, partitioning, enrichments, chunking and embedding.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

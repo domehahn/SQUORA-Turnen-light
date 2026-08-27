@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Serverless Workflow using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Standards-based DSL and open-source dev tools and runtimes are at the heart of the Serverless Workflow project
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Serverless Workflow using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Standards-based DSL and open-source dev tools and runtimes are at the heart of the Serverless Workflow project
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-serverless-workflow-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

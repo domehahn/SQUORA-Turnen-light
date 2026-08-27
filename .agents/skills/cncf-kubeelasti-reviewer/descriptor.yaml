@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review KubeElasti using its official documentation and repository in the Serverless / Installable Platform category. Auto scale-to-zero pods when idle and scale up pods when traffic arrives, without losing any requests. KubeElasti uses a smart proxy that queues incoming requests while scaling up targets, ensuring no request loss. It works with existing Kubernetes services and deployments without requiring code changes.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review KubeElasti using its official documentation and repository in the Serverless / Installable Platform category. Auto scale-to-zero pods when idle and scale up pods when traffic arrives, without losing any requests. KubeElasti uses a smart proxy that queues incoming requests while scaling up targets, ensuring no request loss. It works with existing Kubernetes services and deployments without requiring code changes.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-kubeelasti-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

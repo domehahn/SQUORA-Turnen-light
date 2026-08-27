@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-cyso-kcsp-reviewer
+version: 0.1.0
+description: Review Cyso (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Cyso Cloud, based in Netherlands, operating in the EU, our Managed Kubernetes service helps you effortlessly manage, scale, and optimise your applications in secure and compliant way (ISO27K1/SOC2/DORA/GDPR) in both Private and Public Cloud environments. We provide training, migration, Devops, SRE, Security, Compliancy Services and operate with 24x7 NOC and SOC.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Cyso (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Cyso Cloud, based in Netherlands, operating in the EU, our Managed Kubernetes service helps you effortlessly manage, scale, and optimise your applications in secure and compliant way (ISO27K1/SOC2/DORA/GDPR) in both Private and Public Cloud environments. We provide training, migration, Devops, SRE, Security, Compliancy Services and operate with 24x7 NOC and SOC.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

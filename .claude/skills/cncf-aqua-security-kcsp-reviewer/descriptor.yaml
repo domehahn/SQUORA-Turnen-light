@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Aqua Security (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Aqua Security helps enterprises secure their cloud native applications from development to production, whether they run using containers, serverless, or virtual machines
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Aqua Security (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Aqua Security helps enterprises secure their cloud native applications from development to production, whether they run using containers, serverless, or virtual machines
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-aqua-security-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Hunter Strategy (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Hunter provides Kubernetes expertise across on-prem and cloud environments, enabling secure deployments for the Department of Defense, Federal agencies and commercial clients. We can work with existing teams implementing real world best practices and leveling up their skillsets, audit existing implementations, and work with you on securing your environment!
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Hunter Strategy (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Hunter provides Kubernetes expertise across on-prem and cloud environments, enabling secure deployments for the Department of Defense, Federal agencies and commercial clients. We can work with existing teams implementing real world best practices and leveling up their skillsets, audit existing implementations, and work with you on securing your environment!
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-hunter-strategy-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

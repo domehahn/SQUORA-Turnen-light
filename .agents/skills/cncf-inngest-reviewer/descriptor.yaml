@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Inngest using its official documentation and repository in the AI Agent / Workflow Orchestration category. The leading workflow orchestration platform. Run stateful step functions and AI workflows on serverless, servers, or the edge.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Inngest using its official documentation and repository in the AI Agent / Workflow Orchestration category. The leading workflow orchestration platform. Run stateful step functions and AI workflows on serverless, servers, or the edge.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-inngest-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-yonder-kcsp-reviewer
+version: 0.1.0
+description: Review Yonder (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Yonder is a trusted technology partner that combines AI innovation, DevOps practices, and Kubernetes-powered cloud infrastructure to help established software companies to accelerate their digital transformation. We deliver reliable cloud-native platforms with end-to-end services that design, build, and operate the systems your business depends on.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Yonder (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Yonder is a trusted technology partner that combines AI innovation, DevOps practices, and Kubernetes-powered cloud infrastructure to help established software companies to accelerate their digital transformation. We deliver reliable cloud-native platforms with end-to-end services that design, build, and operate the systems your business depends on.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-prodyna-kcntp-reviewer
+version: 0.1.0
+description: Review PRODYNA (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. PRODYNA designs, implements, and operates Kubernetes-based custom applications for mid- to large size enterprises in all of Europe.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review PRODYNA (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. PRODYNA designs, implements, and operates Kubernetes-based custom applications for mid- to large size enterprises in all of Europe.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

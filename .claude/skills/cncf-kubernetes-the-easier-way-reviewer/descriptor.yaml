@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Kubernetes - The Easier Way using its official documentation and repository in the Platform / Certified Kubernetes - Installer category. Kubernetes - The Easier Way enables users to create and manage an easily customizable HA Kubernetes cluster with only a couple of commands
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Kubernetes - The Easier Way using its official documentation and repository in the Platform / Certified Kubernetes - Installer category. Kubernetes - The Easier Way enables users to create and manage an easily customizable HA Kubernetes cluster with only a couple of commands
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-kubernetes-the-easier-way-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-kodekloud-kcsp-reviewer
+version: 0.1.0
+description: Review KodeKloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. KodeKloud provides Interactive Hands-On training on Cloud Native Computing technologies using immersive learning techniques to help spread awareness  of CNCF and its projects around the world.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review KodeKloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. KodeKloud provides Interactive Hands-On training on Cloud Native Computing technologies using immersive learning techniques to help spread awareness  of CNCF and its projects around the world.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

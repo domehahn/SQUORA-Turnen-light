@@ -50,7 +50,20 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
+  // Ergänzt nach einem lokalen DAST-Lauf (OWASP ZAP Baseline, CI-25,
+  // zweiter Production-Readiness-Durchgang 2026-08-27) - alle geladenen
+  // Ressourcen sind bereits same-origin (CSP default-src 'self', keine
+  // externen Fonts/CDNs, s. dist/index.html), COEP: require-corp sollte
+  // damit ohne Funktionsverlust zusätzliche Cross-Origin-Isolation
+  // erzwingen. Nach dem Hinzufügen erneut lokal (wrangler dev + ZAP)
+  // verifiziert: App lädt weiterhin normal, keine neuen Konsolenfehler.
+  "Cross-Origin-Embedder-Policy": "require-corp",
   "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  // Redundant zu "frame-ancestors 'none'" oben in jedem modernen Browser -
+  // X-Frame-Options ist der Legacy-Vorgänger, den ältere/nicht CSP-Level-2-
+  // fähige Browser stattdessen auswerten (Clickjacking-Schutz-CI-16-
+  // Härtung, zweiter Production-Readiness-Durchgang 2026-08-27).
+  "X-Frame-Options": "DENY",
   // Nur wirksam, wenn der Browser die Antwort über HTTPS empfangen hat -
   // über lokales http:// (Dev) ignorieren Browser diesen Header ohnehin.
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -61,6 +74,27 @@ function withSecurityHeaders(response: Response): Response {
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     headers.set(key, value);
   }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+// Passwort-Reset-Seite braucht härtere Header als der Rest der SPA (RESET-06/
+// RESET-07, zweiter Production-Readiness-Härtungsdurchgang 2026-08-27): der
+// Reset-Token steckt kurzzeitig in der URL, bis das Frontend ihn per
+// history.replaceState entfernt (src/pages/PasswordReset.tsx). Bis dahin
+// darf kein Referrer mit der URL an Dritte gehen (z.B. wenn die Seite
+// externe Ressourcen lädt) und die Seite selbst darf nicht mit der
+// token-tragenden URL gecacht werden. Auch als reine Härtungsmaßnahme
+// wirksam, falls ein künftiger Fehler die URL-Bereinigung im Frontend
+// verzögert. Bewusst nur für genau diese SPA-Route, nicht global - die
+// übrige App braucht die normale (weniger strikte) Referrer-Policy für
+// interne Navigation/Analytics-freie, aber funktionale Zwecke.
+const HARDENED_HEADER_PATHS = new Set(["/passwort-zuruecksetzen"]);
+
+function applyPathSpecificHeaders(response: Response, relativePath: string): Response {
+  if (!HARDENED_HEADER_PATHS.has(relativePath)) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Cache-Control", "no-store");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -107,6 +141,6 @@ export default {
       response = new Response(response.body, { status: 200, headers });
     }
 
-    return withSecurityHeaders(response);
+    return applyPathSpecificHeaders(withSecurityHeaders(response), relativePath);
   },
 } satisfies ExportedHandler<Env>;

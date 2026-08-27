@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Submariner using its official documentation and repository in the Runtime / Cloud Native Network category. Submariner enables direct networking between Pods and Services in different Kubernetes clusters, either on-premises or in the cloud.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Submariner using its official documentation and repository in the Runtime / Cloud Native Network category. Submariner enables direct networking between Pods and Services in different Kubernetes clusters, either on-premises or in the cloud.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-submariner-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

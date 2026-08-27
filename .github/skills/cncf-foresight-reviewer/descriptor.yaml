@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-foresight-reviewer
+version: 0.1.0
+description: Review Foresight using its official documentation and repository in the Observability and Analysis / Observability category. Monitor workflow and test trends over time, assess the risk of code changes, deal with flaky tests.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Foresight using its official documentation and repository in the Observability and Analysis / Observability category. Monitor workflow and test trends over time, assess the risk of code changes, deal with flaky tests.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

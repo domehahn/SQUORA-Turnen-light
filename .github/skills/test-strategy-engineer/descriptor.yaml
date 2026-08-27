@@ -1,0 +1,30 @@
+schema_version: "2"
+name: test-strategy-engineer
+version: 0.1.0
+description: Design and generate unit, integration, regression, security, and end-to-end test strategies.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Design and generate unit, integration, regression, security, and end-to-end test strategies.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-chaosmeta-reviewer
+version: 0.1.0
+description: Review ChaosMeta using its official documentation and repository in the Observability and Analysis / Chaos Engineering category. Provides a one-stop drill platform for the whole life cycle of access detection, fault injection, fault measurement, recovery measurement, injection recovery, etc., and has a built-in rich risk fault injection library for business, application, resources, etc., which can quickly mine the potential risks of the application system and Check the emergency fresh-keeping ability.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review ChaosMeta using its official documentation and repository in the Observability and Analysis / Chaos Engineering category. Provides a one-stop drill platform for the whole life cycle of access detection, fault injection, fault measurement, recovery measurement, injection recovery, etc., and has a built-in rich risk fault injection library for business, application, resources, etc., which can quickly mine the potential risks of the application system and Check the emergency fresh-keeping ability.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

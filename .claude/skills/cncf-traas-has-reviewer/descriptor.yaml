@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review TRaaS HAS using its official documentation and repository in the Observability and Analysis / Continuous Optimization category. Provides the ability to aggregate dispersed fault data into risk events, as well as emergency response, fault localization (root cause analysis, diagnostic decision trees), and fault handling (emergency self-healing, multi-active disaster recovery), to achieve a full set of emergency technology risk prevention and control capabilities in 1 minute discovery - 5 minutes localization - 10 minutes recovery.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review TRaaS HAS using its official documentation and repository in the Observability and Analysis / Continuous Optimization category. Provides the ability to aggregate dispersed fault data into risk events, as well as emergency response, fault localization (root cause analysis, diagnostic decision trees), and fault handling (emergency self-healing, multi-active disaster recovery), to achieve a full set of emergency technology risk prevention and control capabilities in 1 minute discovery - 5 minutes localization - 10 minutes recovery.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-traas-has-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

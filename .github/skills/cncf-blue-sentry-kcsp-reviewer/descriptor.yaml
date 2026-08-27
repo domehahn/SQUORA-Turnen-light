@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-blue-sentry-kcsp-reviewer
+version: 0.1.0
+description: Review Blue Sentry (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Blue Sentry increases efficiency, security, ensures compliance and helps organizations deliver products faster with our managed DevOps services utilizing Kubernetes, Infrastructure as Code and CI/CD-enabled change management.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Blue Sentry (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Blue Sentry increases efficiency, security, ensures compliance and helps organizations deliver products faster with our managed DevOps services utilizing Kubernetes, Infrastructure as Code and CI/CD-enabled change management.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

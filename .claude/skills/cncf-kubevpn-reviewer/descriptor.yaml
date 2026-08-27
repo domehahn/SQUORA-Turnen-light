@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review KubeVPN using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. KubeVPN offers a Cloud-Native Dev Environment that seamlessly connects to your Kubernetes cluster network. Gain access to the Kubernetes cluster network effortlessly using service names or Pod IP/Service IP. Facilitate the interception of inbound traffic from remote Kubernetes cluster services to your local PC through a service mesh and more. For instance, you have the flexibility to run your Kubernetes pod within a local Docker container, ensuring an identical environment, volume, and network setup. With KubeVPN, empower yourself to develop applications entirely on your local PC!
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review KubeVPN using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. KubeVPN offers a Cloud-Native Dev Environment that seamlessly connects to your Kubernetes cluster network. Gain access to the Kubernetes cluster network effortlessly using service names or Pod IP/Service IP. Facilitate the interception of inbound traffic from remote Kubernetes cluster services to your local PC through a service mesh and more. For instance, you have the flexibility to run your Kubernetes pod within a local Docker container, ensuring an identical environment, volume, and network setup. With KubeVPN, empower yourself to develop applications entirely on your local PC!
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-kubevpn-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

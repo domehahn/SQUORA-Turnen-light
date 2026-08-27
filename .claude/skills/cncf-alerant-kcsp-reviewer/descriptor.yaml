@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Alerant (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Alerant delivers enterprise-grade Platform Engineering, Application Modernization, and AI solutions, leveraging AI-assisted engineering techniques. We design, deploy, and support Kubernetes-based platforms, accelerate DevOps and CI/CD adoption, and guide application migration and modernization in the cloud.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Alerant (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Alerant delivers enterprise-grade Platform Engineering, Application Modernization, and AI solutions, leveraging AI-assisted engineering techniques. We design, deploy, and support Kubernetes-based platforms, accelerate DevOps and CI/CD adoption, and guide application migration and modernization in the cloud.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-alerant-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Infosys (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Infosys architecture-first approach simplifies how you develop and run container-based applications on industry-standard Kubernetes infrastructure. We provide a gamut of Kubernetes services, solutions and platforms for enterprises to accelerate their cloud journey.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Infosys (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Infosys architecture-first approach simplifies how you develop and run container-based applications on industry-standard Kubernetes infrastructure. We provide a gamut of Kubernetes services, solutions and platforms for enterprises to accelerate their cloud journey.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-infosys-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

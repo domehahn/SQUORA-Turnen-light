@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-sokube-kcsp-reviewer
+version: 0.1.0
+description: Review SoKube (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. SoKube is a Swiss based company that helps companies making their digital transition to the world of containers and Kubernetes orchestration, with a strong focus on Agility and DevSecOps lifecycle.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review SoKube (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. SoKube is a Swiss based company that helps companies making their digital transition to the world of containers and Kubernetes orchestration, with a strong focus on Agility and DevSecOps lifecycle.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Azure API Management using its official documentation and repository in the Orchestration & Management / API Gateway category. Azure API Management is a hybrid, multi-cloud API, full lifecycle management platform for APIs across all environments. It allows customers to self-host API gateways as containers on Kubernetes.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Azure API Management using its official documentation and repository in the Orchestration & Management / API Gateway category. Azure API Management is a hybrid, multi-cloud API, full lifecycle management platform for APIs across all environments. It allows customers to self-host API gateways as containers on Kubernetes.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-azure-api-management-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

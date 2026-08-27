@@ -32,8 +32,8 @@ turnen-web (Cloudflare Worker mit Assets-Binding — KEIN Cloudflare Pages)
                     +---- D1 "turnen-eu" — running_in_region: EEUR,
                     |     jurisdiction: eu  (migriert 2026-08-26, siehe CF-01)
                     |
-                    +---- Email Sending Binding ("EMAIL") →
-                    |     Cloudflare Email Service → SMTP-Zustellung an
+                    +---- HTTPS-Aufruf an Resend →
+                    |     Resend → SMTP-Zustellung an
                     |     externe Postfächer der Nutzer*innen
                     |
                     +---- Cron Trigger (0 8 * * *) — täglicher Reminder-Job,
@@ -79,7 +79,7 @@ Cloudflare Access, Turnstile, Workers Analytics Engine, Logpush.
 - **Caching:** `/api/*`-Antworten werden explizit mit `Cache-Control: no-store` markiert (`worker/src/index.ts`, globale Middleware). Ob eine dashboard-seitige Cache Rule das überschreiben könnte: `VERIFY IN CLOUDFLARE DASHBOARD`.
 - **Verschlüsselung:** TLS zwischen Client und Cloudflare-Edge (Standard-Cloudflare-TLS, Zertifikat für `squora.de`). `turnen-web` → `turnen-api` läuft über Service Binding (worker-internes RPC, kein separates TLS-Handshake nötig, verlässt Cloudflares Infrastruktur nicht).
 - **Jurisdiktion konfiguriert:** Nein — kein Regional-Services-Setup in `wrangler.toml` gefunden.
-- **Externe Übermittlungen:** An Cloudflare Email Service (siehe unten) und an den anfragenden Client selbst (Response).
+- **Externe Übermittlungen:** An Resend (siehe unten) und an den anfragenden Client selbst (Response).
 - **Erforderlich:** Ja, zentrale Komponente.
 - **Finding:** **CF-02 — `CLOUDFLARE_WORKER_GLOBAL_PROCESSING`**, Severity **High** (Gesundheitsdaten Minderjähriger). Siehe Abschnitt "Findings" unten.
 
@@ -102,16 +102,16 @@ Cloudflare Access, Turnstile, Workers Analytics Engine, Logpush.
 - **Erforderlich:** Ja, zentrale Komponente.
 - **Finding:** **CF-01 — `D1_DATABASE_WITHOUT_EU_JURISDICTION`** — **Behoben am 2026-08-26**, siehe Migrationsprotokoll oben.
 
-### Cloudflare Email Service (Email Sending Binding `EMAIL`)
+### Resend (E-Mail-Versand)
 - **Zweck:** Versand von In-App-Benachrichtigungs-E-Mails (`worker/src/notifications.ts`) — z.B. Freigabe-Anfragen, Wartelisten-Rückruf.
 - **Personenbezogene Daten:** Empfänger-E-Mail-Adresse/-Name, Titel/Body der Benachrichtigung.
 - **Gesundheitsdaten:** **Ja, aktuell** — `childContactSummary()` (`worker/src/index.ts:1088`) fügt `health_notes` und Notfallkontakte in den E-Mail-Body ein (zwei Aufrufstellen: Zeile 1712, 2307). Das ist Finding **PRIV-01** (Critical) in der Gap-Analyse und muss vorrangig behoben werden.
-- **Speicherort/Verarbeitungsort:** Cloudflare Email Service verarbeitet den Versand; danach liegt die E-Mail beim externen Mail-Provider des Empfängers (z.B. Gmail, iCloud) — außerhalb jeder Kontrolle der App.
+- **Speicherort/Verarbeitungsort:** Resend verarbeitet den Versand; danach liegt die E-Mail beim externen Mail-Provider des Empfängers (z.B. Gmail, iCloud) — außerhalb jeder Kontrolle der App.
 - **Aufbewahrung:** Unbegrenzt beim Empfänger-Mailprovider — technisch nicht durch die App beeinflussbar.
 - **Logging:** Zustellstatus (best effort, Fehler werden in `console.error` geloggt, siehe `worker/src/notifications.ts`).
 - **Caching:** N/A.
-- **Verschlüsselung:** Transport (SMTP/TLS) laut Cloudflare-Standard; Inhalt der E-Mail ist beim Empfänger nicht Ende-zu-Ende-verschlüsselt.
-- **Jurisdiktion konfiguriert:** Nicht anwendbar/nicht bekannt — `VERIFY IN CLOUDFLARE DASHBOARD` bzw. bei Cloudflare-Support erfragen.
+- **Verschlüsselung:** HTTPS zur Resend-API und SMTP/TLS bei der Zustellung; Inhalt der E-Mail ist beim Empfänger nicht Ende-zu-Ende-verschlüsselt.
+- **Jurisdiktion konfiguriert:** Nicht aus dem Repo verifizierbar — `VERIFY IN RESEND DASHBOARD` bzw. mit Resend klären.
 - **Externe Übermittlungen:** Ja, an beliebige externe Mail-Provider der Empfänger — **dies ist der aktuell schwerwiegendste Datenfluss für Gesundheitsdaten** (siehe PRIV-01).
 - **Erforderlich:** Ja für Benachrichtigungen, **aber ohne Gesundheitsdaten im Body** (siehe Empfehlung in der Gap-Analyse).
 
@@ -200,4 +200,4 @@ und Architekturimplikationen):
 - `VERIFY IN CLOUDFLARE DASHBOARD`: D1-Query-Logging-Umfang.
 - `LEGAL/PRIVACY REVIEW REQUIRED`: Freigabe des D1-Jurisdiktions-Migrationsplans (CF-01).
 - `LEGAL/PRIVACY REVIEW REQUIRED`: Entscheidung zu Regional Services vs. SCC (CF-02).
-- `LEGAL/PRIVACY REVIEW REQUIRED`: AVV mit Cloudflare für alle genutzten Dienste (D1, Workers, Email Sending) prüfen/abschließen.
+- `LEGAL/PRIVACY REVIEW REQUIRED`: AVV mit Cloudflare für D1/Workers sowie mit Resend für den E-Mail-Versand prüfen/abschließen.

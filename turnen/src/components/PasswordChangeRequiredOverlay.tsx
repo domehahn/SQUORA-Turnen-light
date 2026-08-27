@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
+import { MIN_PASSWORD_LENGTH, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 // Blockierendes Overlay für Accounts mit einem von jemand anderem
 // vergebenen initialen Passwort (Admin-Nutzerverwaltung oder
@@ -58,18 +59,21 @@ export function PasswordChangeRequiredOverlay() {
             onChange={(e) => setCurrentPassword(e.target.value)}
           />
           <FloatingInput
-            label="Neues Passwort (mind. 8 Zeichen)"
+            label={`Neues Passwort (mind. ${MIN_PASSWORD_LENGTH} Zeichen)`}
             type="password"
             required
-            minLength={8}
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
+          <p className="text-xs text-slate-400 dark:text-slate-500">{PASSWORD_POLICY_HINT}</p>
           <FloatingInput
             label="Neues Passwort wiederholen"
             type="password"
             required
-            minLength={8}
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="new-password"
             value={newPasswordRepeat}
             onChange={(e) => setNewPasswordRepeat(e.target.value)}
           />

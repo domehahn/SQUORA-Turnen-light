@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review iSSCloud using its official documentation and repository in the Orchestration & Management / Scheduling & Orchestration category. iSoftStone Multi-cloud Management System is an enterprise-level cloud management platform applied in multiple public  clouds and public-private hybrid cloud scenarios. It provides consistent self-service and operation management capabilities  on heterogeneous resources which include centralized resource management and control, automated resource delivery, intelligent  operation analysis and O&M management to reduce the costs of hybrid cloud management.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review iSSCloud using its official documentation and repository in the Orchestration & Management / Scheduling & Orchestration category. iSoftStone Multi-cloud Management System is an enterprise-level cloud management platform applied in multiple public  clouds and public-private hybrid cloud scenarios. It provides consistent self-service and operation management capabilities  on heterogeneous resources which include centralized resource management and control, automated resource delivery, intelligent  operation analysis and O&M management to reduce the costs of hybrid cloud management.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-isscloud-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

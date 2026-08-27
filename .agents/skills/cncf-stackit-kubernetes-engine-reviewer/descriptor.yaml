@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review STACKIT Kubernetes Engine using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. STACKIT Kubernetes Engine (SKE) is a fully managed and scalable Kubernetes service for the deployment and management of Kubernetes  clusters and containerized applications.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review STACKIT Kubernetes Engine using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. STACKIT Kubernetes Engine (SKE) is a fully managed and scalable Kubernetes service for the deployment and management of Kubernetes  clusters and containerized applications.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-stackit-kubernetes-engine-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

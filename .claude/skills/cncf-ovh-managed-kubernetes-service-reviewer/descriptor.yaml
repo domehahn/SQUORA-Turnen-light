@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review OVH Managed Kubernetes Service using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Benefit from free HA managed Kubernetes service by hosting your nodes and services on OVH Public Cloud.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review OVH Managed Kubernetes Service using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Benefit from free HA managed Kubernetes service by hosting your nodes and services on OVH Public Cloud.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-ovh-managed-kubernetes-service-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

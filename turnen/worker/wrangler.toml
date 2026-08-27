@@ -23,9 +23,8 @@ migrations_dir = "migrations"
 
 [vars]
 FRONTEND_URL = "https://squora.de/turnen-light"
-# Absenderadresse für Benachrichtigungs-E-Mails. squora.de ist für Email
-# Sending freigeschaltet - schlägt der Versand dennoch fehl, fängt
-# worker/src/notifications.ts das ab und die Benachrichtigung bleibt
+# Absenderadresse für Benachrichtigungs-E-Mails. squora.de ist bei Resend
+# verifiziert. Schlägt der Versand dennoch fehl, bleibt die Benachrichtigung
 # zuverlässig im In-App-Postfach.
 EMAIL_FROM_ADDRESS = "no_reply@squora.de"
 
@@ -43,11 +42,10 @@ ARCHIVED_CHILD_RETENTION_DAYS = "1095"
 # unabhängig von dieser Frist). Wert per Nutzerentscheidung (2026-08-27).
 SECURITY_LOG_RETENTION_DAYS = "90"
 
-# JWT_SECRET wird NICHT hier eingetragen, sondern per Secret gesetzt:
+# JWT_SECRET und RESEND_API_KEY werden NICHT hier eingetragen, sondern per
+# Secret gesetzt:
 #   wrangler secret put JWT_SECRET
-
-[[send_email]]
-name = "EMAIL"
+#   wrangler secret put RESEND_API_KEY
 
 [observability]
 enabled = true

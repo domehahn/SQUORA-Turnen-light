@@ -103,7 +103,7 @@ export function FloatingSelect({ label, id, children, forceLight, value, onFocus
           onBlur?.(e);
         }}
         className={`peer w-full rounded-md border border-slate-300 bg-white px-3 pb-1.5 pt-5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-          forceLight ? "" : "dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          forceLight ? "" : "dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark]"
         }`}
         {...props}
       >

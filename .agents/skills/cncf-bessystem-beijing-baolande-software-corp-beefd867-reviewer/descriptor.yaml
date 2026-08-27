@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review BESSYSTEM - Beijing Baolande Software Corporation (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Beijing Baolande Software Corporation provides Kubernetes special technical services including consulting, training, implementation, and technical support, as well as customized research & development, business operations and other advanced services. We aim to help enterprises of different scales to achieve Kubernetes community version quickly and safely, better meeting their requirements of business development and accelerating business prosperity & growth.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review BESSYSTEM - Beijing Baolande Software Corporation (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Beijing Baolande Software Corporation provides Kubernetes special technical services including consulting, training, implementation, and technical support, as well as customized research & development, business operations and other advanced services. We aim to help enterprises of different scales to achieve Kubernetes community version quickly and safely, better meeting their requirements of business development and accelerating business prosperity & growth.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-bessystem-beijing-baolande-software-corp-beefd867-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

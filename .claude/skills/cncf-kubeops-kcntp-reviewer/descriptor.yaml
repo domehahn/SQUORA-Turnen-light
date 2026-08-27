@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review KubeOps (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. Training from foundation to expert – with our practice-oriented training programs, you will gain all the Kubernetes knowledge you need for your daily operation.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review KubeOps (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. Training from foundation to expert – with our practice-oriented training programs, you will gain all the Kubernetes knowledge you need for your daily operation.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-kubeops-kcntp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

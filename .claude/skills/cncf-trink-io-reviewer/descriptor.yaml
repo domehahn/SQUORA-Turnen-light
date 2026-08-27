@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Trink.io using its official documentation and repository in the Observability and Analysis / Observability category. Trink.io is the first log shipping platform, built to replace fragmented solutions and workarounds with a single solution that takes care of the basics while offering visibility and control that only a managed solution can. Trink handles the entire operational data collection scope for you, connecting to all of your sources (e.g AWS) and enabling you to choose your preferred destinations (Datadog, Logz, etc.) in minutes instead of days.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Trink.io using its official documentation and repository in the Observability and Analysis / Observability category. Trink.io is the first log shipping platform, built to replace fragmented solutions and workarounds with a single solution that takes care of the basics while offering visibility and control that only a managed solution can. Trink handles the entire operational data collection scope for you, connecting to all of your sources (e.g AWS) and enabling you to choose your preferred destinations (Datadog, Logz, etc.) in minutes instead of days.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-trink-io-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

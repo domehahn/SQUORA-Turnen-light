@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review TRaaS BOS using its official documentation and repository in the Observability and Analysis / Observability category. Provide multi-dimensional integrated monitoring capabilities for business, application, network, and other aspects to measure business availability, gain insight into service health status, and support real-time log collection and analysis to efficiently locate problems. Provide non-invasive automatic link generation capabilities for heterogeneous applications on and off the cloud, and support defining services to aggregate massive link data into business links, achieving customized association between services and applications and intelligent diagnosis and positioning.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review TRaaS BOS using its official documentation and repository in the Observability and Analysis / Observability category. Provide multi-dimensional integrated monitoring capabilities for business, application, network, and other aspects to measure business availability, gain insight into service health status, and support real-time log collection and analysis to efficiently locate problems. Provide non-invasive automatic link generation capabilities for heterogeneous applications on and off the cloud, and support defining services to aggregate massive link data into business links, achieving customized association between services and applications and intelligent diagnosis and positioning.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-traas-bos-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

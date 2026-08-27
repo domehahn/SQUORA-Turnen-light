@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-dash0-reviewer
+version: 0.1.0
+description: Review Dash0 using its official documentation and repository in the Observability and Analysis / Observability category. Dash0 is the cloud native observability solution, powered by OpenTelemetry, Prometheus and Perses. Gain deep insights into your applications and infrastructure with a solution that is fully based on open standards. Built for developers and loved by SREs - ready for your stack.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Dash0 using its official documentation and repository in the Observability and Analysis / Observability category. Dash0 is the cloud native observability solution, powered by OpenTelemetry, Prometheus and Perses. Gain deep insights into your applications and infrastructure with a solution that is fully based on open standards. Built for developers and loved by SREs - ready for your stack.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

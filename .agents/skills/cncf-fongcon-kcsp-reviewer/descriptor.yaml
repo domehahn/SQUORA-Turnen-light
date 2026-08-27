@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Fongcon (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. As an NVIDIA Elite Partner, we deliver expert Kubernetes consulting, implementation, and training services specifically optimized for GPU-accelerated platforms to ensure reliable AI workload orchestration. We empower enterprises to bridge the gap between high-performance hardware and cloud-native ecosystems through professional support and tailored operational excellence.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Fongcon (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. As an NVIDIA Elite Partner, we deliver expert Kubernetes consulting, implementation, and training services specifically optimized for GPU-accelerated platforms to ensure reliable AI workload orchestration. We empower enterprises to bridge the gap between high-performance hardware and cloud-native ecosystems through professional support and tailored operational excellence.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-fongcon-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

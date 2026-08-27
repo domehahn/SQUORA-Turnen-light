@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Shandong Cvicse Middleware (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Shandong Cvicse Middleware provides specialized Kubernetes technical services, encompassing consultation, training, implementation, and technical support, as well as advanced services such as customized development and business operations maintenance. Our objective is to empower enterprises to swiftly adopt Kubernetes, better meeting the demands of business growth and accelerating the prosperous expansion of their operations.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Shandong Cvicse Middleware (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Shandong Cvicse Middleware provides specialized Kubernetes technical services, encompassing consultation, training, implementation, and technical support, as well as advanced services such as customized development and business operations maintenance. Our objective is to empower enterprises to swiftly adopt Kubernetes, better meeting the demands of business growth and accelerating the prosperous expansion of their operations.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-shandong-cvicse-middleware-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

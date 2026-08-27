@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-mesh-infra-reviewer
+version: 0.1.0
+description: Review Mesh Infra using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. VS Code and JetBrains IDE extension that visualizes Terraform, Kubernetes, Docker Compose, and ArgoCD infrastructure as interactive diagrams directly inside the editor. Scan IaC files and generate live topology maps without leaving your IDE.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Mesh Infra using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. VS Code and JetBrains IDE extension that visualizes Terraform, Kubernetes, Docker Compose, and ArgoCD infrastructure as interactive diagrams directly inside the editor. Scan IaC files and generate live topology maps without leaving your IDE.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-pipy-reviewer
+version: 0.1.0
+description: Review Pipy using its official documentation and repository in the Orchestration & Management / Service Proxy category. Pipy is a programmable proxy for the cloud, edge and IoT. It's written in C++, which makes it extremely lightweight and fast. It's also fully programmable by using PipyJS, a tailored version from the standard JavaScript language.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Pipy using its official documentation and repository in the Orchestration & Management / Service Proxy category. Pipy is a programmable proxy for the cloud, edge and IoT. It's written in C++, which makes it extremely lightweight and fast. It's also fully programmable by using PipyJS, a tailored version from the standard JavaScript language.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

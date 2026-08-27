@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review NovaGlobal (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Our commitment to excellence is reflected in a comprehensive suite of professional services tailored for organizations seeking to adopt Kubernetes seamlessly into their computing systems.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review NovaGlobal (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Our commitment to excellence is reflected in a comprehensive suite of professional services tailored for organizations seeking to adopt Kubernetes seamlessly into their computing systems.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-novaglobal-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

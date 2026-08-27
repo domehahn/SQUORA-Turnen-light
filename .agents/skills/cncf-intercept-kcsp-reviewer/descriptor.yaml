@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Intercept (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We help you run Kubernetes on Azure with better control, lower risk, and less overhead. Our team manages governance, security, and cost efficiency, so you can focus on building and deploying.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Intercept (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We help you run Kubernetes on Azure with better control, lower risk, and less overhead. Our team manages governance, security, and cost efficiency, so you can focus on building and deploying.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-intercept-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-siglens-reviewer
+version: 0.1.0
+description: Review SigLens using its official documentation and repository in the Observability and Analysis / Observability category. SigLens is a powerful open-source observability solution designed to reduce infrastructure costs by up to 90%. It scales seamlessly from handling 8 TB/day on a single MacBook Air to 1 PB/day across just 32 EC2 instances. With a user-friendly interface and a developer-oriented, pipe-based query language, SigLens simplifies observability data exploration and monitoring at any scale.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review SigLens using its official documentation and repository in the Observability and Analysis / Observability category. SigLens is a powerful open-source observability solution designed to reduce infrastructure costs by up to 90%. It scales seamlessly from handling 8 TB/day on a single MacBook Air to 1 PB/day across just 32 EC2 instances. With a user-friendly interface and a developer-oriented, pipe-based query language, SigLens simplifies observability data exploration and monitoring at any scale.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

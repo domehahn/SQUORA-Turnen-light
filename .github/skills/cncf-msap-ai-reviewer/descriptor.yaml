@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-msap-ai-reviewer
+version: 0.1.0
+description: Review MSAP.ai using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. MSAP.ai(Container Orchestration Platform) is a next-generation application operations platform that simplify complexity and support business innovation in  cloud-native environment built on Kubernetes. It maximizes the value of Kubernetes adoption for enterprises while minimizing operational costs.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review MSAP.ai using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. MSAP.ai(Container Orchestration Platform) is a next-generation application operations platform that simplify complexity and support business innovation in  cloud-native environment built on Kubernetes. It maximizes the value of Kubernetes adoption for enterprises while minimizing operational costs.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -108,7 +108,7 @@ export async function seedFamily(input: {
 export async function login(SELF: Fetcher, email: string, password: string): Promise<string> {
   const res = await SELF.fetch("https://example.test/api/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
     body: JSON.stringify({ email, password }),
   });
   if (res.status !== 200) throw new Error(`Login fehlgeschlagen (${res.status}): ${await res.text()}`);
@@ -123,8 +123,14 @@ export function extractSessionCookie(setCookieHeader: string): string {
   return `turnen_session=${match[1]}`;
 }
 
+// Sec-Fetch-Site: "same-origin" bildet nach, was ein echter Browser bei
+// einem gleichartigen Fetch-Aufruf von der eigenen SPA aus mitschickt
+// (CSRF-11-Härtung, s. isSameOriginRequest() in index.ts: Requests ganz
+// ohne Origin- UND Sec-Fetch-Site-Header werden dort inzwischen serverseitig
+// abgelehnt statt wie zuvor blind akzeptiert). SELF.fetch() in vitest setzt
+// diese Header - anders als ein echter Browser - nicht automatisch.
 export function authHeaders(cookie: string): Record<string, string> {
-  return { Cookie: cookie, "Content-Type": "application/json" };
+  return { Cookie: cookie, "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" };
 }
 
 // Richtet MFA für einen bereits eingeloggten Test-Nutzer ein (Finding

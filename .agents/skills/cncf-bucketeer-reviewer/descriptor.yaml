@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Bucketeer using its official documentation and repository in the Observability and Analysis / Feature Flagging category. A feature flag management platform created to help teams make better decisions, reduce deployment lead time, and release risk through feature flags.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Bucketeer using its official documentation and repository in the Observability and Analysis / Feature Flagging category. A feature flag management platform created to help teams make better decisions, reduce deployment lead time, and release risk through feature flags.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-bucketeer-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review InfoScale for Kubernetes using its official documentation and repository in the Runtime / Cloud Native Storage category. InfoScale for Kubernetes is a Kubernetes-native platform for running stateful workloads with high availability, disaster recovery, and performance optimization across core, edge, and remote office environments. It provides automated, block-level replication and recovery with minimal RPO, enabling business continuity and fast failover during infrastructure or application failures. InfoScale delivers Kubernetes-based virtualization support, including OpenShift Virtualization, enabling unified protection and recovery for both virtual machines and containerized workloads. Through a unified, CSI-compliant architecture that is agnostic to underlying storage vendors, InfoScale integrates seamlessly with heterogeneous storage environments. Designed for hybrid and distributed Kubernetes deployments, InfoScale helps organizations operate resilient, consistent, and scalable platforms.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review InfoScale for Kubernetes using its official documentation and repository in the Runtime / Cloud Native Storage category. InfoScale for Kubernetes is a Kubernetes-native platform for running stateful workloads with high availability, disaster recovery, and performance optimization across core, edge, and remote office environments. It provides automated, block-level replication and recovery with minimal RPO, enabling business continuity and fast failover during infrastructure or application failures. InfoScale delivers Kubernetes-based virtualization support, including OpenShift Virtualization, enabling unified protection and recovery for both virtual machines and containerized workloads. Through a unified, CSI-compliant architecture that is agnostic to underlying storage vendors, InfoScale integrates seamlessly with heterogeneous storage environments. Designed for hybrid and distributed Kubernetes deployments, InfoScale helps organizations operate resilient, consistent, and scalable platforms.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-infoscale-for-kubernetes-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

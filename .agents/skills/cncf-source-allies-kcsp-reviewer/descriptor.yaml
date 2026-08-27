@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Source Allies (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Source Allies is a premier consultancy and your ally for delivering high-quality technical solutions built around Kubernetes. We help our partners manage their clusters, migrate their applications, and upskill their team in the Cloud Native ecosystem.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Source Allies (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Source Allies is a premier consultancy and your ally for delivering high-quality technical solutions built around Kubernetes. We help our partners manage their clusters, migrate their applications, and upskill their team in the Cloud Native ecosystem.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-source-allies-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

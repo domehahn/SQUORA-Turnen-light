@@ -6,7 +6,9 @@ export interface Env {
   // PRIVACY_SECURITY_GAP_ANALYSIS.md, Finding PRIV-02.
   ENCRYPTION_KEY: string;
   FRONTEND_URL: string;
-  EMAIL?: SendEmail;
+  // Resend-Schlüssel ausschließlich als Cloudflare Worker Secret setzen.
+  // Optional, damit lokale Tests/Entwicklung ohne echten Mailversand laufen.
+  RESEND_API_KEY?: string;
   EMAIL_FROM_ADDRESS?: string;
   // Speicherbegrenzung (Finding PRIV-05, Art. 5(1)(e) DSGVO): Anzahl Tage,
   // die ein archiviertes (ausgetretenes) Kind noch aufbewahrt wird, bevor

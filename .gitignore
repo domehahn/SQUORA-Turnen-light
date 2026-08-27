@@ -3,5 +3,6 @@ dist/
 .wrangler/
 .dev.vars
 *.local
+cf-token.txt
 .DS_Store
 *.tsbuildinfo

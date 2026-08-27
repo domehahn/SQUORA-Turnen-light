@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-t-systems-kcsp-reviewer
+version: 0.1.0
+description: Review T-Systems (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Our team of CNCF certified Kubernetes experts have extensive experience working with a wide range of industries and can help you design and implement a solution that meets your specific needs.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review T-Systems (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Our team of CNCF certified Kubernetes experts have extensive experience working with a wide range of industries and can help you design and implement a solution that meets your specific needs.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

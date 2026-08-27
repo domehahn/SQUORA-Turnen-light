@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Containerized Security Router and Switch (cSRX) using its official documentation and repository in the Special / Certified CNFs category. The cSRX Container Firewall protects containerized applications and environments with advanced security services, including content security and intrusion prevention system (IPS). Purpose-built for containers, the cSRX next-generation firewall can be spun up or down in less than a second for the agility needed to manage transitory container environments like Kubernetes.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Containerized Security Router and Switch (cSRX) using its official documentation and repository in the Special / Certified CNFs category. The cSRX Container Firewall protects containerized applications and environments with advanced security services, including content security and intrusion prevention system (IPS). Purpose-built for containers, the cSRX next-generation firewall can be spun up or down in less than a second for the agility needed to manage transitory container environments like Kubernetes.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-containerized-security-router-and-switch-csrx-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Dalec using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Dalec provides a declarative format for building system packages and containers from those packages in a secure way for supply chain security.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Dalec using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Dalec provides a declarative format for building system packages and containers from those packages in a secure way for supply chain security.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-dalec-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

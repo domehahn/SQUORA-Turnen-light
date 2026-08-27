@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-aoe-kcsp-reviewer
+version: 0.1.0
+description: Review AOE (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. AOE is your trusted partner in navigating the dynamic world of container orchestration. With a rich history dating back to Kubernetes' inception in 2014, our experts bring unparalleled expertise to the table. We offer services around Kubernetes Consulting, Knowledge Transfer and Trainings as well as Operation and Implementation.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review AOE (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. AOE is your trusted partner in navigating the dynamic world of container orchestration. With a rich history dating back to Kubernetes' inception in 2014, our experts bring unparalleled expertise to the table. We offer services around Kubernetes Consulting, Knowledge Transfer and Trainings as well as Operation and Implementation.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

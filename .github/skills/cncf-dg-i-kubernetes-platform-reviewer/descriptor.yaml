@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-dg-i-kubernetes-platform-reviewer
+version: 0.1.0
+description: Review DG-i Kubernetes Platform using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. The DG-i Kubernetes Platform is a curated and production-proven solution for our fully managed service for regulated environments including monitoring, logging and audit-ready operations across the DG-i private cloud, on-premise installations or in a multi-cloud environment.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review DG-i Kubernetes Platform using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. The DG-i Kubernetes Platform is a curated and production-proven solution for our fully managed service for regulated environments including monitoring, logging and audit-ready operations across the DG-i private cloud, on-premise installations or in a multi-cloud environment.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

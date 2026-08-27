@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-lunar-dev-reviewer
+version: 0.1.0
+description: Review Lunar.dev using its official documentation and repository in the Orchestration & Management / API Gateway category. Lunar.dev’s mission is to enable optimization and control of  third-party API consumption in production environments. Lunar is a lightweight tool that empowers DevOps and engineering teams  to centralize consumption, gain insight and visibility into usage patterns and costs, and utilize out-of-the-box policies.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Lunar.dev using its official documentation and repository in the Orchestration & Management / API Gateway category. Lunar.dev’s mission is to enable optimization and control of  third-party API consumption in production environments. Lunar is a lightweight tool that empowers DevOps and engineering teams  to centralize consumption, gain insight and visibility into usage patterns and costs, and utilize out-of-the-box policies.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

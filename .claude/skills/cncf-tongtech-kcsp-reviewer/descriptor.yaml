@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review TongTech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Beijing Tongtech Software Co., Ltd. helps all kinds of enterprises to maximize the effectiveness of Kubernetes and meet the needs of enterprise business development.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review TongTech (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Beijing Tongtech Software Co., Ltd. helps all kinds of enterprises to maximize the effectiveness of Kubernetes and meet the needs of enterprise business development.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-tongtech-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

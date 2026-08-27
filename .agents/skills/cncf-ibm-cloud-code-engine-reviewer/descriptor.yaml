@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review IBM Cloud Code Engine using its official documentation and repository in the Serverless / Hosted Platform category. Host all your Cloud Native applications in one platform. You'll get all the benefits of serverless (no servers, auto-scaling) along with batch processing and only pay for what you use.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review IBM Cloud Code Engine using its official documentation and repository in the Serverless / Hosted Platform category. Host all your Cloud Native applications in one platform. You'll get all the benefits of serverless (no servers, auto-scaling) along with batch processing and only pay for what you use.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-ibm-cloud-code-engine-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

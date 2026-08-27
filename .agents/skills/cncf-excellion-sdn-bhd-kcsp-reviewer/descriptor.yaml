@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Excellion Sdn Bhd (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Excellion Sdn Bhd is a Malaysia-based Specialised System Integrator (SSI) designing secure, cloud-native infrastructure through Enterprise Kubernetes, advanced observability, and AI-driven engineering. We champion Malaysia’s digital sovereignty by enabling public and private enterprises to adopt resilient, open-standard architectures for their mission-critical projects & implementations, essential to the nation's digital ecosystem.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Excellion Sdn Bhd (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Excellion Sdn Bhd is a Malaysia-based Specialised System Integrator (SSI) designing secure, cloud-native infrastructure through Enterprise Kubernetes, advanced observability, and AI-driven engineering. We champion Malaysia’s digital sovereignty by enabling public and private enterprises to adopt resilient, open-standard architectures for their mission-critical projects & implementations, essential to the nation's digital ecosystem.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-excellion-sdn-bhd-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

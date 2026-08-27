@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Wind River Studio Cloud Platform using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. Wind River Cloud Platform is a carrier-grade Kubernetes solution that makes 5G possible by solving the operational problem of deploying and managing distributed edge networks at scale.  It is Wind River's commercial product based on the open source StarlingX project.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Wind River Studio Cloud Platform using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. Wind River Cloud Platform is a carrier-grade Kubernetes solution that makes 5G possible by solving the operational problem of deploying and managing distributed edge networks at scale.  It is Wind River's commercial product based on the open source StarlingX project.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-wind-river-studio-cloud-platform-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

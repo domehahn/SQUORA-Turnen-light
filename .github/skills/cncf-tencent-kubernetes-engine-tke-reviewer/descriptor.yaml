@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-tencent-kubernetes-engine-tke-reviewer
+version: 0.1.0
+description: Review Tencent Kubernetes Engine (TKE) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Tencent Kubernetes Engine (TKE) provides container-centric, highly scalable and high-performance container management services. Fully compatible with Kubernetes' native API and capable of expanding Tencent Cloud's Kubernetes plugins such as CBS and CLB.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Tencent Kubernetes Engine (TKE) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. Tencent Kubernetes Engine (TKE) provides container-centric, highly scalable and high-performance container management services. Fully compatible with Kubernetes' native API and capable of expanding Tencent Cloud's Kubernetes plugins such as CBS and CLB.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

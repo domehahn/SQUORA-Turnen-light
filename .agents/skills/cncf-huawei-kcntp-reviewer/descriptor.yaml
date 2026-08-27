@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Huawei (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. HUAWEI CLOUD provides customers with stable, reliable, secure, and sustainably growing cloud services. It helps large enterprises address challenges in cloud transformation and enables them to take better advantages of potential business opportunities. It also helps small- and medium-sized enterprises expand their business growth and rise to challenges.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Huawei (KCNTP) using its official documentation and repository in the Special / Kubernetes and Cloud Native Training Partner category. HUAWEI CLOUD provides customers with stable, reliable, secure, and sustainably growing cloud services. It helps large enterprises address challenges in cloud transformation and enables them to take better advantages of potential business opportunities. It also helps small- and medium-sized enterprises expand their business growth and rise to challenges.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-huawei-kcntp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

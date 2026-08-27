@@ -1,0 +1,30 @@
+schema_version: "2"
+name: refund-dispute-handler
+version: 0.1.0
+description: Guide controlled refunds, reversals, chargebacks, and disputes with eligibility checks, evidence, deadlines, approval, and audit trails.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Guide controlled refunds, reversals, chargebacks, and disputes with eligibility checks, evidence, deadlines, approval, and audit trails.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

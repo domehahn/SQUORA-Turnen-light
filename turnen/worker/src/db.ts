@@ -244,25 +244,68 @@ export async function setPendingTotpSecret(db: D1Database, id: string, encrypted
 
 // Atomarer Wechsel bei erfolgreicher Bestätigung (Initial-Setup oder
 // Rotation, identischer Mechanismus): pending_totp_secret wird zur neuen
-// aktiven totp_secret, neue Backup-Codes, pending_totp_secret geleert.
-export async function enableTotp(db: D1Database, id: string, hashedBackupCodesJson: string): Promise<void> {
-  await db
-    .prepare(
-      "UPDATE users SET totp_secret = pending_totp_secret, totp_enabled = 1, totp_backup_codes = ?, pending_totp_secret = NULL WHERE id = ?"
-    )
-    .bind(hashedBackupCodesJson, id)
-    .run();
+// aktiven totp_secret, alte Backup-Codes (falls vorhanden, z.B. bei
+// Rotation) werden gelöscht und durch die neuen ersetzt - alles in einem
+// db.batch() (D1-Transaktion), damit nie ein Zwischenzustand mit
+// widersprüchlichem totp_enabled/Backup-Code-Bestand sichtbar wird.
+//
+// Backup-Codes leben seit Migration 0044 in einer eigenen Tabelle
+// (mfa_backup_codes) statt einem JSON-Array in users.totp_backup_codes
+// (AUTH-12/AUTH-13, s. Migrationskommentar - das JSON-Array erlaubte keinen
+// atomaren Verbrauch, derselbe Code ließ sich bei gleichzeitigen Requests
+// zweimal erfolgreich verwenden). users.totp_backup_codes wird hier
+// zusätzlich explizit geleert (Alt-Spalte, wird nicht mehr gelesen).
+export async function enableTotp(db: D1Database, id: string, hashedBackupCodes: { hash: string; salt: string }[]): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        "UPDATE users SET totp_secret = pending_totp_secret, totp_enabled = 1, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?"
+      )
+      .bind(id),
+    db.prepare("DELETE FROM mfa_backup_codes WHERE user_id = ?").bind(id),
+    ...hashedBackupCodes.map((c) =>
+      db
+        .prepare("INSERT INTO mfa_backup_codes (id, user_id, code_hash, code_salt) VALUES (?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), id, c.hash, c.salt)
+    ),
+  ]);
 }
 
 export async function disableTotp(db: D1Database, id: string): Promise<void> {
-  await db
-    .prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?")
-    .bind(id)
-    .run();
+  await db.batch([
+    db
+      .prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?")
+      .bind(id),
+    db.prepare("DELETE FROM mfa_backup_codes WHERE user_id = ?").bind(id),
+  ]);
 }
 
-export async function consumeBackupCode(db: D1Database, id: string, remainingCodesJson: string): Promise<void> {
-  await db.prepare("UPDATE users SET totp_backup_codes = ? WHERE id = ?").bind(remainingCodesJson, id).run();
+export interface BackupCodeRow {
+  id: string;
+  code_hash: string;
+  code_salt: string;
+}
+
+// Alle noch nicht verbrauchten Backup-Codes einer Person - fürs
+// Durchprobieren beim Login/bei einer MFA-Rotation.
+export async function listActiveBackupCodes(db: D1Database, userId: string): Promise<BackupCodeRow[]> {
+  const { results } = await db
+    .prepare("SELECT id, code_hash, code_salt FROM mfa_backup_codes WHERE user_id = ? AND used_at IS NULL")
+    .bind(userId)
+    .all<BackupCodeRow>();
+  return results;
+}
+
+// Atomarer Verbrauch (AUTH-13): das UPDATE trifft nur, wenn der Code
+// JETZT noch unverbraucht ist (WHERE used_at IS NULL) - der Rückgabewert
+// von `changes` zeigt, ob DIESER Aufruf tatsächlich gewonnen hat. Bei zwei
+// gleichzeitigen Verbrauchsversuchen mit demselben Code gewinnt exakt
+// einer, der andere bekommt `false` und muss den Login/die Aktion als
+// fehlgeschlagen behandeln - unabhängig davon, in welcher Reihenfolge die
+// beiden Requests die Codeliste zuvor gelesen haben.
+export async function tryConsumeBackupCode(db: D1Database, id: string): Promise<boolean> {
+  const result = await db.prepare("UPDATE mfa_backup_codes SET used_at = datetime('now') WHERE id = ? AND used_at IS NULL").bind(id).run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 // mustChangePassword bewusst optional und standardmäßig NICHT gesetzt: das
@@ -461,11 +504,13 @@ export async function consumePasswordResetJti(db: D1Database, jti: string, expir
 }
 
 // Rate Limiting/Brute-Force-Schutz für den Login (Finding SEC-01) und
-// LOGIN/FAILED_LOGIN-Audit-Trail (Finding SEC-10).
-export async function recordLoginAttempt(db: D1Database, email: string, success: boolean): Promise<void> {
+// LOGIN/FAILED_LOGIN-Audit-Trail (Finding SEC-10). ip ist optional (NULL,
+// falls kein CF-Connecting-IP-Header vorliegt, z.B. lokale Tests) - s.
+// countRecentFailedLoginsByIp() unten für die CI-17-Härtung.
+export async function recordLoginAttempt(db: D1Database, email: string, success: boolean, ip: string | null): Promise<void> {
   await db
-    .prepare("INSERT INTO login_attempts (id, email, success) VALUES (?, ?, ?)")
-    .bind(crypto.randomUUID(), email, success ? 1 : 0)
+    .prepare("INSERT INTO login_attempts (id, email, success, ip) VALUES (?, ?, ?, ?)")
+    .bind(crypto.randomUUID(), email, success ? 1 : 0, ip)
     .run();
 }
 
@@ -480,6 +525,27 @@ export async function countRecentFailedLogins(db: D1Database, email: string, win
        WHERE email = ?1 AND success = 0 AND created_at >= datetime('now', ?2)`
     )
     .bind(email, `-${windowMinutes} minutes`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+// CI-17-Härtung (zweiter Production-Readiness-Durchgang 2026-08-27): rein
+// E-Mail-basiertes Rate Limiting lässt Credential Stuffing/Password
+// Spraying von EINER IP über VIELE verschiedene Accounts unbegrenzt zu,
+// solange pro Account unter dem Limit bleibt. Zusätzliche, unabhängige
+// IP-basierte Grenze (höheres Limit als pro Account, da sich legitim
+// mehrere Personen dieselbe IP teilen können - Vereins-WLAN, NAT,
+// Firmennetz). `ip: null` (kein CF-Connecting-IP-Header, z.B. lokale
+// Tests) wird bewusst NIE gezählt/gesperrt - sonst könnte ein Client ohne
+// diesen Header alle anderen Clients ohne Header serverseitig blockieren.
+export async function countRecentFailedLoginsByIp(db: D1Database, ip: string | null, windowMinutes: number): Promise<number> {
+  if (!ip) return 0;
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) as n FROM login_attempts
+       WHERE ip = ?1 AND success = 0 AND created_at >= datetime('now', ?2)`
+    )
+    .bind(ip, `-${windowMinutes} minutes`)
     .first<{ n: number }>();
   return row?.n ?? 0;
 }

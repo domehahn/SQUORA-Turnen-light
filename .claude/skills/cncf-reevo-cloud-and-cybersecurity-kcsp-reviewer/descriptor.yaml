@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review ReeVo Cloud & CyberSecurity (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ReeVo is a European Cloud, Cybersecurity, and Cloud Native provider with the core focus of protecting organizations' and enterprises' data in its digital vault, aiming to accelerate digital transformation and make performance, security, and resilience ReeVo's distinctive hallmarks. ReeVo is a KCSP with certified engineers that operates following industry best practices and ensures customer success by providing expert guidance, knowledge transfer, and Enterprise support.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review ReeVo Cloud & CyberSecurity (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ReeVo is a European Cloud, Cybersecurity, and Cloud Native provider with the core focus of protecting organizations' and enterprises' data in its digital vault, aiming to accelerate digital transformation and make performance, security, and resilience ReeVo's distinctive hallmarks. ReeVo is a KCSP with certified engineers that operates following industry best practices and ensures customer success by providing expert guidance, knowledge transfer, and Enterprise support.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-reevo-cloud-and-cybersecurity-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Envoy Gateway using its official documentation and repository in the Orchestration & Management / API Gateway category. Part of the Envoy project, Envoy Gateway is the control plane for dynamically managing Envoy Proxy, aimed at significantly decreasing the barrier to entry when using it for Gateway (sometimes known as "north-south") use cases.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Envoy Gateway using its official documentation and repository in the Orchestration & Management / API Gateway category. Part of the Envoy project, Envoy Gateway is the control plane for dynamically managing Envoy Proxy, aimed at significantly decreasing the barrier to entry when using it for Gateway (sometimes known as "north-south") use cases.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-envoy-gateway-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

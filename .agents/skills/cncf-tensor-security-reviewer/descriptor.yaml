@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Tensor Security using its official documentation and repository in the Provisioning / Security & Compliance category. Tensor Security is a cloud-native security company focused on providing AI-based and full-stack cloud-native security solutions.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Tensor Security using its official documentation and repository in the Provisioning / Security & Compliance category. Tensor Security is a cloud-native security company focused on providing AI-based and full-stack cloud-native security solutions.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-tensor-security-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

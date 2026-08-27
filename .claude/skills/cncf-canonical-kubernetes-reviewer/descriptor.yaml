@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Canonical Kubernetes using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. Performant and easy to deploy Kubernetes cluster with a zero-ops experience and everything needed for a fully functioning cluster (e.g. DNS, gateway, networking).
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Canonical Kubernetes using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. Performant and easy to deploy Kubernetes cluster with a zero-ops experience and everything needed for a fully functioning cluster (e.g. DNS, gateway, networking).
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-canonical-kubernetes-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

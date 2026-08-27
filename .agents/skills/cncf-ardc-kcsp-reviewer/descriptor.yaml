@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review ARDC (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ARDC's Kubernetes service offering involves engaging the Australian research community in the adoption of Kubernetes to deliver cloud native research platforms. The core pillars of the service are community engagement via the ARCOS community, consultancy and support for platform research projects; training and implementations for researchers and research software engineers.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review ARDC (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ARDC's Kubernetes service offering involves engaging the Australian research community in the adoption of Kubernetes to deliver cloud native research platforms. The core pillars of the service are community engagement via the ARCOS community, consultancy and support for platform research projects; training and implementations for researchers and research software engineers.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-ardc-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

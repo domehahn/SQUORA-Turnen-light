@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-radar-reviewer
+version: 0.1.0
+description: Review Radar using its official documentation and repository in the Observability and Analysis / Observability category. Open-source Kubernetes visibility tool with topology visualization, event timeline, Helm management, and built-in MCP server for AI tools.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Radar using its official documentation and repository in the Observability and Analysis / Observability category. Open-source Kubernetes visibility tool with topology visualization, event timeline, Helm management, and built-in MCP server for AI tools.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Elastisys Welkin® based on Cluster API using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. Welkin is a security-hardened Kubernetes distribution. It is designed to meet the tough demands on security and compliance of regulated industries.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Elastisys Welkin® based on Cluster API using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. Welkin is a security-hardened Kubernetes distribution. It is designed to meet the tough demands on security and compliance of regulated industries.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-elastisys-welkin-based-on-cluster-api-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

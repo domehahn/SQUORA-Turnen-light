@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Whitestack WhiteMist using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. WhiteMist is Whitestack's own Kubernetes distribution, geared at accelerating the adoption of containers in Cloud providers, E-commerce providers, Large organizations and Telecom Operators.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Whitestack WhiteMist using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. WhiteMist is Whitestack's own Kubernetes distribution, geared at accelerating the adoption of containers in Cloud providers, E-commerce providers, Large organizations and Telecom Operators.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-whitestack-whitemist-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

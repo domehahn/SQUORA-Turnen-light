@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Samsung Kubernetes Engine (SKE) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. SKE offers lightweight virtual computing containers and clusters for their management. With the service, Kubernetes environments are readily available by installation, operation, and maintenance of the Kubernetes control plane.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Samsung Kubernetes Engine (SKE) using its official documentation and repository in the Platform / Certified Kubernetes - Hosted category. SKE offers lightweight virtual computing containers and clusters for their management. With the service, Kubernetes environments are readily available by installation, operation, and maintenance of the Kubernetes control plane.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-samsung-kubernetes-engine-ske-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

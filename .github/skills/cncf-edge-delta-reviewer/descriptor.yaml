@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-edge-delta-reviewer
+version: 0.1.0
+description: Review Edge Delta using its official documentation and repository in the Observability and Analysis / Observability category. Edge Delta is a platform for creating observability pipelines, monitoring Kubernetes resources, and querying large-scale datasets. Edge Delta uniquely processes telemetry as it's created at the source to enable greater scale and cost-effectiveness.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Edge Delta using its official documentation and repository in the Observability and Analysis / Observability category. Edge Delta is a platform for creating observability pipelines, monitoring Kubernetes resources, and querying large-scale datasets. Edge Delta uniquely processes telemetry as it's created at the source to enable greater scale and cost-effectiveness.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

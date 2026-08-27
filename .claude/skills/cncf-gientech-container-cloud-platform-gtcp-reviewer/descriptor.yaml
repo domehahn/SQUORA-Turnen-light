@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review GienTech Container Cloud Platform (GTCP) using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. GienTech Container Cloud Platform (GTCP) provides financial level, high availability, and high security container service platform.  GTCP fully follows the conformance with Kubernetes and is flexible to extend more other services with GienTech PAAS products.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review GienTech Container Cloud Platform (GTCP) using its official documentation and repository in the Platform / Certified Kubernetes - Distribution category. GienTech Container Cloud Platform (GTCP) provides financial level, high availability, and high security container service platform.  GTCP fully follows the conformance with Kubernetes and is flexible to extend more other services with GienTech PAAS products.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-gientech-container-cloud-platform-gtcp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

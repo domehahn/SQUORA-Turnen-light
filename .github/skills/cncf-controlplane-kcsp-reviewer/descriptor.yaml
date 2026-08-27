@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-controlplane-kcsp-reviewer
+version: 0.1.0
+description: Review ControlPlane (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ControlPlane is a cloud native security consultancy specialising in high-compliance development and security operations for financial and government organisations, third party code risk management, and end-to-end supply chain security.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review ControlPlane (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. ControlPlane is a cloud native security consultancy specialising in high-compliance development and security operations for financial and government organisations, third party code risk management, and end-to-end supply chain security.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

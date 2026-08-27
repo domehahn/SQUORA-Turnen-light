@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review iits-consulting (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Put your trust in one of Germany’s most successful bootstrapped IT consulting companies of the past decade. iits-consulting delivers sovereign EU-cloud solutions, expert Time & Material consultants, and CloudOps as a Service with KumoOps, our unified Developer Platform and Operations solution. From Kubernetes to AI-powered innovation, we are your trusted partner for scalable and future-ready cloud solutions.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review iits-consulting (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Put your trust in one of Germany’s most successful bootstrapped IT consulting companies of the past decade. iits-consulting delivers sovereign EU-cloud solutions, expert Time & Material consultants, and CloudOps as a Service with KumoOps, our unified Developer Platform and Operations solution. From Kubernetes to AI-powered innovation, we are your trusted partner for scalable and future-ready cloud solutions.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-iits-consulting-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

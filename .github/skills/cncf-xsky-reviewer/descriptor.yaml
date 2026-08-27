@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-xsky-reviewer
+version: 0.1.0
+description: Review XSKY using its official documentation and repository in the Runtime / Cloud Native Storage category. XSKY (Beijing) Data Technology Co., Ltd. is a high-tech enterprise focusing on software defined infrastructure, providing software defined distributed storage product of enterprise-grade and helping customers achieve innovation in data structure.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review XSKY using its official documentation and repository in the Runtime / Cloud Native Storage category. XSKY (Beijing) Data Technology Co., Ltd. is a high-tech enterprise focusing on software defined infrastructure, providing software defined distributed storage product of enterprise-grade and helping customers achieve innovation in data structure.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

@@ -128,15 +128,31 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
-// CSRF Defense-in-Depth (externe Production-Readiness-Prüfung 2026-08-27):
-// SameSite=Strict auf dem Session-Cookie verhindert bereits, dass ein
-// fremder Origin das Cookie bei einem Cross-Site-Request mitschickt - laut
-// OWASP soll das aber nicht die einzige Schutzschicht sein (ältere Browser,
-// künftige SameSite-Änderungen, Subdomain-Sonderfälle). Zusätzliche
-// serverseitige Prüfung für alle zustandsändernden Methoden: Origin (bzw.
-// ersatzweise Sec-Fetch-Site für Browser, die bei manchen Requests keinen
-// Origin-Header senden) muss auf den eigenen Frontend-Origin bzw. "same-
-// origin" zeigen. GET/HEAD/OPTIONS sind lesend und bleiben unangetastet.
+// CSRF Defense-in-Depth (externe Production-Readiness-Prüfung 2026-08-27,
+// CSRF-11-Härtung im zweiten Durchgang 2026-08-27): SameSite=Strict auf dem
+// Session-Cookie verhindert bereits, dass ein fremder Origin das Cookie bei
+// einem Cross-Site-Request mitschickt - laut OWASP soll das aber nicht die
+// einzige Schutzschicht sein (ältere Browser, künftige SameSite-Änderungen,
+// Subdomain-Sonderfälle). Zusätzliche serverseitige Prüfung für alle
+// zustandsändernden Methoden: Origin (bzw. ersatzweise Sec-Fetch-Site für
+// Browser, die bei manchen Requests keinen Origin-Header senden) muss auf
+// den eigenen Frontend-Origin bzw. "same-origin" zeigen. GET/HEAD/OPTIONS
+// sind lesend und bleiben unangetastet.
+//
+// Fail-closed bei FEHLENDEN Headern (CSRF-11): früher galt "weder Origin
+// noch Sec-Fetch-Site gesetzt -> erlaubt" (Begründung: nicht-browserbasierte
+// Clients wie curl). Das ist ein unnötiger Fail-open-Pfad: jeder moderne,
+// evergreen Browser sendet bei einem zustandsändernden fetch/XHR/Formular-
+// Request IMMER mindestens einen der beiden Header, ob same-origin oder
+// cross-origin (seit mehreren Jahren Standardverhalten). Ein Request ganz
+// ohne beide Header ist damit so gut wie nie echter, durch eine Person
+// ausgelöster Browser-Traffic - sondern typischerweise ein direkter
+// HTTP-Client (curl/Postman/Skript). Diese App hat KEINEN legitimen
+// nicht-browserbasierten Aufrufer für zustandsändernde Routen (der
+// scheduled()-Handler ruft interne Funktionen direkt auf, nie per HTTP
+// gegen sich selbst - s. `export default { scheduled }` unten) - der
+// Fail-open-Pfad hätte also nur Angriffsfläche ohne echten Nutzen bewahrt.
+// Jetzt: fehlen beide Header, wird der Request abgelehnt.
 const CSRF_UNSAFE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
 
 function isSameOriginRequest(c: { req: { url: string; header: (name: string) => string | undefined } }, env: Env): boolean {
@@ -144,7 +160,7 @@ function isSameOriginRequest(c: { req: { url: string; header: (name: string) => 
   if (secFetchSite) return secFetchSite === "same-origin" || secFetchSite === "none";
 
   const origin = c.req.header("Origin");
-  if (!origin) return true; // kein Origin/Sec-Fetch-Site: z.B. direkte curl-Requests, nicht browserbasiertes CSRF
+  if (!origin) return false; // weder Origin noch Sec-Fetch-Site gesetzt: kein bekannter legitimer Aufrufer (s.o.)
 
   if (origin === new URL(env.FRONTEND_URL).origin) return true;
   const apiHostname = new URL(c.req.url).hostname;
@@ -583,9 +599,20 @@ async function notifyClubWaitlistOnFreedCapacity(c: { env: Env }, groupId: strin
 // fehlgeschlagene Versuche je E-Mail-Adresse innerhalb von
 // LOGIN_WINDOW_MINUTES, danach wird die Adresse unabhängig vom Passwort
 // gesperrt, bis das Zeitfenster abläuft (Finding SEC-01). Bewusst pro
-// E-Mail statt pro IP, da Cloudflare-Worker-Requests IPs teilen können und
-// eine E-Mail-basierte Sperre robuster gegen verteilte Versuche ist.
+// E-Mail statt NUR pro IP, da Cloudflare-Worker-Requests IPs teilen können
+// (NAT/Vereins-WLAN/Firmennetz) und eine E-Mail-basierte Sperre robuster
+// gegen verteilte Versuche gegen EIN Konto ist.
+//
+// CI-17-Härtung (zweiter Production-Readiness-Durchgang 2026-08-27):
+// zusätzliches, unabhängiges IP-basiertes Limit (deutlich höher als das
+// Konto-Limit) schließt die verbleibende Lücke - reines E-Mail-Limit
+// schützt NICHT gegen Credential Stuffing/Password Spraying von einer IP
+// über VIELE verschiedene Konten, solange jedes einzelne Konto unter
+// seinem eigenen Limit bleibt. LOGIN_IP_MAX_FAILED_ATTEMPTS bewusst 3x so
+// hoch wie das Konto-Limit, damit ein geteiltes Netz (mehrere Personen,
+// mehrere echte Fehlversuche) nicht vorschnell komplett gesperrt wird.
 const LOGIN_MAX_FAILED_ATTEMPTS = 10;
+const LOGIN_IP_MAX_FAILED_ATTEMPTS = 30;
 const LOGIN_WINDOW_MINUTES = 15;
 
 app.post("/api/login", async (c) => {
@@ -594,8 +621,12 @@ app.post("/api/login", async (c) => {
   const password = typeof body?.password === "string" ? body.password : undefined;
   if (!email || !password) return c.json({ error: "E-Mail oder Passwort fehlt" }, 400);
 
-  const recentFailures = await db.countRecentFailedLogins(c.env.DB, email, LOGIN_WINDOW_MINUTES);
-  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
+  const [recentFailures, recentFailuresByIp] = await Promise.all([
+    db.countRecentFailedLogins(c.env.DB, email, LOGIN_WINDOW_MINUTES),
+    db.countRecentFailedLoginsByIp(c.env.DB, ip, LOGIN_WINDOW_MINUTES),
+  ]);
+  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS || recentFailuresByIp >= LOGIN_IP_MAX_FAILED_ATTEMPTS) {
     return c.json(
       { error: `Zu viele fehlgeschlagene Anmeldeversuche. Bitte in ${LOGIN_WINDOW_MINUTES} Minuten erneut versuchen.` },
       429
@@ -607,7 +638,7 @@ app.post("/api/login", async (c) => {
     ? await verifyPassword(password, userRow.password_hash, userRow.password_salt, userRow.password_iterations)
     : false;
   if (!userRow || !valid) {
-    await db.recordLoginAttempt(c.env.DB, email, false);
+    await db.recordLoginAttempt(c.env.DB, email, false, ip);
     return c.json({ error: "E-Mail oder Passwort ungültig" }, 401);
   }
 
@@ -631,7 +662,7 @@ app.post("/api/login", async (c) => {
 
   const { jwt } = await issueSession(c, userRow.id);
   setSessionCookie(c, jwt);
-  await db.recordLoginAttempt(c.env.DB, email, true);
+  await db.recordLoginAttempt(c.env.DB, email, true, ip);
   await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });
@@ -654,8 +685,12 @@ app.post("/api/login/mfa", async (c) => {
     return c.json({ error: "MFA-Anmeldung abgelaufen, bitte erneut einloggen" }, 401);
   }
 
-  const recentFailures = await db.countRecentFailedLogins(c.env.DB, userRow.email, LOGIN_WINDOW_MINUTES);
-  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS) {
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
+  const [recentFailures, recentFailuresByIp] = await Promise.all([
+    db.countRecentFailedLogins(c.env.DB, userRow.email, LOGIN_WINDOW_MINUTES),
+    db.countRecentFailedLoginsByIp(c.env.DB, ip, LOGIN_WINDOW_MINUTES),
+  ]);
+  if (recentFailures >= LOGIN_MAX_FAILED_ATTEMPTS || recentFailuresByIp >= LOGIN_IP_MAX_FAILED_ATTEMPTS) {
     return c.json(
       { error: `Zu viele fehlgeschlagene Anmeldeversuche. Bitte in ${LOGIN_WINDOW_MINUTES} Minuten erneut versuchen.` },
       429
@@ -668,21 +703,26 @@ app.post("/api/login/mfa", async (c) => {
   let ok = await verifyTotp(secretBytes, code);
 
   // Fallback: Backup-Code statt TOTP-Code (z.B. Authenticator-Gerät
-  // verloren) - einmal verwendbar, wird danach aus der Liste entfernt.
-  if (!ok && userRow.totp_backup_codes) {
-    const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
+  // verloren) - einmal verwendbar (AUTH-12/AUTH-13). Verbrauch erfolgt über
+  // db.tryConsumeBackupCode(): ein atomares `UPDATE ... WHERE used_at IS
+  // NULL`, das nur greift, wenn der Code JETZT noch unverbraucht ist. Bei
+  // zwei gleichzeitigen Login-Versuchen mit demselben Code gewinnt genau
+  // einer - der andere bekommt hier `false` zurück und der Login schlägt
+  // fehl, unabhängig davon, dass der Hash-Vergleich zuvor erfolgreich war.
+  if (!ok) {
+    const activeCodes = await db.listActiveBackupCodes(c.env.DB, userRow.id);
     const normalizedCode = code.toUpperCase().replace(/\s/g, "");
-    for (let i = 0; i < hashedCodes.length; i++) {
-      if (await verifyPassword(normalizedCode, hashedCodes[i].hash, hashedCodes[i].salt, BACKUP_CODE_ITERATIONS)) {
+    for (const hc of activeCodes) {
+      if (await verifyPassword(normalizedCode, hc.code_hash, hc.code_salt, BACKUP_CODE_ITERATIONS)) {
+        const consumed = await db.tryConsumeBackupCode(c.env.DB, hc.id);
+        if (!consumed) break; // Race verloren - Code wurde parallel bereits verbraucht.
         ok = true;
-        hashedCodes.splice(i, 1);
-        await db.consumeBackupCode(c.env.DB, userRow.id, JSON.stringify(hashedCodes));
         await db.logAudit(c.env.DB, {
           clubId: userRow.club_id,
           actorId: userRow.id,
           actorName: userRow.name,
           action: "mfa.backup_code_used",
-          targetLabel: `${hashedCodes.length} Backup-Codes verbleibend`,
+          targetLabel: `${activeCodes.length - 1} Backup-Codes verbleibend`,
         });
         break;
       }
@@ -690,13 +730,13 @@ app.post("/api/login/mfa", async (c) => {
   }
 
   if (!ok) {
-    await db.recordLoginAttempt(c.env.DB, userRow.email, false);
+    await db.recordLoginAttempt(c.env.DB, userRow.email, false, ip);
     return c.json({ error: "Code ungültig" }, 401);
   }
 
   const { jwt } = await issueSession(c, userRow.id);
   setSessionCookie(c, jwt);
-  await db.recordLoginAttempt(c.env.DB, userRow.email, true);
+  await db.recordLoginAttempt(c.env.DB, userRow.email, true, ip);
   await db.touchLastLogin(c.env.DB, userRow.id);
   return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
 });
@@ -727,18 +767,18 @@ app.get("/api/me/mfa", requireAuth, async (c) => {
 // weiterhin Zugriff auf den zweiten Faktor", kein Login-Vorgang) - anders
 // als beim eigentlichen Login mit Backup-Code (POST /api/login/mfa).
 async function verifyActiveMfaCode(
-  userRow: { totp_secret: string | null; totp_backup_codes: string | null },
+  db_: D1Database,
+  userRow: { id: string; totp_secret: string | null },
   code: string,
   encryptionKey: string
 ): Promise<boolean> {
   if (!userRow.totp_secret) return false;
   const secretBase32 = await decryptField(userRow.totp_secret, encryptionKey);
   if (secretBase32 && (await verifyTotp(base32Decode(secretBase32), code))) return true;
-  if (!userRow.totp_backup_codes) return false;
-  const hashedCodes = JSON.parse(userRow.totp_backup_codes) as { hash: string; salt: string }[];
+  const activeCodes = await db.listActiveBackupCodes(db_, userRow.id);
   const normalizedCode = code.toUpperCase().replace(/\s/g, "");
-  for (const hc of hashedCodes) {
-    if (await verifyPassword(normalizedCode, hc.hash, hc.salt, BACKUP_CODE_ITERATIONS)) return true;
+  for (const hc of activeCodes) {
+    if (await verifyPassword(normalizedCode, hc.code_hash, hc.code_salt, BACKUP_CODE_ITERATIONS)) return true;
   }
   return false;
 }
@@ -764,7 +804,7 @@ app.post("/api/me/mfa/setup", requireAuth, async (c) => {
   }
   if (userRow.totp_enabled) {
     if (!currentCode) return c.json({ error: "Aktueller MFA-Code erforderlich, um die MFA neu einzurichten" }, 400);
-    if (!(await verifyActiveMfaCode(userRow, currentCode, c.env.ENCRYPTION_KEY))) {
+    if (!(await verifyActiveMfaCode(c.env.DB, userRow, currentCode, c.env.ENCRYPTION_KEY))) {
       return c.json({ error: "Aktueller MFA-Code ungültig" }, 403);
     }
   }
@@ -804,10 +844,12 @@ app.post("/api/me/mfa/confirm", requireAuth, async (c) => {
       return { hash, salt };
     })
   );
-  // Atomar (einzelnes UPDATE in db.enableTotp): totp_secret <- pending,
-  // totp_enabled <- 1, neue Backup-Codes, pending_totp_secret geleert -
-  // kein Zwischenzustand, in dem beide oder keine Fassung aktiv wäre.
-  await db.enableTotp(c.env.DB, c.get("userId"), JSON.stringify(hashedBackupCodes));
+  // Atomar (db.batch() in db.enableTotp): totp_secret <- pending,
+  // totp_enabled <- 1, alte Backup-Code-Zeilen gelöscht, neue eingefügt,
+  // pending_totp_secret geleert - kein Zwischenzustand, in dem beide oder
+  // keine Fassung aktiv wäre, und keine Rotation, die alte UND neue Codes
+  // gleichzeitig gültig lässt.
+  await db.enableTotp(c.env.DB, c.get("userId"), hashedBackupCodes);
   if (wasRotation) {
     // Rotation ist ein Security-Recovery-Vorgang (z.B. Verdacht auf
     // kompromittierten zweiten Faktor) - andere Sitzungen widerrufen, analog
@@ -844,6 +886,30 @@ app.post("/api/me/mfa/disable", requireAuth, async (c) => {
     action: "mfa.disabled",
     targetLabel: c.get("email") ?? c.get("userId"),
   });
+  return c.json({ ok: true });
+});
+
+// Aktivitäts-Ping (P0 "SERVER-/CLIENT-IDLE SYNCHRONISIEREN", zweiter
+// Production-Readiness-Härtungsdurchgang 2026-08-27): schließt eine echte
+// Lücke zwischen dem clientseitigen Idle-Lock (IdleLockOverlay.tsx, rein
+// lokal) und dem serverseitigen 5-Minuten-Idle-Timeout (requireAuth). Wer
+// minutenlang ein Formular ausfüllt, ohne dass dabei irgendeine API-Anfrage
+// läuft (kein Zwischenspeichern, keine Navigation), erzeugte bisher keine
+// einzige Aktivitäts-Aktualisierung auf dem Server - der Client zeigte die
+// Person als aktiv, der Server hielt sie für inaktiv, und ein späteres
+// "Speichern" scheiterte mit 401 trotz durchgehender echter Aktivität.
+//
+// Absichtlich ohne eigene Nutzlast/Antwortdaten (nur `{ok:true}`) - der
+// eigentliche Effekt ist bereits die throttled last_activity_at-
+// Aktualisierung, die requireAuth für JEDE authentifizierte Anfrage ohnehin
+// durchführt (ACTIVITY_UPDATE_THROTTLE_SECONDS = 30s, s.o.). Das Frontend
+// ruft diese Route ausschließlich nach echter Nutzerinteraktion auf
+// (pointerdown/keydown/touchstart, s. IdleLockOverlay.tsx), selbst
+// zusätzlich auf ca. 45s gedrosselt - NIE durch einen reinen Timer,
+// Hintergrund-Fetch oder Notification-Polling. Verlängert bewusst nur den
+// Idle-Zustand, nie die absolute Sitzungsdauer (die hängt an
+// `sessions.absolute_expires_at`, das hier unverändert bleibt).
+app.post("/api/session/activity", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
@@ -999,6 +1065,65 @@ app.delete("/api/admin/clubs/:id", requireAuth, requireAdmin, async (c) => {
   return c.body(null, 204);
 });
 
+// TEMPORÄR (Nutzeranfrage 2026-08-27): schickt zu jedem E-Mail-Typ, den die
+// App verschickt, eine Testmail mit synthetischen Beispieldaten an eine feste
+// Adresse - zum visuellen Review des neuen E-Mail-Designs. Admin-only, wird
+// nach einmaliger Nutzung wieder entfernt (nicht Teil des dauerhaften
+// Funktionsumfangs).
+app.post("/api/admin/_debug/send-all-sample-emails", requireAuth, requireAdmin, async (c) => {
+  const TEST_TO = "aboutdevops@gmail.com";
+  const F = c.env.FRONTEND_URL;
+  const samples: { id: string; subject: string; text: string; link?: string; linkLabel?: string }[] = [
+    { id: "waitlist_promoted", subject: `Platz frei in „Minis“`, text: `Anna Beispiel wurde von der Warteliste in „Minis“ nachgerückt.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "waitlist_capacity_freed", subject: `Platz frei in „Minis“ – Warteliste prüfen`, text: `In „Minis“ sind wieder 2 Plätze frei. Von der Warteliste passt vom Alter her: Anna Beispiel, Ben Muster.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "welcome_new_user", subject: "Dein Zugang für Turnen", text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: max.mustermann@example.com\nEinmal-Passwort: Beispiel-Passwort-Nicht-Echt\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst.`, link: `${F}/login`, linkLabel: "Jetzt anmelden" },
+    { id: "password_reset", subject: "Passwort zurücksetzen", text: `Für dein Konto wurde ein Zurücksetzen des Passworts angefordert. Falls du das warst, kannst du dir über den folgenden Link ein neues Passwort vergeben.\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail - es ändert sich nichts an deinem Passwort.`, link: `${F}/passwort-zuruecksetzen?token=beispiel-token-nicht-echt`, linkLabel: "Neues Passwort festlegen" },
+    { id: "club_join_requested", subject: `Beitrittsanfrage für „TSV Musterstadt“`, text: `Max Mustermann möchte „TSV Musterstadt“ beitreten - bitte freigeben oder ablehnen.`, link: `${F}/verein`, linkLabel: "In der App ansehen" },
+    { id: "club_join_approved", subject: `Beitritt zu „TSV Musterstadt“ freigegeben`, text: `Erika Beispiel hat deine Beitrittsanfrage für „TSV Musterstadt“ freigegeben.`, link: `${F}/verein`, linkLabel: "In der App ansehen" },
+    { id: "club_join_rejected", subject: `Beitritt zu „TSV Musterstadt“ abgelehnt`, text: `Erika Beispiel hat deine Beitrittsanfrage für „TSV Musterstadt“ abgelehnt.`, link: `${F}/verein`, linkLabel: "In der App ansehen" },
+    { id: "group_co_leader_added", subject: `Mit-Trainer*in für „Große Turner“`, text: `Erika Beispiel hat dich als Mit-Trainer*in für „Große Turner“ eingetragen - du hast jetzt dieselben Rechte wie die Gruppenleitung.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "capacity_request", subject: `Kapazitäts-Anfrage für „Minis“`, text: `Anna Beispiel soll in die volle Gruppe „Minis“ - bitte freigeben oder ablehnen.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "substitute_request", subject: `Vertretung gesucht für „Große Turner“`, text: `Erika Beispiel sucht für den Termin am 2026-09-03 in „Große Turner“ eine Vertretung. (Beispiel-Notiz)`, link: `${F}/vertretungen`, linkLabel: "In der App ansehen" },
+    { id: "substitute_claimed", subject: `Vertretung übernommen für „Große Turner“`, text: `Max Mustermann übernimmt den Termin am 2026-09-03 in „Große Turner“.`, link: `${F}/vertretungen`, linkLabel: "In der App ansehen" },
+    { id: "substitute_returned", subject: `Vertretung zurückgegeben für „Große Turner“`, text: `Max Mustermann kann den Termin am 2026-09-03 in „Große Turner“ doch nicht übernehmen - die Stunde liegt wieder bei dir.`, link: `${F}/vertretungen`, linkLabel: "In der App ansehen" },
+    { id: "move_request", subject: `Verschiebe-Anfrage für „Große Turner“`, text: `Anna Beispiel möchte in deine Gruppe „Große Turner“ wechseln - bitte freigeben oder ablehnen.\n\nBegründung: Beispiel-Begründung für den Wechsel.\n\nDetails (Notfallkontakt) siehst du nach dem Anmelden in der App.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_approved_owner", subject: `Verschiebe-Anfrage genehmigt: „Große Turner“`, text: `Anna Beispiel wurde von „Minis“ in „Große Turner“ verschoben.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_approved_requester", subject: `Deine Verschiebe-Anfrage wurde genehmigt`, text: `Anna Beispiel wurde in „Große Turner“ aufgenommen.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_rejected_owner", subject: `Verschiebe-Anfrage abgelehnt: „Große Turner“`, text: `Anna Beispiel bleibt in „Minis“ - der Wechsel nach „Große Turner“ wurde abgelehnt.\n\nBegründung: Beispiel-Ablehnungsgrund.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_rejected_requester", subject: `Deine Verschiebe-Anfrage wurde abgelehnt`, text: `Anna Beispiel konnte nicht nach „Große Turner“ wechseln.\n\nBegründung: Beispiel-Ablehnungsgrund.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "club_waitlist_added", subject: "Neue Anfrage auf der Warteliste", text: `Erika Beispiel hat Ben Muster zur Warteliste hinzugefügt. (Beispiel-Notiz)`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_proposed", subject: `Platzvorschlag für „Minis“`, text: `Erika Beispiel schlägt Ben Muster für deine Gruppe „Minis“ vor - bitte bestätige oder lehne ab.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_requested", subject: `Übernahme-Anfrage für „Minis“`, text: `Max Mustermann möchte Ben Muster in die Gruppe „Minis“ übernehmen - Begründung: Beispiel-Begründung - bitte freigeben oder ablehnen.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_confirmed_proposer", subject: `Platzvorschlag bestätigt für „Minis“`, text: `Erika Beispiel hat Ben Muster in „Minis“ aufgenommen.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "placement_confirmed_new_owner", subject: `Neues Kind in deiner Gruppe „Minis“`, text: `Ben Muster wurde in deine Gruppe „Minis“ aufgenommen. Details (Notfallkontakt) siehst du nach dem Anmelden in der App.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "placement_declined", subject: `Übernahme-Anfrage abgelehnt für „Minis“`, text: `Erika Beispiel kann Ben Muster aktuell nicht in „Minis“ aufnehmen.\n\nBegründung: Beispiel-Ablehnungsgrund.`, link: `${F}/warteliste`, linkLabel: "In der App ansehen" },
+    { id: "session_override_requested", subject: `Abweichender Termin angefragt für „Große Turner“`, text: `Max Mustermann möchte den Termin am 2026-09-03 in „Große Turner“ abweichend durchführen (Beispiel-Notiz) - bitte freigeben oder ablehnen.`, link: `${F}/anwesenheit`, linkLabel: "In der App ansehen" },
+    { id: "substitute_assigned", subject: `Vertretung eingetragen für „Große Turner“`, text: `Erika Beispiel hat dich für den Termin am 2026-09-03 in „Große Turner“ als Leitung eingetragen - die Stunde zählt in deinem Stundennachweis.`, link: `${F}/nachweis`, linkLabel: "In der App ansehen" },
+    { id: "session_override_approved", subject: `Abweichender Termin freigegeben für „Große Turner“`, text: `Erika Beispiel hat deinen abweichenden Termin am 2026-09-03 in „Große Turner“ freigegeben.`, link: `${F}/anwesenheit`, linkLabel: "In der App ansehen" },
+    { id: "session_override_rejected", subject: `Abweichender Termin abgelehnt für „Große Turner“`, text: `Erika Beispiel hat deinen abweichenden Termin am 2026-09-03 in „Große Turner“ abgelehnt.`, link: `${F}/anwesenheit`, linkLabel: "In der App ansehen" },
+    { id: "move_request_reminder_owner", subject: `Erinnerung: Verschiebe-Anfrage für „Große Turner“`, text: `Anna Beispiel wartet seit 3 Tagen auf deine Freigabe für „Große Turner“.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+    { id: "move_request_reminder_requester", subject: "Erinnerung: Deine Verschiebe-Anfrage wartet noch", text: `Anna Beispiel wartet seit 3 Tagen auf Freigabe für „Große Turner“.`, link: `${F}/kinder`, linkLabel: "In der App ansehen" },
+    { id: "capacity_request_reminder", subject: `Erinnerung: Kapazitäts-Anfrage für „Minis“`, text: `Anna Beispiel wartet seit 3 Tagen auf deine Freigabe für „Minis“.`, link: `${F}/gruppen`, linkLabel: "In der App ansehen" },
+  ];
+  const results: { id: string; ok: boolean }[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    try {
+      const sent = await sendEmailOnly(c.env, {
+        to: TEST_TO,
+        subject: `[TEST ${i + 1}/${samples.length} · ${s.id}] ${s.subject}`,
+        text: s.text,
+        link: s.link,
+        linkLabel: s.linkLabel,
+      });
+      results.push({ id: s.id, ok: sent });
+    } catch {
+      results.push({ id: s.id, ok: false });
+    }
+  }
+  return c.json(results);
+});
+
 // Alle Nutzer*innen vereinsübergreifend - für die Admin-Nutzerverwaltung.
 app.get("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   return c.json(await db.listAllUsersForAdmin(c.env.DB));
@@ -1011,7 +1136,7 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   const password = validPassword(body?.password);
   if (!email) return c.json({ error: "E-Mail fehlt oder ist ungültig" }, 400);
   if (name === undefined) return c.json({ error: "Name ist zu lang" }, 400);
-  if (!password) return c.json({ error: "Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  if (!password) return c.json({ error: "Passwort ist ungültig (mind. 15 Zeichen)" }, 400);
   if (await isPasswordPwned(password)) {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
@@ -1036,8 +1161,27 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
     clubId: null,
     actorId: c.get("userId"),
     actorName: c.get("name"),
+    // Niemals das Passwort selbst ins Audit-Log - targetLabel bleibt bei
+    // der E-Mail, unabhängig vom Mailversand unten.
     action: "admin.user_created",
     targetLabel: email,
+  });
+  // Willkommens-Mail mit dem Einmal-Passwort (Nutzeranfrage 2026-08-27):
+  // createUserAdmin() setzt must_change_password bereits auf 1 - die neue
+  // Person MUSS dieses Passwort beim ersten Login sofort ersetzen, es ist
+  // also ein echtes Einmal-Credential und kein dauerhaftes Geheimnis, das
+  // im Postfach liegen bleibt. sendEmailOnly() statt notifyUser(): keine
+  // dauerhafte In-App-Benachrichtigung mit dem Klartext-Passwort in D1,
+  // best effort wie beim Passwort-Reset-Mailversand - ein Mail-Fehler darf
+  // das Anlegen des Accounts nicht rückgängig machen oder melden, die
+  // admin-ausführende Person sieht das Passwort ohnehin im Formular und
+  // kann es bei Bedarf selbst weitergeben.
+  await sendEmailOnly(c.env, {
+    to: email,
+    subject: "Dein Zugang für Turnen",
+    text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: ${email}\nEinmal-Passwort: ${password}\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst.`,
+    link: `${c.env.FRONTEND_URL}/login`,
+    linkLabel: "Jetzt anmelden",
   });
   return c.json({ id: user.id, email, name, clubId, clubRole, isAdmin }, 201);
 });
@@ -1082,7 +1226,7 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
   const body = await c.req.json().catch(() => null);
   const newPassword = validPassword(body?.newPassword);
   if (!id) return c.json({ error: "Ungültige ID" }, 400);
-  if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 8 Zeichen)" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort ist ungültig (mind. 15 Zeichen)" }, 400);
   if (await isPasswordPwned(newPassword)) {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
@@ -1217,7 +1361,7 @@ app.put("/api/me/password", requireAuth, async (c) => {
   const currentPassword = typeof body?.currentPassword === "string" ? body.currentPassword : undefined;
   const newPassword = validPassword(body?.newPassword);
   if (!currentPassword) return c.json({ error: "Aktuelles Passwort fehlt" }, 400);
-  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 15 Zeichen lang sein" }, 400);
 
   const userRow = await db.getUserRowById(c.env.DB, c.get("userId"));
   if (!userRow) return c.json({ error: "Nutzer nicht gefunden" }, 404);
@@ -1288,9 +1432,10 @@ app.post("/api/password-reset/request", async (c) => {
   const resetToken = await signPasswordResetToken(userRow.id, c.env.JWT_SECRET);
   await sendEmailOnly(c.env, {
     to: userRow.email,
-    toName: userRow.name,
     subject: "Passwort zurücksetzen",
-    text: `Zum Zurücksetzen deines Passworts: ${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${resetToken}\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail.`,
+    text: `Für dein Konto wurde ein Zurücksetzen des Passworts angefordert. Falls du das warst, kannst du dir über den folgenden Link ein neues Passwort vergeben.\n\nDer Link ist 30 Minuten gültig. Falls du das nicht angefordert hast, ignoriere diese E-Mail - es ändert sich nichts an deinem Passwort.`,
+    link: `${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${resetToken}`,
+    linkLabel: "Neues Passwort festlegen",
   });
   return genericResponse;
 });
@@ -1300,7 +1445,7 @@ app.post("/api/password-reset/confirm", async (c) => {
   const token = typeof body?.token === "string" ? body.token : null;
   const newPassword = validPassword(body?.newPassword);
   if (!token) return c.json({ error: "Token fehlt" }, 400);
-  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 8 Zeichen lang sein" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 15 Zeichen lang sein" }, 400);
 
   let payload: { userId: string; jti: string; expiresAt: number };
   try {

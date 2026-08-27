@@ -37,7 +37,7 @@ describe("Passwort-Hashing (PBKDF2-Iterationen)", () => {
 
     const res = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "legacy-hash@test.local", password: "legacy-password-123" }),
     });
     expect(res.status).toBe(200);
@@ -50,7 +50,7 @@ describe("Passwort-Hashing (PBKDF2-Iterationen)", () => {
     // Login mit demselben Passwort funktioniert nach dem Rehashing weiterhin.
     const res2 = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "legacy-hash@test.local", password: "legacy-password-123" }),
     });
     expect(res2.status).toBe(200);

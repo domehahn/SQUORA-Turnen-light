@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: 'Review SQUER (member) using its official documentation and repository in the CNCF Members / Silver category. We are SQUER: coding architects, software engineers, agile transformation experts and cloud engineers, all striving towards one goal. Solve our customer''s challenges on their way to holistic digitalization while profoundly understanding their business and constraints. Our consultants are developers and vice versa. We believe in tackling challenges hands-on over concept only.'
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: 'Review SQUER (member) using its official documentation and repository in the CNCF Members / Silver category. We are SQUER: coding architects, software engineers, agile transformation experts and cloud engineers, all striving towards one goal. Solve our customer''s challenges on their way to holistic digitalization while profoundly understanding their business and constraints. Our consultants are developers and vice versa. We believe in tackling challenges hands-on over concept only.'
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-squer-member-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

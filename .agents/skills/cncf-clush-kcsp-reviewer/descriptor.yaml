@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Clush (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Unified Management of Kubernetes and Cloud Native Environments, Accelerating Enterprise AI through Expertise in GPUOps and MLOps Platforms.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Clush (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Unified Management of Kubernetes and Cloud Native Environments, Accelerating Enterprise AI through Expertise in GPUOps and MLOps Platforms.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-clush-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

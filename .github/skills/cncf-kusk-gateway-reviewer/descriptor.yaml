@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-kusk-gateway-reviewer
+version: 0.1.0
+description: Review Kusk Gateway using its official documentation and repository in the Orchestration & Management / API Gateway category. Kusk Gateway is a self-service API gateway powered by OpenAPI and Envoy. Kusk Gateway is built and maintained by Kubeshop.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Kusk Gateway using its official documentation and repository in the Orchestration & Management / API Gateway category. Kusk Gateway is a self-service API gateway powered by OpenAPI and Envoy. Kusk Gateway is built and maintained by Kubeshop.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

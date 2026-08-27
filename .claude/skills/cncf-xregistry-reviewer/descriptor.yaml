@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review xRegistry using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. The xRegistry project defines an abstract model for managing metadata about resources and provides a REST-based interface to discover, create, modify and delete those resources.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review xRegistry using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. The xRegistry project defines an abstract model for managing metadata about resources and provides a REST-based interface to discover, create, modify and delete those resources.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-xregistry-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

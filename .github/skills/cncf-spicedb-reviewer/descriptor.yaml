@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-spicedb-reviewer
+version: 0.1.0
+description: 'Review SpiceDB using its official documentation and repository in the App Definition and Development / Database category. SpiceDB is an open source database optimized for storing and querying authorization data. SpiceDB sets the standard for scalable authorization by remaining true to the design of the system powering permissions at Google: Zanzibar.'
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: 'Review SpiceDB using its official documentation and repository in the App Definition and Development / Database category. SpiceDB is an open source database optimized for storing and querying authorization data. SpiceDB sets the standard for scalable authorization by remaining true to the design of the system powering permissions at Google: Zanzibar.'
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

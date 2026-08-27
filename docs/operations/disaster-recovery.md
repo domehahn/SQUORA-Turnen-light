@@ -56,14 +56,16 @@ ausführen** - s. kritische Sicherheitsregeln in
    deployte Worker-Code erwartet. In diesem Fall: fehlende Migrationen
    erneut anwenden (`npx wrangler d1 migrations apply turnen-eu --remote`),
    **bevor** der Worker wieder Traffic bekommt.
-2. **Secret-Recovery**: `JWT_SECRET`/`ENCRYPTION_KEY` sind Worker-Secrets,
+2. **Secret-Recovery**: `JWT_SECRET`/`ENCRYPTION_KEY`/`RESEND_API_KEY` sind Worker-Secrets,
    **nicht** Teil der D1-Datenbank - ein D1-Restore betrifft sie nicht.
    Falls sie separat verloren gehen (z.B. Cloudflare-Konto-Problem):
    `ENCRYPTION_KEY`-Verlust macht alle verschlüsselten Felder
    (Notfallkontakte, Familien-Kontaktdaten, TOTP-Secrets) dauerhaft
    unlesbar - es gibt **keinen** Zweit-Schlüssel/Recovery-Mechanismus.
    `JWT_SECRET`-Verlust invalidiert alle aktiven Sitzungen (unkritisch,
-   nur erneuter Login nötig).
+   nur erneuter Login nötig). `RESEND_API_KEY` kann in Resend rotiert und
+   erneut als Worker-Secret gesetzt werden; bis dahin ist nur der externe
+   E-Mail-Versand unterbrochen, das In-App-Postfach bleibt verfügbar.
 3. **Restore Validation**: Smoke-Test (s. `deployment.md`), stichprobenartig
    prüfen, dass ein bekanntes Kind/eine bekannte Familie mit korrekt
    entschlüsselten Kontaktdaten angezeigt wird.

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review stackgenie (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. As a Kubernetes Certified Service Provider, StackGenie offers Kubernetes support, consulting and professional services for businesses and organisations wanting to migrate to cloud technologies, or improve their existing cloud infrastructure.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review stackgenie (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. As a Kubernetes Certified Service Provider, StackGenie offers Kubernetes support, consulting and professional services for businesses and organisations wanting to migrate to cloud technologies, or improve their existing cloud infrastructure.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-stackgenie-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

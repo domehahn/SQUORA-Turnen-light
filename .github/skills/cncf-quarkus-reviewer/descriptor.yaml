@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-quarkus-reviewer
+version: 0.1.0
+description: Review Quarkus using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Quarkus is a Kubernetes-native Java framework, designed to enable Java developers to create applications for a modern, cloud-native world. It is tailored for GraalVM and HotSpot, and crafted from best-of-breed Java libraries and standards.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Quarkus using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. Quarkus is a Kubernetes-native Java framework, designed to enable Java developers to create applications for a modern, cloud-native world. It is tailored for GraalVM and HotSpot, and crafted from best-of-breed Java libraries and standards.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

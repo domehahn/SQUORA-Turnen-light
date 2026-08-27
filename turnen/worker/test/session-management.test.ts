@@ -16,7 +16,7 @@ describe("Session-Management", () => {
     await seedUser({ email: "session-cookie@test.local", password: "password-123" });
     const res = await SELF.fetch("https://example.test/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ email: "session-cookie@test.local", password: "password-123" }),
     });
     expect(res.status).toBe(200);
@@ -155,14 +155,14 @@ describe("Session-Management", () => {
 
     const firstConfirm = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "brandnew-password-111" }),
     });
     expect(firstConfirm.status).toBe(200);
 
     const secondConfirm = await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "another-password-222" }),
     });
     expect(secondConfirm.status).toBe(401);
@@ -179,11 +179,135 @@ describe("Session-Management", () => {
 
     await SELF.fetch("https://example.test/api/password-reset/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
       body: JSON.stringify({ token, newPassword: "yet-another-password-333" }),
     });
 
     const res = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(cookie) });
     expect(res.status).toBe(401);
+  });
+});
+
+// Server-/Client-Idle-Synchronisierung (zweiter Production-Readiness-
+// Härtungsdurchgang 2026-08-27): POST /api/session/activity - echte
+// Nutzeraktivität (Formular ausfüllen etc.) erzeugte bisher keine einzige
+// API-Anfrage und aktualisierte last_activity_at daher nicht, obwohl der
+// Client (IdleLockOverlay.tsx) die Person weiterhin als aktiv anzeigte.
+// Diese Route schließt die Lücke - reiner Aktivitäts-Ping, keine Nutzdaten,
+// nutzt denselben throttled last_activity_at-Mechanismus wie jede andere
+// authentifizierte Route.
+describe("Session-Aktivitäts-Ping (POST /api/session/activity)", () => {
+  it("ohne gültige Sitzung: 401", async () => {
+    const res = await SELF.fetch("https://example.test/api/session/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://example.test" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("aktualisiert last_activity_at (throttled wie jede andere authentifizierte Route)", async () => {
+    await seedUser({ email: "activity-basic@test.local", password: "password-123" });
+    const cookie = await login(SELF, "activity-basic@test.local", "password-123");
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind("activity-basic@test.local").first<{ id: string }>();
+
+    // Sitzung künstlich 4 Minuten zurückdatieren, außerhalb des 30s-Throttle-
+    // Fensters, damit der Ping garantiert einen echten Write auslöst.
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-4 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+
+    const res = await SELF.fetch("https://example.test/api/session/activity", { method: "POST", headers: authHeaders(cookie) });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT last_activity_at FROM sessions WHERE user_id = ?")
+      .bind(user!.id)
+      .first<{ last_activity_at: string }>();
+    expect(new Date(`${row!.last_activity_at.replace(" ", "T")}Z`).getTime()).toBeGreaterThan(Date.now() - 60 * 1000);
+  });
+
+  it("4 Minuten idle + Notification-Poll → Session bleibt inaktiv (Poll zählt nicht)", async () => {
+    await seedUser({ email: "activity-poll-not-counted@test.local", password: "password-123" });
+    const cookie = await login(SELF, "activity-poll-not-counted@test.local", "password-123");
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?")
+      .bind("activity-poll-not-counted@test.local")
+      .first<{ id: string }>();
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-4 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+
+    await SELF.fetch("https://example.test/api/notifications", { headers: authHeaders(cookie) });
+
+    // Weitere 5 Minuten ohne echte Aktivität (aus Sicht des Tests: direkt
+    // auf > 5min Gesamt-Idle zurückdatiert) → muss abgelehnt werden.
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-6 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+    const res = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(cookie) });
+    expect(res.status).toBe(401);
+  });
+
+  it("4 Minuten idle + echter Activity-Ping → Session bleibt gültig, weitere 5 Minuten ohne Aktivität danach → 401", async () => {
+    await seedUser({ email: "activity-extends@test.local", password: "password-123" });
+    const cookie = await login(SELF, "activity-extends@test.local", "password-123");
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind("activity-extends@test.local").first<{ id: string }>();
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-4 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+
+    const pingRes = await SELF.fetch("https://example.test/api/session/activity", { method: "POST", headers: authHeaders(cookie) });
+    expect(pingRes.status).toBe(200);
+
+    // Sofort danach noch innerhalb des Fensters - Ping hat last_activity_at
+    // tatsächlich angehoben.
+    const stillOk = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(cookie) });
+    expect(stillOk.status).toBe(200);
+
+    // Weitere 6 Minuten OHNE jede Aktivität danach → jetzt wirklich abgelaufen.
+    await env.DB.prepare("UPDATE sessions SET last_activity_at = datetime('now', '-6 minutes') WHERE user_id = ?")
+      .bind(user!.id)
+      .run();
+    const expired = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(cookie) });
+    expect(expired.status).toBe(401);
+  });
+
+  it("Absolute Session-Lifetime wird durch Activity-Pings NIEMALS verlängert", async () => {
+    await seedUser({ email: "activity-absolute-unaffected@test.local", password: "password-123" });
+    const cookie = await login(SELF, "activity-absolute-unaffected@test.local", "password-123");
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?")
+      .bind("activity-absolute-unaffected@test.local")
+      .first<{ id: string }>();
+    await env.DB.prepare(
+      "UPDATE sessions SET absolute_expires_at = datetime('now', '-1 minutes'), last_activity_at = datetime('now') WHERE user_id = ?"
+    )
+      .bind(user!.id)
+      .run();
+
+    // Auch ein frischer Activity-Ping darf eine Sitzung jenseits ihrer
+    // absoluten Gültigkeit nicht wiederbeleben.
+    const res = await SELF.fetch("https://example.test/api/session/activity", { method: "POST", headers: authHeaders(cookie) });
+    expect(res.status).toBe(401);
+  });
+
+  it("wiederholte Pings innerhalb des Throttle-Fensters erzeugen keinen erneuten DB-Write (last_activity_at bleibt stabil)", async () => {
+    await seedUser({ email: "activity-throttled@test.local", password: "password-123" });
+    const cookie = await login(SELF, "activity-throttled@test.local", "password-123");
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind("activity-throttled@test.local").first<{ id: string }>();
+
+    const before = await env.DB.prepare("SELECT last_activity_at FROM sessions WHERE user_id = ?")
+      .bind(user!.id)
+      .first<{ last_activity_at: string }>();
+
+    // Mehrere schnelle Pings direkt nacheinander (Login selbst hat
+    // last_activity_at bereits gerade erst gesetzt - alles hier liegt
+    // innerhalb des 30s-Throttle-Fensters).
+    for (let i = 0; i < 5; i++) {
+      const res = await SELF.fetch("https://example.test/api/session/activity", { method: "POST", headers: authHeaders(cookie) });
+      expect(res.status).toBe(200);
+    }
+
+    const after = await env.DB.prepare("SELECT last_activity_at FROM sessions WHERE user_id = ?")
+      .bind(user!.id)
+      .first<{ last_activity_at: string }>();
+    expect(after!.last_activity_at).toBe(before!.last_activity_at);
   });
 });

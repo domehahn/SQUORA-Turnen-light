@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-vmware-application-catalog-reviewer
+version: 0.1.0
+description: Review VMware Application Catalog using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. VMware Application Catalog is a customizable selection of trusted, pre-packaged open-source application components that are continuously maintained and verifiably tested for use in production environments. It is the enterprise version of Bitnami Application Catalog.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review VMware Application Catalog using its official documentation and repository in the App Definition and Development / Application Definition & Image Build category. VMware Application Catalog is a customizable selection of trusted, pre-packaged open-source application components that are continuously maintained and verifiably tested for use in production environments. It is the enterprise version of Bitnami Application Catalog.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

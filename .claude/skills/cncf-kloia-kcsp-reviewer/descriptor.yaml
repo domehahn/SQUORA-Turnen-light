@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review kloia (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We specialize in end-to-end Kubernetes consulting and platform engineering — from cluster design, deployment, and migration to observability, security hardening, and cost optimization. Our team helps organizations adopt and scale Kubernetes with best practices, automation, and long-term operational excellence.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review kloia (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. We specialize in end-to-end Kubernetes consulting and platform engineering — from cluster design, deployment, and migration to observability, security hardening, and cost optimization. Our team helps organizations adopt and scale Kubernetes with best practices, automation, and long-term operational excellence.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-kloia-kcsp-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

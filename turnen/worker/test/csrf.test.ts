@@ -15,9 +15,13 @@ describe("CSRF Defense-in-Depth (Origin-/Sec-Fetch-Site-Prüfung)", () => {
     await seedUser({ email: "csrf-foreign-origin@test.local", password: "password-123" });
     const cookie = await login(SELF, "csrf-foreign-origin@test.local", "password-123");
 
+    // Bewusst OHNE authHeaders()' Standard-Sec-Fetch-Site: same-origin - der
+    // Test prüft gezielt den Origin-Fallback-Pfad (kein Sec-Fetch-Site-Header
+    // gesendet, wie bei manchen Browsern/Requests), nicht den Sec-Fetch-Site-
+    // Pfad, der ansonsten Vorrang hätte.
     const res = await SELF.fetch("https://example.test/api/notifications/read-all", {
       method: "POST",
-      headers: { ...authHeaders(cookie), Origin: "https://evil.example" },
+      headers: { Cookie: cookie, "Content-Type": "application/json", Origin: "https://evil.example" },
     });
     expect(res.status).toBe(403);
   });
@@ -53,4 +57,21 @@ describe("CSRF Defense-in-Depth (Origin-/Sec-Fetch-Site-Prüfung)", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  // CSRF-11-Härtung (zweiter Production-Readiness-Durchgang 2026-08-27):
+  // vorher galt "weder Origin noch Sec-Fetch-Site gesetzt -> erlaubt". Ein
+  // POST mit gültigem Cookie, aber komplett ohne beide Header (wie ein
+  // direkter HTTP-Client, kein echter Browser-Request), muss jetzt
+  // abgelehnt werden - fail-closed statt fail-open bei fehlenden Headern.
+  it("POST mit gültigem Cookie, aber OHNE Origin- und OHNE Sec-Fetch-Site-Header wird abgelehnt (fail-closed)", async () => {
+    await seedUser({ email: "csrf-no-headers@test.local", password: "password-123" });
+    const cookie = await login(SELF, "csrf-no-headers@test.local", "password-123");
+
+    const res = await SELF.fetch("https://example.test/api/notifications/read-all", {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(403);
+  });
+
 });

@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review NeMo Guardrails using its official documentation and repository in the AI Agent / Guardrail category. NeMo Guardrails is an open-source toolkit for easily adding programmable guardrails to LLM-based conversational systems.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review NeMo Guardrails using its official documentation and repository in the AI Agent / Guardrail category. NeMo Guardrails is an open-source toolkit for easily adding programmable guardrails to LLM-based conversational systems.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-nemo-guardrails-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0

@@ -1,0 +1,30 @@
+schema_version: "2"
+name: cncf-raydian-cloud-kcsp-reviewer
+version: 0.1.0
+description: Review Raydian Cloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Raydian Cloud provides expert consulting, training, support, and implementation services for AI and Kubernetes environments, helping organizations build, deploy, and operate production-grade containerized workloads across leading cloud platforms. With deep expertise in Rafay Systems and GPU-backed infrastructure, we deliver comprehensive Day 1 and Day 2 operational support to ensure secure, reliable, and scalable AI and Kubernetes deployments.
+ownership:
+    primary: platform-engineering
+    maintainers: []
+license: MIT
+entrypoint: SKILL.md
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+goal:
+    objective: Review Raydian Cloud (KCSP) using its official documentation and repository in the Special / Kubernetes Certified Service Provider category. Raydian Cloud provides expert consulting, training, support, and implementation services for AI and Kubernetes environments, helping organizations build, deploy, and operate production-grade containerized workloads across leading cloud platforms. With deep expertise in Rafay Systems and GPU-backed infrastructure, we deliver comprehensive Day 1 and Day 2 operational support to ensure secure, reliable, and scalable AI and Kubernetes deployments.
+    success_criteria: []
+    failure_conditions: []
+contract:
+    file: contract.yaml
+evals:
+    directory: evals
+integrations:
+    mcp:
+        file: integrations/mcp.yaml
+    a2a:
+        file: integrations/a2a.yaml
+dependencies:
+    file: dependencies.yaml
+assurance:
+    file: assurance.yaml

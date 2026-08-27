@@ -1,0 +1,30 @@
+assurance:
+    file: assurance.yaml
+compatible_with:
+    - claude-code
+    - github-copilot
+    - codex
+contract:
+    file: contract.yaml
+dependencies:
+    file: dependencies.yaml
+description: Review Qumulo using its official documentation and repository in the Runtime / Cloud Native Storage category. Qumulo provides file storage that delivers billion file count, petabyte scale, gigabyte throughput in the public cloud and AWS GovCloud(US) with all-flash and hybrid SSD/HDD options.
+entrypoint: SKILL.md
+evals:
+    directory: evals
+goal:
+    failure_conditions: []
+    objective: Review Qumulo using its official documentation and repository in the Runtime / Cloud Native Storage category. Qumulo provides file storage that delivers billion file count, petabyte scale, gigabyte throughput in the public cloud and AWS GovCloud(US) with all-flash and hybrid SSD/HDD options.
+    success_criteria: []
+integrations:
+    a2a:
+        file: integrations/a2a.yaml
+    mcp:
+        file: integrations/mcp.yaml
+license: MIT
+name: cncf-qumulo-reviewer
+ownership:
+    maintainers: []
+    primary: platform-engineering
+schema_version: "2"
+version: 1.0.0
