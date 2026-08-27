@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Club, ClubRole } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
+import { MIN_PASSWORD_LENGTH } from "../../lib/passwordPolicy";
 
 interface AdminUser {
   id: string;
@@ -113,7 +114,7 @@ export default function AdminUsers() {
   }
 
   async function handleResetPassword(u: AdminUser) {
-    const newPassword = window.prompt(`Neues Passwort für ${u.email} (mind. 8 Zeichen):`);
+    const newPassword = window.prompt(`Neues Passwort für ${u.email} (mind. ${MIN_PASSWORD_LENGTH} Zeichen):`);
     if (!newPassword) return;
     setError(null);
     setInfo(null);
@@ -218,12 +219,13 @@ export default function AdminUsers() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                Passwort * (mind. 8 Zeichen)
+                Passwort * (mind. {MIN_PASSWORD_LENGTH} Zeichen)
               </label>
               <input
                 type="password"
                 required
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
                 value={createPassword}
                 onChange={(e) => setCreatePassword(e.target.value)}
                 className="w-full rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700"

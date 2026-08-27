@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
 import { QrCode } from "../components/QrCode";
+import { MIN_PASSWORD_LENGTH, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 export default function Profile() {
   const { userName, userEmail, clubName, clubRole, isAdmin, refreshClub } = useAuth();
@@ -255,7 +256,8 @@ export default function Profile() {
               label="Neues Passwort"
               type="password"
               required
-              minLength={8}
+              minLength={MIN_PASSWORD_LENGTH}
+              autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
             />
@@ -265,13 +267,14 @@ export default function Profile() {
               label="Neues Passwort wiederholen"
               type="password"
               required
-              minLength={8}
+              minLength={MIN_PASSWORD_LENGTH}
+              autoComplete="new-password"
               value={newPasswordRepeat}
               onChange={(e) => setNewPasswordRepeat(e.target.value)}
             />
           </div>
         </div>
-        <p className="text-xs text-slate-400 dark:text-slate-500">Mindestens 8 Zeichen.</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">{PASSWORD_POLICY_HINT}</p>
         {passwordError && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {passwordError}</p>}
         {passwordInfo && <p className="text-sm text-emerald-700 dark:text-emerald-400">{passwordInfo}</p>}
         <button
