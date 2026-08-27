@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { authHeaders, enableMfaForTest, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
+import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
 
 beforeAll(async () => {
   await ensureMigrated();
@@ -164,7 +164,6 @@ describe("IDOR/BOLA bei Kindern", () => {
     const child = await seedChild({ firstName: "Tom", lastName: "Beispiel", groupId: group.id });
 
     const leadershipToken = await login(SELF, "leadership-e@test.local", "password-123");
-    await enableMfaForTest(leadershipToken); // Jugendleitung braucht seit der API-seitigen MFA-Durchsetzung aktivierte MFA
     const res = await SELF.fetch(`https://example.test/api/children/${child.id}`, {
       method: "PUT",
       headers: authHeaders(leadershipToken),
@@ -196,10 +195,6 @@ describe("IDOR/BOLA bei Kindern", () => {
     const child = await seedChild({ firstName: "Nina", lastName: "Beispiel", groupId: group.id });
 
     const foreignToken = await login(SELF, "foreign-leadership-f@test.local", "password-123");
-    // MFA aktivieren, damit der Test wirklich die Tenant-Isolation prüft und
-    // nicht zufällig durch die (ebenfalls 403 liefernde) API-seitige
-    // MFA-Durchsetzung "besteht".
-    await enableMfaForTest(foreignToken);
     const res = await SELF.fetch(`https://example.test/api/children/${child.id}`, {
       method: "PUT",
       headers: authHeaders(foreignToken),
@@ -240,19 +235,15 @@ describe("Admin-Rolle (Privilege Escalation)", () => {
   it("Admin-Rolle kann Admin-Routen aufrufen", async () => {
     await seedUser({ email: "real-admin@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "real-admin@test.local", "password-123");
-    await enableMfaForTest(token); // Admin braucht seit der API-seitigen MFA-Durchsetzung aktivierte MFA
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
     expect(res.status).toBe(200);
   });
 
-  it("Admin ohne aktivierte MFA wird API-seitig blockiert (nicht nur im Frontend-Overlay)", async () => {
+  it("Admin-Rolle kann Admin-Routen auch OHNE aktivierte MFA aufrufen (MFA ist Opt-in, nicht verpflichtend)", async () => {
     await seedUser({ email: "admin-no-mfa@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "admin-no-mfa@test.local", "password-123");
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
-    expect(res.status).toBe(403);
-    // Aber /api/me bleibt erreichbar, sonst könnte sich niemand mehr befreien.
-    const me = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
-    expect(me.status).toBe(200);
+    expect(res.status).toBe(200);
   });
 });
 

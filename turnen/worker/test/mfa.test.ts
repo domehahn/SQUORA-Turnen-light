@@ -154,19 +154,20 @@ describe("MFA (TOTP)", () => {
     expect(loginRes.headers.get("set-cookie")).toBeTruthy();
   });
 
-  it("mfaSetupRequired ist true für Jugendleitung ohne MFA und false nach Aktivierung (SEC-02 Durchsetzung)", async () => {
-    const club = await seedClub("Verein MFA-Pflicht");
+  it("MFA ist reines Opt-in: Jugendleitung kann die App ohne MFA normal nutzen, mfaEnabled spiegelt nur den tatsächlichen Status", async () => {
+    const club = await seedClub("Verein MFA-Optin");
     await seedUser({
-      email: "mfa-required@test.local",
+      email: "mfa-optin@test.local",
       password: "password-123",
       clubId: club.id,
       clubRole: "jugendleiter",
     });
-    const token = await login(SELF, "mfa-required@test.local", "password-123");
+    const token = await login(SELF, "mfa-optin@test.local", "password-123");
 
     const meBefore = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
-    const bodyBefore = (await meBefore.json()) as { mfaSetupRequired: boolean };
-    expect(bodyBefore.mfaSetupRequired).toBe(true);
+    expect(meBefore.status).toBe(200);
+    const bodyBefore = (await meBefore.json()) as { mfaEnabled: boolean };
+    expect(bodyBefore.mfaEnabled).toBe(false);
 
     const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(token) });
     const { secret } = (await setupRes.json()) as { secret: string };
@@ -178,15 +179,7 @@ describe("MFA (TOTP)", () => {
     });
 
     const meAfter = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
-    const bodyAfter = (await meAfter.json()) as { mfaSetupRequired: boolean };
-    expect(bodyAfter.mfaSetupRequired).toBe(false);
-  });
-
-  it("mfaSetupRequired ist false für normale Mitglieder ohne MFA", async () => {
-    await seedUser({ email: "mfa-not-required@test.local", password: "password-123" });
-    const token = await login(SELF, "mfa-not-required@test.local", "password-123");
-    const res = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
-    const body = (await res.json()) as { mfaSetupRequired: boolean };
-    expect(body.mfaSetupRequired).toBe(false);
+    const bodyAfter = (await meAfter.json()) as { mfaEnabled: boolean };
+    expect(bodyAfter.mfaEnabled).toBe(true);
   });
 });

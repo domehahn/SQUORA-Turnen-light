@@ -15,10 +15,6 @@ export interface AuthState {
   clubName: string | null;
   clubRole: ClubRole | null;
   isAdmin: boolean;
-  // Finding SEC-02 Folgearbeit: true für Admin/Jugendleitung ohne aktivierte
-  // Zwei-Faktor-Authentifizierung - AppLayout zeigt dann ein blockierendes
-  // Einrichtungs-Overlay.
-  mfaSetupRequired: boolean;
 }
 
 export interface AuthContextValue extends AuthState {

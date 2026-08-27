@@ -66,24 +66,6 @@ const app = new Hono<AppEnv>();
 // Attribut gesetzt), nicht vom Pfad.
 const SESSION_COOKIE_NAME = "turnen_session";
 
-// API-seitige MFA-Durchsetzung (s. requireAuth unten): einzige Routen, die
-// eine Admin-/Jugendleitung-Person ohne aktivierte MFA noch aufrufen darf -
-// alles, was zum Herausfinden des eigenen Status, Abmelden und zur
-// MFA-Einrichtung selbst nötig ist. Absichtlich eine Positivliste (nicht
-// "alles außer X"), damit neue Routen standardmäßig gesperrt sind, bis sie
-// hier bewusst freigegeben werden.
-const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
-  "/api/me",
-  "/api/logout",
-  "/api/me/mfa",
-  "/api/me/mfa/setup",
-  "/api/me/mfa/confirm",
-  "/api/me/mfa/disable",
-  "/api/me/sessions",
-  "/api/me/sessions/revoke-all",
-  "/api/me/password",
-]);
-
 function isLocalRequest(c: { req: { url: string } }): boolean {
   const hostname = new URL(c.req.url).hostname;
   return hostname === "localhost" || hostname === "127.0.0.1";
@@ -192,20 +174,6 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
     if (now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
       await db.touchSessionActivity(c.env.DB, session.id);
-    }
-
-    // API-seitige MFA-Durchsetzung (Finding aus der Production-Readiness-
-    // Prüfung: vorher blockierte nur das Frontend-Overlay, ein direkter
-    // API-Client konnte MFA umgehen). Admin/Jugendleitung ohne aktivierte
-    // MFA dürfen ausschließlich noch die Routen aufrufen, die für Login-
-    // Status, Abmelden und die MFA-Einrichtung selbst nötig sind - sonst
-    // könnte sich niemand mehr aus dem erzwungenen Zustand befreien.
-    const requiresMfa = (user.is_admin || user.club_role === "jugendleiter") && !user.totp_enabled;
-    if (requiresMfa && !MFA_ENFORCEMENT_EXEMPT_PATHS.has(new URL(c.req.url).pathname)) {
-      return c.json(
-        { error: "Zwei-Faktor-Authentifizierung ist für diese Rolle erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
-        403
-      );
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -729,13 +697,10 @@ app.get("/api/me", requireAuth, async (c) => {
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
     isAdmin: c.get("isAdmin"),
+    // MFA ist reines Opt-in (Nutzerentscheidung 2026-08-27: nicht
+    // verpflichtend, muss aktiv in Profil/Settings aktiviert werden) -
+    // kein serverseitiger oder UI-seitiger Zwang mehr für irgendeine Rolle.
     mfaEnabled,
-    // Finding SEC-02 Folgearbeit: verpflichtende MFA für Rollen mit
-    // vereinsweitem/-übergreifendem Zugriff. Durchgesetzt auf UI-Ebene
-    // (blockierendes Setup-Overlay, siehe AppLayout.tsx) statt eines
-    // API-seitigen Hard-Blocks - ein Fehler bei der TOTP-Einrichtung darf
-    // niemand vollständig aus dem eigenen Account aussperren.
-    mfaSetupRequired: !mfaEnabled && (c.get("isAdmin") || c.get("clubRole") === "jugendleiter"),
   });
 });
 
