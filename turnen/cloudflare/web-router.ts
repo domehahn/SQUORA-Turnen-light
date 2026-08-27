@@ -51,6 +51,11 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
   "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  // Redundant zu "frame-ancestors 'none'" oben in jedem modernen Browser -
+  // X-Frame-Options ist der Legacy-Vorgänger, den ältere/nicht CSP-Level-2-
+  // fähige Browser stattdessen auswerten (Clickjacking-Schutz-CI-16-
+  // Härtung, zweiter Production-Readiness-Durchgang 2026-08-27).
+  "X-Frame-Options": "DENY",
   // Nur wirksam, wenn der Browser die Antwort über HTTPS empfangen hat -
   // über lokales http:// (Dev) ignorieren Browser diesen Header ohnehin.
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
