@@ -1,19 +1,28 @@
 name: CI
 
 # CI/CD-Pipeline (Finding aus der externen Production-Readiness-Prüfung
-# 2026-08-27): vorher gab es keinerlei automatisierte Prüfung auf main.
-# Läuft bei jedem Push/PR auf main für beide Teilprojekte (API-Worker,
-# Frontend-Worker) getrennt - Typecheck, Lint, Tests (Worker), Build.
-# Deployment bleibt bewusst manuell (wrangler deploy, s. README) statt
-# hier automatisiert, um keine versehentlichen Produktiv-Deploys direkt
-# aus CI auszulösen, solange kein eigenes Deploy-Secret-Handling etabliert
-# ist.
+# 2026-08-27, zweiter Durchgang: P1 "CI/CD HARDENING"). Läuft bei jedem
+# Push/PR auf main für die Teilprojekte (API-Worker, Frontend-Worker, IaC)
+# getrennt - Typecheck, Lint, Tests (Worker), Build - sowie einen
+# Security-Job (SAST/SCA/Secret-Scan/IaC-Scan/SBOM/Production-Readiness-
+# Check). Deployment bleibt bewusst manuell (wrangler deploy, s. README)
+# statt hier automatisiert, um keine versehentlichen Produktiv-Deploys
+# direkt aus CI auszulösen, solange kein eigenes Deploy-Secret-Handling
+# etabliert ist.
+#
+# Third-Party-Actions sind auf vollständige Commit-SHAs gepinnt (nicht auf
+# mutable Tags wie @v4), Standard-Berechtigung ist minimal
+# (permissions: contents: read) - beides GitHub-Empfehlung für
+# sicherheitskritische Workflows, s. P1 "GITHUB ACTION SECURITY".
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   worker:
@@ -23,8 +32,8 @@ jobs:
       run:
         working-directory: turnen/worker
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -41,8 +50,8 @@ jobs:
       run:
         working-directory: turnen
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -59,8 +68,8 @@ jobs:
       run:
         working-directory: cloudflare-turnen-iac
     steps:
-      - uses: actions/checkout@v4
-      - uses: opentofu/setup-opentofu@v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.5
         with:
           tofu_version: 1.12.6
       # Kein echter API-Zugriff nötig für fmt/validate - kein
@@ -70,3 +79,79 @@ jobs:
       - run: tofu fmt -check -recursive
       - run: tofu init -backend=false
       - run: tofu validate
+
+  security:
+    name: Security (SAST, SCA, Secret-Scan, IaC-Scan, SBOM, Production-Readiness-Check)
+    runs-on: ubuntu-latest
+    # security-events: write nur für den CodeQL-Upload-Schritt nötig -
+    # bewusst hier statt global gesetzt (Least Privilege).
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+
+      # --- SAST: CodeQL (JavaScript/TypeScript, deckt Worker + Frontend ab) ---
+      - name: CodeQL init
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: javascript-typescript
+      - name: CodeQL analyze
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+
+      # --- Secret Scan: Gitleaks CLI direkt (nicht die GH-Action-Fassade,
+      # die für private Repos eine GITLEAKS_LICENSE voraussetzt - die CLI
+      # selbst ist vollständig quelloffen und kostenlos). Scannt die
+      # gesamte Git-Historie des Checkouts, nicht nur den aktuellen Stand.
+      - name: Gitleaks (secret scan)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --redact -v
+
+      # --- SCA: npm audit für beide Node-Projekte (kein externer Scanner-
+      # Login/Token nötig). High/Critical sind Go-Live-Blocker.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: npm audit (worker)
+        working-directory: turnen/worker
+        run: npm audit --audit-level=high
+      - name: npm audit (frontend)
+        working-directory: turnen
+        run: npm audit --audit-level=high
+
+      # --- IaC Scan: Trivy config scan gegen das Terraform/OpenTofu-Projekt. ---
+      - name: Trivy IaC config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: cloudflare-turnen-iac
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+      # --- SBOM: CycloneDX für beide Node-Projekte, nur als CI-Artefakt
+      # (nicht ins Repo committet, s. cloudflare-turnen-iac/README.md-
+      # Prinzip "keine riesigen generierten Dateien committen"). ---
+      - name: Generate SBOM (worker)
+        working-directory: turnen/worker
+        run: npx --yes @cyclonedx/cyclonedx-npm --output-file ../../sbom-worker.json
+      - name: Generate SBOM (frontend)
+        working-directory: turnen
+        run: npx --yes @cyclonedx/cyclonedx-npm --output-file ../sbom-frontend.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom
+          path: |
+            sbom-worker.json
+            sbom-frontend.json
+          retention-days: 90
+
+      # --- Automatisierter (rein technischer) Production-Readiness-Check
+      # (s. scripts/production-readiness-check.ts) - läuft nach dem
+      # Frontend-Build, damit der dist/-Check aussagekräftig ist.
+      - name: Build frontend (für Production-Readiness-Check)
+        working-directory: turnen
+        run: npm ci && npm run build
+      - name: Production Readiness Check
+        run: npx --yes tsx scripts/production-readiness-check.ts

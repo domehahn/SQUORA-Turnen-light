@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedFamily, seedGroup, seedUser } from "./helpers";
 
@@ -236,5 +236,108 @@ describe("Cross-Tenant-Isolation bei Familien (P0)", () => {
       body: JSON.stringify({ familyId: family.id }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// Fail-closed statt Fail-open (P1 "AUTHORIZATION MUSS FAIL CLOSED SEIN",
+// externe Production-Readiness-Prüfung 2026-08-27): frühere Ausnahmen für
+// unbekannte/kaputte Mandantenbeziehungen ("return true") wurden entfernt,
+// da im produktiven Datenbestand keine solchen Zeilen existieren (jedes
+// Kind hat club_id, jede group_id zeigt auf eine existierende Gruppe).
+describe("Fail-closed bei unbekannten/kaputten Mandantenbeziehungen", () => {
+  // Ein Test für "dangling group_id" (Kind zeigt auf eine nicht (mehr)
+  // existierende Gruppe) wurde bewusst NICHT ergänzt: children.group_id hat
+  // eine echte FOREIGN KEY-Constraint (REFERENCES groups(id) ON DELETE SET
+  // NULL, Migration 0001), die genau das strukturell verhindert - beim
+  // Löschen einer Gruppe wird group_id automatisch NULL, ein Insert/Update
+  // auf eine nicht existierende Gruppe schlägt sofort mit
+  // SQLITE_CONSTRAINT fehl. Der zugehörige "if (!group) return true"-Zweig
+  // in isChildWritable() wurde trotzdem auf fail-closed umgestellt
+  // (Defense-in-Depth, z.B. für den Fall künftiger Bulk-Importe mit
+  // `PRAGMA foreign_keys=OFF`), ist aber durch die DB-Constraint bereits
+  // strukturell unerreichbar - kein Testfall dafür simulierbar.
+  it("ein Kind ganz ohne Vereinszuordnung (club_id UND group_id beide NULL) ist NICHT bearbeitbar", async () => {
+    const club = await seedClub("Verein No-Tenant-Child");
+    await seedUser({ email: "no-tenant-child@test.local", password: "password-123", clubId: club.id });
+    // Direkt ohne club_id angelegt - simuliert einen theoretischen
+    // Alt-Bestand-Fall, der im echten Datenbestand nicht mehr vorkommt.
+    const child = await seedChild({ firstName: "Ohne", lastName: "Verein", groupId: null, clubId: null });
+
+    const token = await login(SELF, "no-tenant-child@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/children/${child.id}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        firstName: "Manipuliert",
+        lastName: "Verein",
+        birthDate: "2020-01-01",
+        groupId: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        familyId: null,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("eine Gruppe ohne Besitzer (owner_id NULL, club_id NULL) ist NICHT für beliebige Nutzer*innen bearbeitbar", async () => {
+    const club = await seedClub("Verein Orphan Group");
+    await seedUser({ email: "orphan-group-outsider@test.local", password: "password-123", clubId: club.id });
+    const groupId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO groups (id, name, min_age, max_age, sort_order, owner_id, club_id) VALUES (?, 'Herrenlos', 3, 10, 0, NULL, NULL)`
+    )
+      .bind(groupId)
+      .run();
+
+    const token = await login(SELF, "orphan-group-outsider@test.local", "password-123");
+    const res = await SELF.fetch(`https://example.test/api/groups/${groupId}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        name: "Übernommen",
+        minAge: 3,
+        maxAge: 10,
+        sortOrder: 0,
+        maxChildren: 20,
+        weekday: 1,
+        startTime: "16:00",
+        endTime: "17:00",
+        location: "Halle 1",
+        color: null,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("unbekannte/kaputte Mandantenbeziehungen erzeugen einen Security-Event-Eintrag ohne personenbezogenen Inhalt", async () => {
+    const club = await seedClub("Verein Security Event");
+    const actor = await seedUser({ email: "security-event@test.local", password: "password-123", clubId: club.id });
+    const child = await seedChild({ firstName: "Geheim", lastName: "Nachname", groupId: null, clubId: null });
+
+    const token = await login(SELF, "security-event@test.local", "password-123");
+    await SELF.fetch(`https://example.test/api/children/${child.id}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        firstName: "X",
+        lastName: "Y",
+        birthDate: "2020-01-01",
+        groupId: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        familyId: null,
+      }),
+    });
+
+    const entry = await env.DB.prepare(
+      "SELECT action, target_label, actor_id FROM audit_log WHERE action = 'security.unknown_tenant_relation_denied' AND actor_id = ? ORDER BY created_at DESC LIMIT 1"
+    )
+      .bind(actor.id)
+      .first<{ action: string; target_label: string; actor_id: string }>();
+    expect(entry).toBeTruthy();
+    // Kein Name des betroffenen Kindes im Log-Eintrag.
+    expect(entry!.target_label).not.toContain("Geheim");
+    expect(entry!.target_label).not.toContain("Nachname");
   });
 });

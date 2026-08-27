@@ -6,6 +6,7 @@ import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
 import { GlobalSearch } from "./GlobalSearch";
 import { AdminClubSwitcher } from "./AdminClubSwitcher";
+import { IdleLockOverlay } from "./IdleLockOverlay";
 import { MfaEnforcementOverlay } from "./MfaEnforcementOverlay";
 import { PasswordChangeRequiredOverlay } from "./PasswordChangeRequiredOverlay";
 import SquoraBrand from "./SquoraBrand";
@@ -101,6 +102,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen">
+      <IdleLockOverlay />
       {passwordChangeRequired ? <PasswordChangeRequiredOverlay /> : mfaSetupRequired && <MfaEnforcementOverlay />}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">

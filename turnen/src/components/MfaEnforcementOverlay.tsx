@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
@@ -12,20 +12,34 @@ import { QrCode } from "../components/QrCode";
 // Führung durch die Einrichtung, kein Ersatz dafür. Ein Fehler bei der
 // Einrichtung darf niemanden vollständig aussperren, "Abmelden" bleibt
 // immer möglich.
+//
+// POST /api/me/mfa/setup verlangt seit der MFA-Rotations-Härtung
+// (Production-Readiness-Prüfung 2026-08-27) immer eine Passwort-
+// Re-Authentifizierung - hier ist totp_enabled naturgemäß immer false (sonst
+// würde dieses Overlay gar nicht angezeigt), daher genügt das Passwort ohne
+// zusätzlichen aktuellen Code.
 export function MfaEnforcementOverlay() {
   const { signOut, refreshClub } = useAuth();
+  const [password, setPassword] = useState("");
   const [setup, setSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
   const [code, setCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api
-      .post<{ secret: string; otpauthUri: string }>("/api/me/mfa/setup", {})
-      .then(setSetup)
-      .catch((err) => setError(err instanceof Error ? err.message : "Fehler beim Starten der Einrichtung"));
-  }, []);
+  async function handleStart(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await api.post<{ secret: string; otpauthUri: string }>("/api/me/mfa/setup", { password });
+      setSetup(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Starten der Einrichtung");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleConfirm(e: FormEvent) {
     e.preventDefault();
@@ -101,7 +115,23 @@ export function MfaEnforcementOverlay() {
             </button>
           </form>
         ) : (
-          !error && <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
+          <form onSubmit={handleStart} className="space-y-3">
+            <FloatingInput
+              label="Aktuelles Passwort zur Bestätigung"
+              type="password"
+              required
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              className="w-full rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+            >
+              Einrichtung starten
+            </button>
+          </form>
         )}
 
         <button

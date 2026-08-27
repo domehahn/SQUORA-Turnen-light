@@ -291,7 +291,7 @@ describe("Admin-Rolle (Privilege Escalation)", () => {
   it("Admin-Rolle kann Admin-Routen aufrufen (mit aktivierter MFA)", async () => {
     await seedUser({ email: "real-admin@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "real-admin@test.local", "password-123");
-    await enableMfaForTest(token);
+    await enableMfaForTest(token, "password-123");
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
     expect(res.status).toBe(200);
   });

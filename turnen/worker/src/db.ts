@@ -47,13 +47,21 @@ import type {
 type GroupOwnership = { owner_id: string | null; club_id: string | null };
 
 // Eine Gruppe darf bearbeitet werden, wenn der anfragende Nutzer sie
-// angelegt hat, oder wenn es eine "herrenlose" Alt-Gruppe ohne Besitzer und
-// ohne Verein ist (Bestandsschutz für Gruppen aus der Zeit vor Vereinen).
-// Deckt NICHT Mit-Trainer*innen ab (siehe group_co_leaders) - dafür bei
-// Einzel-Prüfungen canWriteGroupAsync() verwenden, bei Listen die separat
-// vorab geladene Mit-Trainer-Zuordnung (siehe listCoLeaderGroupIdsForUser).
+// angelegt hat. Deckt NICHT Mit-Trainer*innen ab (siehe group_co_leaders) -
+// dafür bei Einzel-Prüfungen canWriteGroupAsync() verwenden, bei Listen die
+// separat vorab geladene Mit-Trainer-Zuordnung (siehe
+// listCoLeaderGroupIdsForUser).
+//
+// Fail-closed statt Fail-open (P1 "AUTHORIZATION MUSS FAIL CLOSED SEIN",
+// externe Production-Readiness-Prüfung 2026-08-27): die frühere Ausnahme
+// "herrenlose" Gruppe ohne Besitzer UND ohne Verein -> für jede*n
+// bearbeitbar - wurde entfernt. Verifiziert (2026-08-27): im produktiven
+// Datenbestand hat jede Gruppe sowohl owner_id als auch club_id gesetzt,
+// die Ausnahme war eine tote Kompatibilitäts-Öffnung ohne echten Nutzen,
+// aber mit echtem Risiko (jede authentifizierte Person hätte eine solche
+// Gruppe übernehmen können).
 export function canWriteGroup(group: GroupOwnership, userId: string): boolean {
-  return group.owner_id === userId || (group.owner_id === null && group.club_id === null);
+  return group.owner_id === userId;
 }
 
 // --- Mit-Trainer*innen (mehrere gleichberechtigte Leitungen pro Gruppe) --------
@@ -222,20 +230,35 @@ export async function updateUserProfile(
   return getUserById(db, id);
 }
 
-// TOTP-MFA (Finding SEC-02). Setup läuft zweistufig: setPendingTotpSecret
-// legt das Secret ab, OHNE totp_enabled zu setzen (erst nach erfolgreicher
-// Code-Bestätigung aktiv, verhindert versehentliches Aussperren durch eine
-// falsch gescannte/getippte Authenticator-Einrichtung).
+// TOTP-MFA (Finding SEC-02, Rotation gehärtet nach externer Production-
+// Readiness-Prüfung 2026-08-27, P1 "MFA SETUP / ROTATION ABSICHERN"): ein
+// Setup-/Rotations-Aufruf schreibt NUR noch pending_totp_secret, rührt eine
+// bereits aktive totp_secret/totp_enabled/totp_backup_codes nicht an. Vorher
+// überschrieb setPendingTotpSecret die aktive Spalte direkt und setzte
+// totp_enabled sofort auf 0 - ein einzelner authentifizierter Aufruf genügte
+// damit, um eine fremde, bereits eingerichtete MFA ohne jede weitere
+// Bestätigung zu deaktivieren.
 export async function setPendingTotpSecret(db: D1Database, id: string, encryptedSecret: string): Promise<void> {
-  await db.prepare("UPDATE users SET totp_secret = ?, totp_enabled = 0, totp_backup_codes = NULL WHERE id = ?").bind(encryptedSecret, id).run();
+  await db.prepare("UPDATE users SET pending_totp_secret = ? WHERE id = ?").bind(encryptedSecret, id).run();
 }
 
+// Atomarer Wechsel bei erfolgreicher Bestätigung (Initial-Setup oder
+// Rotation, identischer Mechanismus): pending_totp_secret wird zur neuen
+// aktiven totp_secret, neue Backup-Codes, pending_totp_secret geleert.
 export async function enableTotp(db: D1Database, id: string, hashedBackupCodesJson: string): Promise<void> {
-  await db.prepare("UPDATE users SET totp_enabled = 1, totp_backup_codes = ? WHERE id = ?").bind(hashedBackupCodesJson, id).run();
+  await db
+    .prepare(
+      "UPDATE users SET totp_secret = pending_totp_secret, totp_enabled = 1, totp_backup_codes = ?, pending_totp_secret = NULL WHERE id = ?"
+    )
+    .bind(hashedBackupCodesJson, id)
+    .run();
 }
 
 export async function disableTotp(db: D1Database, id: string): Promise<void> {
-  await db.prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL WHERE id = ?").bind(id).run();
+  await db
+    .prepare("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_backup_codes = NULL, pending_totp_secret = NULL WHERE id = ?")
+    .bind(id)
+    .run();
 }
 
 export async function consumeBackupCode(db: D1Database, id: string, remainingCodesJson: string): Promise<void> {
@@ -461,6 +484,36 @@ export async function countRecentFailedLogins(db: D1Database, email: string, win
   return row?.n ?? 0;
 }
 
+// Rate-Limiting für POST /api/password-reset/request (Finding P1 "PASSWORD
+// RESET HARDENING", externe Production-Readiness-Prüfung 2026-08-27) -
+// kombiniert E-Mail und IP, damit weder "eine fremde Adresse fluten" noch
+// "von derselben IP viele Adressen durchprobieren" unbegrenzt möglich ist.
+export async function recordPasswordResetRequest(db: D1Database, email: string, ip: string | null): Promise<void> {
+  await db
+    .prepare("INSERT INTO password_reset_requests (id, email, ip) VALUES (?, ?, ?)")
+    .bind(crypto.randomUUID(), email, ip)
+    .run();
+}
+
+export async function countRecentPasswordResetRequests(
+  db: D1Database,
+  input: { email: string; ip: string | null; windowMinutes: number }
+): Promise<{ byEmail: number; byIp: number }> {
+  const byEmailRow = await db
+    .prepare(`SELECT COUNT(*) as n FROM password_reset_requests WHERE email = ?1 AND created_at >= datetime('now', ?2)`)
+    .bind(input.email, `-${input.windowMinutes} minutes`)
+    .first<{ n: number }>();
+  let byIp = 0;
+  if (input.ip) {
+    const byIpRow = await db
+      .prepare(`SELECT COUNT(*) as n FROM password_reset_requests WHERE ip = ?1 AND created_at >= datetime('now', ?2)`)
+      .bind(input.ip, `-${input.windowMinutes} minutes`)
+      .first<{ n: number }>();
+    byIp = byIpRow?.n ?? 0;
+  }
+  return { byEmail: byEmailRow?.n ?? 0, byIp };
+}
+
 // Speicherbegrenzung für die Security-Tabellen (externe Production-
 // Readiness-Prüfung 2026-08-27, Finding "Retention" - sessions,
 // login_attempts, used_password_reset_tokens wuchsen bisher unbegrenzt).
@@ -478,6 +531,10 @@ export async function cleanupSecurityLogs(db: D1Database, retentionDays: number)
     .run();
   await db
     .prepare(`DELETE FROM used_password_reset_tokens WHERE expires_at < datetime('now', ?1)`)
+    .bind(`-${retentionDays} days`)
+    .run();
+  await db
+    .prepare(`DELETE FROM password_reset_requests WHERE created_at < datetime('now', ?1)`)
     .bind(`-${retentionDays} days`)
     .run();
 }

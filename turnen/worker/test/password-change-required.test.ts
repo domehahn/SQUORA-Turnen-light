@@ -62,7 +62,11 @@ describe("Erzwungener Passwortwechsel (must_change_password)", () => {
     // Admin-Account hat selbst noch keine MFA aktiviert - für /api/admin/users
     // ist das relevant (MFA-Zwang), deshalb hier den MFA-Exempt-Pfad nutzen:
     // Setup + Confirm, damit der erstellende Admin selbst keine 403 bekommt.
-    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(adminToken) });
+    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", {
+      method: "POST",
+      headers: authHeaders(adminToken),
+      body: JSON.stringify({ password: "password-123" }),
+    });
     const { secret } = (await setupRes.json()) as { secret: string };
     const { base32Decode, generateTotp } = await import("../src/totp");
     const code = await generateTotp(base32Decode(secret));
@@ -89,7 +93,11 @@ describe("Erzwungener Passwortwechsel (must_change_password)", () => {
   it("PUT /api/admin/users/:id/password (Admin setzt fremdes Passwort zurück) setzt must_change_password wieder auf 1", async () => {
     await seedUser({ email: "pw-change-admin-reset-actor@test.local", password: "password-123", isAdmin: true });
     const adminToken = await login(SELF, "pw-change-admin-reset-actor@test.local", "password-123");
-    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(adminToken) });
+    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", {
+      method: "POST",
+      headers: authHeaders(adminToken),
+      body: JSON.stringify({ password: "password-123" }),
+    });
     const { secret } = (await setupRes.json()) as { secret: string };
     const { base32Decode, generateTotp } = await import("../src/totp");
     const code = await generateTotp(base32Decode(secret));
@@ -99,9 +107,13 @@ describe("Erzwungener Passwortwechsel (must_change_password)", () => {
       body: JSON.stringify({ code }),
     });
 
-    // Zielnutzer hat bereits sein eigenes Passwort gesetzt (must_change_password = 0).
+    // Zielnutzer hat bereits sein eigenes Passwort gesetzt (must_change_password = 0)
+    // und eine aktive Sitzung (z.B. auf einem kompromittierten Gerät).
     const target = await seedUser({ email: "pw-change-reset-target@test.local", password: "old-password-123" });
     await env.DB.prepare("UPDATE users SET must_change_password = 0 WHERE id = ?").bind(target.id).run();
+    const targetToken = await login(SELF, "pw-change-reset-target@test.local", "old-password-123");
+    const beforeReset = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(targetToken) });
+    expect(beforeReset.status).toBe(200);
 
     const resetRes = await SELF.fetch(`https://example.test/api/admin/users/${target.id}/password`, {
       method: "PUT",
@@ -114,6 +126,13 @@ describe("Erzwungener Passwortwechsel (must_change_password)", () => {
       .bind(target.id)
       .first<{ must_change_password: number }>();
     expect(row!.must_change_password).toBe(1);
+
+    // Finding P1 "ADMIN PASSWORD RESET": die vorher aktive Sitzung der
+    // Zielperson muss nach dem Reset ausnahmslos ungültig sein - ein
+    // Admin-Reset ist ein Security-Recovery-Vorgang, kein reiner
+    // Komfort-Reset.
+    const afterReset = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(targetToken) });
+    expect(afterReset.status).toBe(401);
   });
 
   it("transparentes PBKDF2-Rehashing beim Login rührt must_change_password NICHT an", async () => {

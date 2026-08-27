@@ -133,8 +133,12 @@ export function authHeaders(cookie: string): Record<string, string> {
 // Overlay) - Tests, die eine privilegierte Rolle gegen eine "normale"
 // Route prüfen wollen, müssen vorher echte MFA einrichten, sonst greift
 // die Durchsetzung selbst und verfälscht das Testergebnis.
-export async function enableMfaForTest(cookie: string): Promise<void> {
-  const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(cookie) });
+export async function enableMfaForTest(cookie: string, password: string): Promise<void> {
+  const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", {
+    method: "POST",
+    headers: authHeaders(cookie),
+    body: JSON.stringify({ password }),
+  });
   if (setupRes.status !== 200) throw new Error(`MFA-Setup fehlgeschlagen (${setupRes.status}): ${await setupRes.text()}`);
   const { secret } = (await setupRes.json()) as { secret: string };
   const code = await generateTotp(base32Decode(secret));

@@ -57,6 +57,12 @@ export interface UserRow {
   totp_secret: string | null;
   totp_enabled: number;
   totp_backup_codes: string | null;
+  // Separates Feld für ein neu generiertes, noch nicht bestätigtes Secret
+  // (Migration 0041) - ein Setup-/Rotations-Aufruf darf niemals die aktive
+  // totp_secret/totp_enabled direkt überschreiben, sonst würde ein einzelner
+  // authentifizierter Aufruf ohne weitere Bestätigung eine bestehende,
+  // funktionierende MFA deaktivieren.
+  pending_totp_secret: string | null;
   // Erzwungener Passwortwechsel (Migration 0040) - true, wenn eine andere
   // Person (Admin oder das Bootstrap-Skript) ein initiales Passwort vergeben
   // hat, das noch nie durch ein selbst gewähltes ersetzt wurde.

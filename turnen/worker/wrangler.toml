@@ -9,8 +9,11 @@ compatibility_date = "2026-07-01"
 # unabhängig vom Web-Worker und dessen Security-Headern/CSP (externe
 # Production-Readiness-Prüfung 2026-08-27). Service Bindings funktionieren
 # unabhängig von workers_dev weiter - der Web-Worker kann diesen Worker
-# also weiterhin ansprechen.
+# also weiterhin ansprechen. preview_urls ebenfalls explizit aus (zweiter
+# Durchgang derselben Prüfung) - aus Konsistenz mit dem Web-Worker, auch
+# wenn der API-Worker ohnehin kein öffentliches Routing hat.
 workers_dev = false
+preview_urls = false
 
 [[d1_databases]]
 binding = "DB"

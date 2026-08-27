@@ -24,8 +24,21 @@ export function optionalText(value: unknown, maxLength = 500): string | null | u
   return trimmed || null;
 }
 
+// Mindestlänge 15 Zeichen statt der früheren 8 (NIST SP 800-63B / externe
+// Production-Readiness-Prüfung 2026-08-27, P1 "PASSWORD POLICY") - da MFA
+// für normale Rollen weiterhin optional ist, ist ein längeres Passwort die
+// wichtigste verbleibende Verteidigungslinie. Bewusst KEINE
+// Komplexitätsregeln (Sonderzeichen/Zahl/Großbuchstabe erzwingen) und KEIN
+// erzwungener regelmäßiger Wechsel - beides nach NIST/OWASP kontraproduktiv,
+// da es Menschen zu vorhersehbaren Mustern statt zu echter Entropie treibt.
+// Passphrases (lange, aus mehreren Wörtern bestehende Sätze) sind bewusst
+// vollständig zulässig. Gilt nur für NEU gesetzte Passwörter (Registrierung/
+// Änderung/Reset/Admin-Reset) - bestehende, kürzere Bestandshashes bleiben
+// beim Login weiterhin gültig (verifyPassword prüft nicht gegen diese
+// Funktion), niemand wird rückwirkend ausgesperrt.
+const MIN_PASSWORD_LENGTH = 15;
 export function validPassword(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length < 8 || value.length > 200) return undefined;
+  if (typeof value !== "string" || value.length < MIN_PASSWORD_LENGTH || value.length > 200) return undefined;
   return value;
 }
 
