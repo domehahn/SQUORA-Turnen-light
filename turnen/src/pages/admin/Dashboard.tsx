@@ -115,6 +115,8 @@ export default function Dashboard() {
   const [incomingOverrideRequests, setIncomingOverrideRequests] = useState<SessionOverrideRequest[]>([]);
   const [incomingMoveRequests, setIncomingMoveRequests] = useState<MoveRequest[]>([]);
   const [incomingCapacityRequests, setIncomingCapacityRequests] = useState<CapacityRequest[]>([]);
+  const [myMoveRequests, setMyMoveRequests] = useState<MoveRequest[]>([]);
+  const [myCapacityRequests, setMyCapacityRequests] = useState<CapacityRequest[]>([]);
   const [clubWaitlist, setClubWaitlist] = useState<ClubWaitlistEntry[]>([]);
   const [incomingPlacementRequests, setIncomingPlacementRequests] = useState<PlacementRequest[]>([]);
   const [incomingJoinRequests, setIncomingJoinRequests] = useState<ClubJoinRequest[]>([]);
@@ -142,6 +144,8 @@ export default function Dashboard() {
         waitlist,
         incomingPlacements,
         incomingJoins,
+        myMoves,
+        myCapacity,
       ] = await Promise.all([
         safe(api.get<Group[]>("/api/groups"), []),
         safe(api.get<Child[]>("/api/children"), []),
@@ -154,6 +158,8 @@ export default function Dashboard() {
         safe(isJugendleiter ? api.get<ClubWaitlistEntry[]>("/api/club-waitlist") : Promise.resolve([]), []),
         safe(api.get<PlacementRequest[]>("/api/placement-requests/incoming"), []),
         safe(isJugendleiter ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]), []),
+        safe(api.get<MoveRequest[]>("/api/move-requests/outgoing"), []),
+        safe(api.get<CapacityRequest[]>("/api/capacity-requests/outgoing"), []),
       ]);
       setGroups(groupList);
       setChildren(childrenList);
@@ -166,6 +172,8 @@ export default function Dashboard() {
       setClubWaitlist(waitlist);
       setIncomingPlacementRequests(incomingPlacements);
       setIncomingJoinRequests(incomingJoins);
+      setMyMoveRequests(myMoves.filter((r) => r.status === "pending"));
+      setMyCapacityRequests(myCapacity.filter((r) => r.status === "pending"));
       setLoading(false);
     }
     load();
@@ -237,6 +245,8 @@ export default function Dashboard() {
     { label: "Kapazitäts-Anfragen für deine Gruppen", count: incomingCapacityRequests.length, to: "/gruppen", tone: "red" as const },
     { label: "Platzvorschläge für deine Gruppen", count: incomingPlacementRequests.length, to: "/warteliste", tone: "amber" as const },
     { label: "Eigene offene Anfragen für abweichende Termine", count: myOverrideRequests.length, to: "/anwesenheit", tone: "amber" as const },
+    { label: "Eigene offene Verschiebe-Anfragen", count: myMoveRequests.length, to: "/kinder", tone: "amber" as const },
+    { label: "Eigene offene Kapazitäts-Anfragen", count: myCapacityRequests.length, to: "/kinder", tone: "amber" as const },
     ...(isJugendleiter
       ? [
           { label: "Anfragen für abweichende Termine", count: incomingOverrideRequests.length, to: "/anwesenheit", tone: "amber" as const },
