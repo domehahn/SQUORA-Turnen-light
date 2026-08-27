@@ -1,16 +1,45 @@
-import { useState, type FormEvent } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { FloatingInput } from "../components/FloatingField";
 import { ThemeToggle } from "../components/ThemeToggle";
 import SquoraBrand from "../components/SquoraBrand";
+import { MIN_PASSWORD_LENGTH, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy";
 
 // Self-Service "Passwort vergessen" (Finding SEC-07) - zwei Modi je nachdem,
 // ob ein ?token=... in der URL steckt (Link aus der Reset-E-Mail) oder
 // nicht (Anfrage stellen).
+//
+// Token-URL-Leak behoben (P1, zweiter Production-Readiness-Härtungsdurchgang
+// 2026-08-27): der Reset-Token blieb bisher dauerhaft in der sichtbaren
+// Adresszeile/Browser-History stehen (aus useSearchParams gelesen, aber nie
+// wieder entfernt) - sichtbar für jede Person mit Zugriff auf Bildschirm/
+// Verlauf/Screenshot, landet in Analytics-Tools, die die URL protokollieren,
+// und würde bei einem (hier nicht vorhandenen) externen Link von der Seite
+// per Referrer-Header an die Zielseite weitergereicht. Token wird jetzt beim
+// ersten Rendern EINMALIG aus der URL gelesen, in einer Ref (nicht einmal
+// React-State, um unnötige Re-Renders/Persistenz zu vermeiden) für die
+// Dauer der Seite gehalten, und die URL wird sofort per
+// history.replaceState bereinigt - der Token verlässt diese Komponente
+// danach nur noch als Teil des einen POST /api/password-reset/confirm.
 export default function PasswordReset() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
+  const tokenRef = useRef<string | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("token");
+    if (t) {
+      tokenRef.current = t;
+      setHasToken(true);
+      // Token unverzüglich aus Adresszeile/History entfernen - nichts
+      // anderes auf der Seite braucht ihn aus der URL heraus, nur diese
+      // Komponente selbst (via tokenRef).
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const token = tokenRef.current;
 
   const [email, setEmail] = useState("");
   const [requestSent, setRequestSent] = useState(false);
@@ -62,7 +91,7 @@ export default function PasswordReset() {
           <SquoraBrand size="lg" layout="stack" />
         </div>
 
-        {token ? (
+        {hasToken ? (
           confirmDone ? (
             <div className="space-y-3 text-center">
               <p className="text-sm text-emerald-700 dark:text-emerald-400">
@@ -79,15 +108,18 @@ export default function PasswordReset() {
                 label="Neues Passwort"
                 type="password"
                 required
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
+              <p className="text-xs text-slate-400 dark:text-slate-500">{PASSWORD_POLICY_HINT}</p>
               <FloatingInput
                 label="Neues Passwort wiederholen"
                 type="password"
                 required
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
                 value={newPasswordRepeat}
                 onChange={(e) => setNewPasswordRepeat(e.target.value)}
               />

@@ -64,6 +64,27 @@ function withSecurityHeaders(response: Response): Response {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+// Passwort-Reset-Seite braucht härtere Header als der Rest der SPA (RESET-06/
+// RESET-07, zweiter Production-Readiness-Härtungsdurchgang 2026-08-27): der
+// Reset-Token steckt kurzzeitig in der URL, bis das Frontend ihn per
+// history.replaceState entfernt (src/pages/PasswordReset.tsx). Bis dahin
+// darf kein Referrer mit der URL an Dritte gehen (z.B. wenn die Seite
+// externe Ressourcen lädt) und die Seite selbst darf nicht mit der
+// token-tragenden URL gecacht werden. Auch als reine Härtungsmaßnahme
+// wirksam, falls ein künftiger Fehler die URL-Bereinigung im Frontend
+// verzögert. Bewusst nur für genau diese SPA-Route, nicht global - die
+// übrige App braucht die normale (weniger strikte) Referrer-Policy für
+// interne Navigation/Analytics-freie, aber funktionale Zwecke.
+const HARDENED_HEADER_PATHS = new Set(["/passwort-zuruecksetzen"]);
+
+function applyPathSpecificHeaders(response: Response, relativePath: string): Response {
+  if (!HARDENED_HEADER_PATHS.has(relativePath)) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Cache-Control", "no-store");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function rewriteRequest(request: Request, pathname: string): Request {
   const url = new URL(request.url);
   url.pathname = pathname;
@@ -107,6 +128,6 @@ export default {
       response = new Response(response.body, { status: 200, headers });
     }
 
-    return withSecurityHeaders(response);
+    return applyPathSpecificHeaders(withSecurityHeaders(response), relativePath);
   },
 } satisfies ExportedHandler<Env>;
