@@ -488,7 +488,7 @@ export default function Groups() {
                       </span>
                     ) : g.canEdit && g.ownerId !== null ? (
                       <span className="flex flex-col text-xs leading-tight">
-                        <span className="text-slate-400 dark:text-slate-500">eigene Gruppe</span>
+                        <span className="text-slate-400 dark:text-slate-500">eigene Gruppe ({g.ownerName ?? "unbekannt"})</span>
                         {g.clubId ? (
                           <span
                             className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
