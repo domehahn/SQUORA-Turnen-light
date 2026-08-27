@@ -50,6 +50,14 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
+  // Ergänzt nach einem lokalen DAST-Lauf (OWASP ZAP Baseline, CI-25,
+  // zweiter Production-Readiness-Durchgang 2026-08-27) - alle geladenen
+  // Ressourcen sind bereits same-origin (CSP default-src 'self', keine
+  // externen Fonts/CDNs, s. dist/index.html), COEP: require-corp sollte
+  // damit ohne Funktionsverlust zusätzliche Cross-Origin-Isolation
+  // erzwingen. Nach dem Hinzufügen erneut lokal (wrangler dev + ZAP)
+  // verifiziert: App lädt weiterhin normal, keine neuen Konsolenfehler.
+  "Cross-Origin-Embedder-Policy": "require-corp",
   "Content-Security-Policy": CONTENT_SECURITY_POLICY,
   // Redundant zu "frame-ancestors 'none'" oben in jedem modernen Browser -
   // X-Frame-Options ist der Legacy-Vorgänger, den ältere/nicht CSP-Level-2-
