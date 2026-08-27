@@ -201,6 +201,13 @@ const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
   "/api/me/password",
 ]);
 
+// Erzwungener Passwortwechsel (Nutzeranfrage 2026-08-27): wer mit einem von
+// einer anderen Person vergebenen initialen Passwort einloggt (Admin-
+// Nutzerverwaltung oder scripts/create-admin.mjs), muss es zuerst über
+// PUT /api/me/password ändern, bevor irgendetwas anderes nutzbar ist -
+// serverseitig durchgesetzt, nicht nur eine Frontend-Empfehlung.
+const PASSWORD_CHANGE_EXEMPT_PATHS = new Set(["/api/me", "/api/logout", "/api/me/password"]);
+
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const token = getCookie(c, SESSION_COOKIE_NAME);
   if (!token) return c.json({ error: "Nicht angemeldet" }, 401);
@@ -242,10 +249,22 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
       await db.touchSessionActivity(c.env.DB, session.id);
     }
 
+    const pathname = new URL(c.req.url).pathname;
+
+    // Erzwungener Passwortwechsel zuerst prüfen (vor MFA) - ein von jemand
+    // anderem vergebenes Passwort sollte nicht erst zur MFA-Einrichtung
+    // verwendet werden, bevor es überhaupt ersetzt wurde.
+    if (user.must_change_password && !PASSWORD_CHANGE_EXEMPT_PATHS.has(pathname)) {
+      return c.json(
+        { error: "Das Passwort muss vor der weiteren Nutzung geändert werden.", passwordChangeRequired: true },
+        403
+      );
+    }
+
     // API-seitige MFA-Durchsetzung für Platform-Admin (s. Kommentar oben bei
     // MFA_ENFORCEMENT_EXEMPT_PATHS) - serverseitig, nicht nur im Frontend-
     // Overlay, sonst könnte ein direkter API-Client das umgehen.
-    if (user.is_admin && !user.totp_enabled && !MFA_ENFORCEMENT_EXEMPT_PATHS.has(new URL(c.req.url).pathname)) {
+    if (user.is_admin && !user.totp_enabled && !MFA_ENFORCEMENT_EXEMPT_PATHS.has(pathname)) {
       return c.json(
         { error: "Zwei-Faktor-Authentifizierung ist für Admin-Accounts erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
         403
@@ -779,6 +798,10 @@ app.get("/api/me", requireAuth, async (c) => {
     // Zugriffsstufe, vereinsübergreifend.
     mfaEnabled,
     mfaSetupRequired: c.get("isAdmin") && !mfaEnabled,
+    // Erzwungener Passwortwechsel (Nutzeranfrage 2026-08-27): true, solange
+    // ein von jemand anderem vergebenes initiales Passwort noch nicht durch
+    // ein selbst gewähltes ersetzt wurde.
+    passwordChangeRequired: Boolean(userRow?.must_change_password),
   });
 });
 
@@ -969,7 +992,9 @@ app.put("/api/admin/users/:id/password", requireAuth, requireAdmin, async (c) =>
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
   const targetUser = await db.getUserById(c.env.DB, id);
-  await db.updateUserPassword(c.env.DB, id, await hashPassword(newPassword));
+  // must_change_password = true: die Admin-Person kennt dieses Passwort,
+  // die betroffene Person muss es beim nächsten Login selbst ersetzen.
+  await db.updateUserPassword(c.env.DB, id, await hashPassword(newPassword), true);
   // Niemals das neue Passwort selbst loggen - nur, dass ein Reset stattfand.
   await db.logAudit(c.env.DB, {
     clubId: null,
@@ -1100,7 +1125,9 @@ app.put("/api/me/password", requireAuth, async (c) => {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
 
-  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword));
+  // must_change_password = false: die Person hat gerade selbst ein neues
+  // Passwort gewählt - erfüllt einen etwaigen erzwungenen Wechsel.
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword), false);
   // Session Revocation (Session-Management-Härtung): ein gestohlenes Token
   // auf einem anderen Gerät soll nach einer Passwortänderung nicht gültig
   // bleiben. Die aktuelle Sitzung (auf der die Änderung selbst gerade
@@ -1170,7 +1197,8 @@ app.post("/api/password-reset/confirm", async (c) => {
     return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
   }
 
-  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword));
+  // must_change_password = false: selbst gewähltes neues Passwort.
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword), false);
   // Ein Passwort-Reset ist ein Recovery-Vorgang (möglicher Kompromittierungs-
   // Verdacht) - anders als bei der normalen Passwortänderung werden hier
   // ALLE Sitzungen widerrufen, es gibt keine "aktuelle" auszunehmen (dieser

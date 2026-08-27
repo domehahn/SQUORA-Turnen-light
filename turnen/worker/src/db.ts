@@ -242,14 +242,29 @@ export async function consumeBackupCode(db: D1Database, id: string, remainingCod
   await db.prepare("UPDATE users SET totp_backup_codes = ? WHERE id = ?").bind(remainingCodesJson, id).run();
 }
 
+// mustChangePassword bewusst optional und standardmäßig NICHT gesetzt: das
+// transparente Rehashing beim Login (dasselbe Passwort, nur höhere PBKDF2-
+// Iterationszahl) ruft diese Funktion ebenfalls auf und darf must_change_
+// password dabei nicht anfassen - das ist kein echter Passwortwechsel durch
+// die betroffene Person. Ein expliziter Wert (true bei admin-vergebenen
+// Passwörtern, false bei jedem selbst gewählten neuen Passwort) setzt die
+// Spalte gezielt.
 export async function updateUserPassword(
   db: D1Database,
   id: string,
-  input: { hash: string; salt: string; iterations: number }
+  input: { hash: string; salt: string; iterations: number },
+  mustChangePassword?: boolean
 ): Promise<void> {
+  if (mustChangePassword === undefined) {
+    await db
+      .prepare("UPDATE users SET password_hash = ?, password_salt = ?, password_iterations = ? WHERE id = ?")
+      .bind(input.hash, input.salt, input.iterations, id)
+      .run();
+    return;
+  }
   await db
-    .prepare("UPDATE users SET password_hash = ?, password_salt = ?, password_iterations = ? WHERE id = ?")
-    .bind(input.hash, input.salt, input.iterations, id)
+    .prepare("UPDATE users SET password_hash = ?, password_salt = ?, password_iterations = ?, must_change_password = ? WHERE id = ?")
+    .bind(input.hash, input.salt, input.iterations, mustChangePassword ? 1 : 0, id)
     .run();
 }
 
@@ -1847,7 +1862,10 @@ export async function deleteUser(db: D1Database, userId: string): Promise<void> 
 }
 
 // Admin legt einen neuen Account direkt an (statt wie bisher nur per
-// manuellem SQL-Insert über scripts/create-admin.mjs).
+// manuellem SQL-Insert über scripts/create-admin.mjs). must_change_password
+// wird dabei immer auf 1 gesetzt (Nutzeranfrage 2026-08-27) - die Admin-
+// Person kennt das gerade vergebene Passwort, es muss beim ersten Login
+// durch ein nur der betroffenen Person bekanntes ersetzt werden.
 export async function createUserAdmin(
   db: D1Database,
   input: {
@@ -1864,8 +1882,8 @@ export async function createUserAdmin(
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, club_id, club_role, is_admin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, club_id, club_role, is_admin, must_change_password)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
     )
     .bind(id, input.email, input.name, input.hash, input.salt, input.iterations, input.clubId, input.clubRole, input.isAdmin ? 1 : 0)
     .run();

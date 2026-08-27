@@ -20,6 +20,11 @@ export interface AuthState {
   // MFA-Zwang nur für Platform-Admin, nicht Jugendleitung) - AppLayout zeigt
   // dann ein blockierendes Einrichtungs-Overlay.
   mfaSetupRequired: boolean;
+  // true, solange ein von jemand anderem vergebenes initiales Passwort
+  // (Admin-Nutzerverwaltung/scripts/create-admin.mjs) noch nicht durch ein
+  // selbst gewähltes ersetzt wurde (Nutzeranfrage 2026-08-27) - hat Vorrang
+  // vor mfaSetupRequired.
+  passwordChangeRequired: boolean;
 }
 
 export interface AuthContextValue extends AuthState {

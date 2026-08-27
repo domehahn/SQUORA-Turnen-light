@@ -13,6 +13,7 @@ interface MeResponse {
   clubRole: ClubRole;
   isAdmin: boolean;
   mfaSetupRequired: boolean;
+  passwordChangeRequired: boolean;
 }
 
 // Session-Management-Härtung (externe Production-Readiness-Prüfung
@@ -34,6 +35,7 @@ const EMPTY_STATE: AuthState = {
   clubRole: null,
   isAdmin: false,
   mfaSetupRequired: false,
+  passwordChangeRequired: false,
 };
 
 function stateFromMe(me: MeResponse): AuthState {
@@ -48,6 +50,7 @@ function stateFromMe(me: MeResponse): AuthState {
     clubRole: me.clubRole,
     isAdmin: me.isAdmin,
     mfaSetupRequired: me.mfaSetupRequired,
+    passwordChangeRequired: me.passwordChangeRequired,
   };
 }
 

@@ -159,7 +159,11 @@ Das Passwort wird danach interaktiv abgefragt (nicht als Argument), damit es
 nicht in der Shell-History landet.
 
 Das Skript gibt ein fertiges `wrangler d1 execute ... --local`-Kommando aus,
-das einmalig ausgeführt wird.
+das einmalig ausgeführt wird. Das gesetzte Passwort ist bewusst nur initial -
+die Person muss es beim ersten Login durch ein selbst gewähltes ersetzen
+(`must_change_password`), bevor der Account normal nutzbar ist. Dasselbe
+gilt für über die Admin-Nutzerverwaltung (`POST /api/admin/users`,
+`PUT /api/admin/users/:id/password`) vergebene Passwörter.
 
 ### 2. Frontend
 

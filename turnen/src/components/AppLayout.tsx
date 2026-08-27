@@ -7,6 +7,7 @@ import { UserMenu } from "./UserMenu";
 import { GlobalSearch } from "./GlobalSearch";
 import { AdminClubSwitcher } from "./AdminClubSwitcher";
 import { MfaEnforcementOverlay } from "./MfaEnforcementOverlay";
+import { PasswordChangeRequiredOverlay } from "./PasswordChangeRequiredOverlay";
 import SquoraBrand from "./SquoraBrand";
 
 // Statt einer einzigen, mit 13 Punkten überladenen Zeile: gruppiert nach
@@ -69,7 +70,7 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function AppLayout() {
-  const { clubRole, isAdmin, mfaSetupRequired } = useAuth();
+  const { clubRole, isAdmin, mfaSetupRequired, passwordChangeRequired } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
   const [navOpen, setNavOpen] = useState(false);
 
@@ -100,7 +101,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen">
-      {mfaSetupRequired && <MfaEnforcementOverlay />}
+      {passwordChangeRequired ? <PasswordChangeRequiredOverlay /> : mfaSetupRequired && <MfaEnforcementOverlay />}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-2">

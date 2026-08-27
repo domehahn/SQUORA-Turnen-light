@@ -57,6 +57,10 @@ export interface UserRow {
   totp_secret: string | null;
   totp_enabled: number;
   totp_backup_codes: string | null;
+  // Erzwungener Passwortwechsel (Migration 0040) - true, wenn eine andere
+  // Person (Admin oder das Bootstrap-Skript) ein initiales Passwort vergeben
+  // hat, das noch nie durch ein selbst gewähltes ersetzt wurde.
+  must_change_password: number;
 }
 
 export interface Club {

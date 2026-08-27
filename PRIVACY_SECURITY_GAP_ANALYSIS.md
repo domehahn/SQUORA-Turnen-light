@@ -129,6 +129,24 @@ bereits aktiv, kein Lockout-Risiko. 4 neue Tests in `mfa.test.ts`, 2
 bestehende Admin-Tests in `authorization.test.ts` angepasst (MFA vorab
 einrichten bzw. die erwartete Blockade prüfen statt sie zu umgehen).
 
+**Nachtrag (2026-08-27, achter Durchgang):** Erzwungener Passwortwechsel
+beim ersten Login (Nutzeranfrage: "initial Passwort von Admin anlegen, aber
+beim ersten Login wechseln müssen") - neues Feld `users.must_change_password`
+(Migration 0040, Default 0, keine Auswirkung auf Bestandsaccounts). Gesetzt
+auf 1 bei: Account-Erstellung über `scripts/create-admin.mjs` oder
+`POST /api/admin/users` (Admin-Nutzerverwaltung), sowie erneut bei jedem
+`PUT /api/admin/users/:id/password` (Admin setzt ein fremdes Passwort
+zurück - die Admin-Person kennt dieses Passwort, es muss ersetzt werden).
+Zurückgesetzt auf 0 bei jedem selbst gewählten neuen Passwort (eigene
+Passwortänderung, E-Mail-Passwort-Reset) - **nicht** beim transparenten
+PBKDF2-Rehashing (dasselbe Passwort, nur höhere Iterationszahl, kein
+echter Wechsel durch die Person). Serverseitig in `requireAuth` durchgesetzt
+(Positivliste `/api/me`, `/api/logout`, `/api/me/password`, analog zur
+MFA-Durchsetzung), zusätzlich blockierendes Frontend-Overlay
+(`PasswordChangeRequiredOverlay.tsx`), Priorität vor einem etwaigen
+gleichzeitigen MFA-Setup-Zwang. 6 neue Tests in
+`password-change-required.test.ts`.
+
 **Bewusst weiterhin NICHT umgesetzt (unverändert seit dem letzten Durchgang):**
 
 - **Eigene Origin (`turnen.squora.de` statt `squora.de/turnen-light`)** -

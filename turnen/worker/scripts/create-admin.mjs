@@ -53,7 +53,10 @@ function sqlString(value) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-const sql = `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations) VALUES (${sqlString(id)}, ${sqlString(normalizedEmail)}, ${sqlString(displayName)}, ${sqlString(hash.toString("hex"))}, ${sqlString(salt.toString("hex"))}, ${PBKDF2_ITERATIONS});`;
+// must_change_password = 1: dieses Skript vergibt das initiale Passwort,
+// nicht die Person selbst - beim ersten Login muss es durch ein nur ihr
+// bekanntes ersetzt werden (Nutzeranfrage 2026-08-27).
+const sql = `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, must_change_password) VALUES (${sqlString(id)}, ${sqlString(normalizedEmail)}, ${sqlString(displayName)}, ${sqlString(hash.toString("hex"))}, ${sqlString(salt.toString("hex"))}, ${PBKDF2_ITERATIONS}, 1);`;
 
 console.log("\nFühre dieses Kommando aus, um den Nutzer anzulegen:\n");
 console.log(`wrangler d1 execute DB --local --command "${sql.replace(/"/g, '\\"')}"`);
