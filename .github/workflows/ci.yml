@@ -103,9 +103,21 @@ jobs:
       # die für private Repos eine GITLEAKS_LICENSE voraussetzt - die CLI
       # selbst ist vollständig quelloffen und kostenlos). Scannt die
       # gesamte Git-Historie des Checkouts, nicht nur den aktuellen Stand.
+      #
+      # Supply-Chain-Härtung (CI-19, zweiter Production-Readiness-Durchgang
+      # 2026-08-27): reines "curl | tar" ohne Prüfung würde einer manipulierten
+      # oder per MITM ausgetauschten Datei blind vertrauen. Der erwartete
+      # SHA-256-Hash steht deshalb direkt HIER im Workflow (also unter
+      # Code-Review/PR-Pflicht wie jede andere Zeile), nicht in einer zur
+      # Laufzeit von GitHub nachgeladenen checksums.txt - eine kompromittierte
+      # Release-Datei würde vermutlich mit einer ebenso kompromittierten
+      # checksums.txt ausgeliefert, ein hier fest einprogrammierter Wert nicht.
+      # Hash verifiziert am 27.08.2026 gegen die offizielle
+      # gitleaks_8.30.1_checksums.txt des v8.30.1-Releases.
       - name: Gitleaks (secret scan)
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o gitleaks.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --config .gitleaks.toml --redact -v
 
@@ -137,12 +149,21 @@ jobs:
       # tatsächlich installierte node_modules (anders als "npm audit"
       # oben, das nur package-lock.json liest) - deshalb hier je ein
       # eigener "npm ci" nötig.
+      #
+      # Supply-Chain-Härtung (CI-19): @cyclonedx/cyclonedx-npm ist jetzt eine
+      # exakt gepinnte devDependency in turnen/package.json bzw.
+      # turnen/worker/package.json (s. package-lock.json), statt bei jedem
+      # CI-Lauf per "npx --yes" ungepinnt und integritätsungeprüft von der
+      # npm-Registry nachgeladen zu werden. "npm ci" installiert exakt die in
+      # package-lock.json fixierte, per Integrity-Hash geprüfte Version;
+      # "npx cyclonedx-npm" (ohne --yes) führt danach ausschließlich das
+      # bereits lokal installierte Binary aus, ohne erneuten Registry-Zugriff.
       - name: Generate SBOM (worker)
         working-directory: turnen/worker
-        run: npm ci && npx --yes @cyclonedx/cyclonedx-npm --output-file ../../sbom-worker.json
+        run: npm ci && npx cyclonedx-npm --output-file ../../sbom-worker.json
       - name: Generate SBOM (frontend)
         working-directory: turnen
-        run: npm ci && npx --yes @cyclonedx/cyclonedx-npm --output-file ../sbom-frontend.json
+        run: npm ci && npx cyclonedx-npm --output-file ../sbom-frontend.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom
@@ -154,8 +175,12 @@ jobs:
       # --- Automatisierter (rein technischer) Production-Readiness-Check
       # (s. scripts/production-readiness-check.ts) - läuft nach dem
       # Frontend-Build, damit der dist/-Check aussagekräftig ist.
+      #
+      # Supply-Chain-Härtung (CI-19): tsx läuft jetzt über die neue, minimale
+      # Root-package.json (nur Repo-Tooling, keine Anwendungs-Dependencies)
+      # mit exakt gepinnter Version statt per ungepinntem "npx --yes tsx".
       - name: Build frontend (für Production-Readiness-Check)
         working-directory: turnen
         run: npm ci && npm run build
       - name: Production Readiness Check
-        run: npx --yes tsx scripts/production-readiness-check.ts
+        run: npm ci && npx tsx scripts/production-readiness-check.ts

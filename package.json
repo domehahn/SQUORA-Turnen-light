@@ -1,0 +1,13 @@
+{
+  "name": "squora-turnen-repo-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nur Repo-Root-Tooling (production-readiness-check.ts, privacy-check.ts) - keine Anwendungs-Dependencies. Existiert primär, damit CI diese Skripte über eine gepinnte, per package-lock.json integritätsgeprüfte tsx-Version ausführen kann statt über ein ungepinntes `npx --yes tsx` (CI-Supply-Chain-Härtung, zweiter Production-Readiness-Durchgang 2026-08-27).",
+  "scripts": {
+    "readiness-check": "tsx scripts/production-readiness-check.ts",
+    "privacy-check": "tsx scripts/privacy-check.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.23.12"
+  }
+}
