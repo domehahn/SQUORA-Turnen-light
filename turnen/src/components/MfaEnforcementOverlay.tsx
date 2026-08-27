@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
+import { QrCode } from "../components/QrCode";
 
 // Blockierendes Setup-Overlay für Admin/Jugendleitung ohne aktivierte
 // Zwei-Faktor-Authentifizierung (Finding SEC-02 Folgearbeit: verpflichtende
@@ -73,8 +74,10 @@ export function MfaEnforcementOverlay() {
           </div>
         ) : setup ? (
           <form onSubmit={handleConfirm} className="space-y-3">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              In der Authenticator-App den Schlüssel manuell eingeben (kein Scanner nötig):
+            <p className="text-sm text-slate-600 dark:text-slate-300">Mit der Authenticator-App scannen:</p>
+            <QrCode value={setup.otpauthUri} />
+            <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+              Kein Scanner zur Hand? Schlüssel manuell eingeben:
             </p>
             <p className="break-all rounded-md bg-slate-100 p-2 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               {setup.secret}

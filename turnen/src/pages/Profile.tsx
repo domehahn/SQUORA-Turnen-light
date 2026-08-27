@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/useAuth";
 import { FloatingInput } from "../components/FloatingField";
+import { QrCode } from "../components/QrCode";
 
 export default function Profile() {
   const { userName, userEmail, clubName, clubRole, isAdmin, applyProfileToken } = useAuth();
@@ -284,8 +285,10 @@ export default function Profile() {
           </button>
         ) : mfaSetup ? (
           <form onSubmit={handleMfaConfirm} className="space-y-3">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              In der Authenticator-App den Schlüssel manuell eingeben (kein Scanner nötig):
+            <p className="text-sm text-slate-600 dark:text-slate-300">Mit der Authenticator-App scannen:</p>
+            <QrCode value={mfaSetup.otpauthUri} />
+            <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+              Kein Scanner zur Hand? Schlüssel manuell eingeben:
             </p>
             <p className="break-all rounded-md bg-slate-100 p-2 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               {mfaSetup.secret}
