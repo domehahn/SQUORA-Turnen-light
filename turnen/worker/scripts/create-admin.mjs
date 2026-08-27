@@ -34,8 +34,13 @@ if (password.length < 8) {
 
 // Muss mit CURRENT_PBKDF2_ITERATIONS in worker/src/auth.ts übereinstimmen
 // (Passwort-Hashing-Härtung) - dieses Skript kann dessen TS-Export nicht
-// direkt importieren, deshalb hier als eigene Konstante dupliziert.
-const PBKDF2_ITERATIONS = 600_000;
+// direkt importieren, deshalb hier als eigene Konstante dupliziert. Bei
+// 100_000 belassen: die Cloudflare-Workers-Runtime (workerd), die den
+// Hash beim Login mit crypto.subtle.deriveBits nachprüft, lehnt PBKDF2
+// oberhalb von 100.000 Iterationen ab (s. Kommentar in auth.ts) - ein hier
+// abweichender, höherer Wert würde den erstellten Account beim ersten
+// Login-Versuch mit einem Serverfehler aussperren.
+const PBKDF2_ITERATIONS = 100_000;
 
 const salt = randomBytes(16);
 const hash = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, "sha256");

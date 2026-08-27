@@ -2,11 +2,17 @@ import { SignJWT, jwtVerify } from "jose";
 
 // War einheitlich 100_000 (globale Konstante). OWASP empfiehlt für
 // PBKDF2-HMAC-SHA256 aktuell 600.000 Iterationen (Production-Readiness-
-// Prüfung 2026-08-27) - jetzt pro Nutzer in users.password_iterations
-// gespeichert (Migration 0038), damit bestehende Hashes mit ihrer
-// ursprünglichen Zahl gültig bleiben und sich beim nächsten erfolgreichen
-// Login transparent auf die neue Zahl heben lassen (s. index.ts, Login-Route).
-export const CURRENT_PBKDF2_ITERATIONS = 600_000;
+// Prüfung 2026-08-27); die Cloudflare-Workers-Runtime (workerd) lehnt
+// crypto.subtle.deriveBits mit PBKDF2 oberhalb von 100.000 Iterationen
+// jedoch mit "NotSupportedError: iteration counts above 100000 are not
+// supported" ab (in Produktion am 27.08.2026 aufgefallen - jeder Login mit
+// transparentem Rehashing crashte). Daher bewusst bei der von der Laufzeit
+// unterstützten Obergrenze belassen, statt der OWASP-Empfehlung zu folgen.
+// users.password_iterations (Migration 0038) bleibt trotzdem pro Nutzer
+// gespeichert statt hartkodiert - falls workerd künftig höhere Werte
+// erlaubt, lässt sich diese Konstante gefahrlos anheben, bestehende Hashes
+// werden dann wie vorgesehen beim nächsten Login transparent angehoben.
+export const CURRENT_PBKDF2_ITERATIONS = 100_000;
 // NUR für MFA-Backup-Codes (s. index.ts) - bewusst von der Nutzer-Passwort-
 // Iterationszahl entkoppelt: Backup-Codes sind kurzlebige, hochentropische
 // Zufallswerte (keine von Menschen gewählten Passwörter), ihre Sicherheit
