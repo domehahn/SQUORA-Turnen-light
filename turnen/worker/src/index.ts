@@ -1102,8 +1102,26 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
     clubId: null,
     actorId: c.get("userId"),
     actorName: c.get("name"),
+    // Niemals das Passwort selbst ins Audit-Log - targetLabel bleibt bei
+    // der E-Mail, unabhängig vom Mailversand unten.
     action: "admin.user_created",
     targetLabel: email,
+  });
+  // Willkommens-Mail mit dem Einmal-Passwort (Nutzeranfrage 2026-08-27):
+  // createUserAdmin() setzt must_change_password bereits auf 1 - die neue
+  // Person MUSS dieses Passwort beim ersten Login sofort ersetzen, es ist
+  // also ein echtes Einmal-Credential und kein dauerhaftes Geheimnis, das
+  // im Postfach liegen bleibt. sendEmailOnly() statt notifyUser(): keine
+  // dauerhafte In-App-Benachrichtigung mit dem Klartext-Passwort in D1,
+  // best effort wie beim Passwort-Reset-Mailversand - ein Mail-Fehler darf
+  // das Anlegen des Accounts nicht rückgängig machen oder melden, die
+  // admin-ausführende Person sieht das Passwort ohnehin im Formular und
+  // kann es bei Bedarf selbst weitergeben.
+  await sendEmailOnly(c.env, {
+    to: email,
+    toName: name,
+    subject: "Dein Zugang für Turnen",
+    text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: ${email}\nEinmal-Passwort: ${password}\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst:\n${c.env.FRONTEND_URL}/login`,
   });
   return c.json({ id: user.id, email, name, clubId, clubRole, isAdmin }, 201);
 });
