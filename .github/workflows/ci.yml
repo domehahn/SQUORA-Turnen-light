@@ -51,3 +51,22 @@ jobs:
       - run: npm run lint
       - run: npm run web:typecheck
       - run: npm run build
+
+  iac:
+    name: cloudflare-turnen-iac (fmt, validate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare-turnen-iac
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.6
+      # Kein echter API-Zugriff nötig für fmt/validate - kein
+      # CLOUDFLARE_API_TOKEN in CI hinterlegt, "tofu plan"/"apply" laufen
+      # bewusst nicht automatisiert (s. Kommentar oben und
+      # cloudflare-turnen-iac/README.md).
+      - run: tofu fmt -check -recursive
+      - run: tofu init -backend=false
+      - run: tofu validate
