@@ -110,16 +110,35 @@ umgesetzt:
   `SECURITY_LOG_RETENTION_DAYS = 90` (Nutzerentscheidung), abgelaufene/
   widerrufene Sessions werden unabhängig davon sofort entfernt.
 
+**Nachtrag (2026-08-27, siebter Durchgang):** ~~SEC-18 (MFA API-seitige
+Durchsetzung)~~ **erneut eingeführt, diesmal dauerhaft gewollt und bewusst
+enger gefasst** - Nutzeranweisung "admin muss doch MFA zwingend haben" nach
+Rückfrage, für welche Rolle(n): **nur Platform-Admin (`is_admin`), nicht
+Jugendleitung.** Anders als beim ersten Durchgang (SEC-18, zurückgenommen
+über Commit `971993e`) gilt der Zwang jetzt also nur für die höchste
+Zugriffsstufe (vereinsübergreifend), nicht für Jugendleitung (bleibt
+weiterhin Opt-in). Umsetzung analog zum ursprünglichen SEC-18:
+`requireAuth` blockiert `is_admin`-Accounts ohne aktivierte MFA serverseitig
+für alle Routen außer einer Positivliste (`/api/me`, `/api/logout`,
+`/api/me/mfa*`, `/api/me/sessions*`, `/api/me/password`), `GET /api/me`
+liefert wieder `mfaSetupRequired`, `MfaEnforcementOverlay.tsx` (blockierendes
+Setup-Overlay) aus der Git-Historie wiederhergestellt und auf die neue
+Formulierung ("Admin-Accounts" statt "Jugendleitung/Admin") angepasst.
+Vor dem Deploy geprüft: der einzige produktive Admin-Account hatte MFA
+bereits aktiv, kein Lockout-Risiko. 4 neue Tests in `mfa.test.ts`, 2
+bestehende Admin-Tests in `authorization.test.ts` angepasst (MFA vorab
+einrichten bzw. die erwartete Blockade prüfen statt sie zu umgehen).
+
 **Bewusst weiterhin NICHT umgesetzt (unverändert seit dem letzten Durchgang):**
 
 - **Eigene Origin (`turnen.squora.de` statt `squora.de/turnen-light`)** -
   auf Nutzerentscheidung (2026-08-27) explizit zurückgestellt: eine echte
   DNS-/Zonen-Änderung mit Abstimmungsbedarf mit anderen Projekten auf
   derselben Zone, kein reiner Code-Fix. Bleibt ein offenes P1.
-- **MFA-Zwang für Platform-Admin** - MFA ist weiterhin reines Opt-in für
-  jede Rolle, wie zweimal explizit vom Nutzer angewiesen. Bei einer strengen
-  Security-Bewertung als **akzeptiertes Restrisiko** zu dokumentieren, nicht
-  als "Best Practice erfüllt".
+- **MFA-Zwang für Jugendleitung** - weiterhin bewusst Opt-in (nur
+  Platform-Admin ist verpflichtend, s. Nachtrag oben). Bei einer strengen
+  Security-Bewertung für Jugendleitung als **akzeptiertes Restrisiko** zu
+  dokumentieren, nicht als "Best Practice erfüllt".
 - **Branch Protection / Required Status Checks** - unverändert bewusst
   nicht aktiviert (Nutzerentscheidung: `main` bleibt für direkte Pushes
   offen).

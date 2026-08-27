@@ -15,6 +15,11 @@ export interface AuthState {
   clubName: string | null;
   clubRole: ClubRole | null;
   isAdmin: boolean;
+  // true für Admin-Accounts (is_admin) ohne aktivierte Zwei-Faktor-
+  // Authentifizierung (Nutzerentscheidung 2026-08-27, zweiter Durchgang:
+  // MFA-Zwang nur für Platform-Admin, nicht Jugendleitung) - AppLayout zeigt
+  // dann ein blockierendes Einrichtungs-Overlay.
+  mfaSetupRequired: boolean;
 }
 
 export interface AuthContextValue extends AuthState {

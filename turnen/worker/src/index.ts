@@ -180,6 +180,27 @@ function isIdleExempt(c: { req: { method: string; path: string } }): boolean {
   return c.req.method === "GET" && IDLE_EXEMPT_GET_PATHS.has(c.req.path);
 }
 
+// API-seitige MFA-Durchsetzung für die Platform-Admin-Rolle (is_admin) -
+// Nutzerentscheidung 2026-08-27, zweiter Durchgang: MFA war zwischenzeitlich
+// für Admin UND Jugendleitung verpflichtend, wurde komplett zurückgenommen,
+// jetzt explizit erneut angefordert, aber bewusst nur für is_admin (nicht
+// Jugendleitung) - Platform-Admin hat potentiell vereinsübergreifenden
+// Zugriff, das ist die höchste Risikostufe. Positivliste (nicht "alles außer
+// X"), damit neue Routen standardmäßig gesperrt sind, bis sie hier bewusst
+// freigegeben werden - alles, was zum Herausfinden des eigenen Status,
+// Abmelden und zur MFA-Einrichtung selbst nötig ist.
+const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
+  "/api/me",
+  "/api/logout",
+  "/api/me/mfa",
+  "/api/me/mfa/setup",
+  "/api/me/mfa/confirm",
+  "/api/me/mfa/disable",
+  "/api/me/sessions",
+  "/api/me/sessions/revoke-all",
+  "/api/me/password",
+]);
+
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const token = getCookie(c, SESSION_COOKIE_NAME);
   if (!token) return c.json({ error: "Nicht angemeldet" }, 401);
@@ -219,6 +240,16 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
     if (!isIdleExempt(c) && now - lastActivityMs > ACTIVITY_UPDATE_THROTTLE_SECONDS * 1000) {
       await db.touchSessionActivity(c.env.DB, session.id);
+    }
+
+    // API-seitige MFA-Durchsetzung für Platform-Admin (s. Kommentar oben bei
+    // MFA_ENFORCEMENT_EXEMPT_PATHS) - serverseitig, nicht nur im Frontend-
+    // Overlay, sonst könnte ein direkter API-Client das umgehen.
+    if (user.is_admin && !user.totp_enabled && !MFA_ENFORCEMENT_EXEMPT_PATHS.has(new URL(c.req.url).pathname)) {
+      return c.json(
+        { error: "Zwei-Faktor-Authentifizierung ist für Admin-Accounts erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
+        403
+      );
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -742,10 +773,12 @@ app.get("/api/me", requireAuth, async (c) => {
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
     isAdmin: c.get("isAdmin"),
-    // MFA ist reines Opt-in (Nutzerentscheidung 2026-08-27: nicht
-    // verpflichtend, muss aktiv in Profil/Settings aktiviert werden) -
-    // kein serverseitiger oder UI-seitiger Zwang mehr für irgendeine Rolle.
+    // MFA ist für normale Rollen (member/jugendleiter) weiterhin reines
+    // Opt-in. Für Platform-Admin (is_admin) erneut verpflichtend
+    // (Nutzerentscheidung 2026-08-27, zweiter Durchgang) - höchste
+    // Zugriffsstufe, vereinsübergreifend.
     mfaEnabled,
+    mfaSetupRequired: c.get("isAdmin") && !mfaEnabled,
   });
 });
 

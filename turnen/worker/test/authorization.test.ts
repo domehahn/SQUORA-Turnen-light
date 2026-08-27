@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
+import { authHeaders, enableMfaForTest, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
 
 beforeAll(async () => {
   await ensureMigrated();
@@ -284,18 +284,23 @@ describe("Admin-Rolle (Privilege Escalation)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("Admin-Rolle kann Admin-Routen aufrufen", async () => {
+  // Admin-Routen liegen hinter requireAuth, das für is_admin ohne aktivierte
+  // MFA blockt (s. test/mfa.test.ts, "MFA-Zwang für Platform-Admin") - MFA
+  // hier vorab einrichten, sonst würde dieser Test aus dem falschen Grund
+  // (MFA-Sperre statt der eigentlich geprüften Admin-Berechtigung) bestehen.
+  it("Admin-Rolle kann Admin-Routen aufrufen (mit aktivierter MFA)", async () => {
     await seedUser({ email: "real-admin@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "real-admin@test.local", "password-123");
+    await enableMfaForTest(token);
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
     expect(res.status).toBe(200);
   });
 
-  it("Admin-Rolle kann Admin-Routen auch OHNE aktivierte MFA aufrufen (MFA ist Opt-in, nicht verpflichtend)", async () => {
+  it("Admin-Rolle OHNE aktivierte MFA wird von Admin-Routen blockiert (MFA ist für is_admin verpflichtend, s. mfa.test.ts)", async () => {
     await seedUser({ email: "admin-no-mfa@test.local", password: "password-123", isAdmin: true });
     const token = await login(SELF, "admin-no-mfa@test.local", "password-123");
     const res = await SELF.fetch("https://example.test/api/admin/clubs", { headers: authHeaders(token) });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 });
 

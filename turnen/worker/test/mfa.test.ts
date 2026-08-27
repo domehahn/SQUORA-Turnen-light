@@ -183,3 +183,62 @@ describe("MFA (TOTP)", () => {
     expect(bodyAfter.mfaEnabled).toBe(true);
   });
 });
+
+// API-seitige MFA-Durchsetzung für Platform-Admin (Nutzerentscheidung
+// 2026-08-27, zweiter Durchgang: nach der vollständigen Rücknahme erneut
+// angefordert, aber bewusst nur für is_admin, nicht Jugendleitung - höchste
+// Zugriffsstufe, vereinsübergreifend).
+describe("MFA-Zwang für Platform-Admin", () => {
+  it("Admin-Account ohne aktivierte MFA wird von normalen Routen blockiert (403, mfaSetupRequired)", async () => {
+    await seedUser({ email: "mfa-admin-blocked@test.local", password: "password-123", isAdmin: true });
+    const token = await login(SELF, "mfa-admin-blocked@test.local", "password-123");
+
+    const res = await SELF.fetch("https://example.test/api/children", { headers: authHeaders(token) });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { mfaSetupRequired?: boolean };
+    expect(body.mfaSetupRequired).toBe(true);
+  });
+
+  it("Admin-Account ohne MFA kann trotzdem /api/me, /api/logout und die MFA-Einrichtung selbst erreichen (kann sich sonst nicht befreien)", async () => {
+    await seedUser({ email: "mfa-admin-exempt@test.local", password: "password-123", isAdmin: true });
+    const token = await login(SELF, "mfa-admin-exempt@test.local", "password-123");
+
+    const meRes = await SELF.fetch("https://example.test/api/me", { headers: authHeaders(token) });
+    expect(meRes.status).toBe(200);
+    const meBody = (await meRes.json()) as { mfaSetupRequired: boolean };
+    expect(meBody.mfaSetupRequired).toBe(true);
+
+    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(token) });
+    expect(setupRes.status).toBe(200);
+  });
+
+  it("Admin-Account mit aktivierter MFA wird nicht blockiert", async () => {
+    await seedUser({ email: "mfa-admin-ok@test.local", password: "password-123", isAdmin: true });
+    const token = await login(SELF, "mfa-admin-ok@test.local", "password-123");
+    const setupRes = await SELF.fetch("https://example.test/api/me/mfa/setup", { method: "POST", headers: authHeaders(token) });
+    const { secret } = (await setupRes.json()) as { secret: string };
+    const code = await generateTotp(base32Decode(secret));
+    await SELF.fetch("https://example.test/api/me/mfa/confirm", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ code }),
+    });
+
+    const res = await SELF.fetch("https://example.test/api/children", { headers: authHeaders(token) });
+    expect(res.status).toBe(200);
+  });
+
+  it("Jugendleitung (ohne is_admin) wird weiterhin NICHT zur MFA gezwungen", async () => {
+    const club = await seedClub("Verein MFA-Admin-Only");
+    await seedUser({
+      email: "mfa-leader-not-forced@test.local",
+      password: "password-123",
+      clubId: club.id,
+      clubRole: "jugendleiter",
+    });
+    const token = await login(SELF, "mfa-leader-not-forced@test.local", "password-123");
+
+    const res = await SELF.fetch("https://example.test/api/children", { headers: authHeaders(token) });
+    expect(res.status).toBe(200);
+  });
+});
