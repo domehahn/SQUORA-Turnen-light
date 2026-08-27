@@ -132,13 +132,17 @@ jobs:
 
       # --- SBOM: CycloneDX für beide Node-Projekte, nur als CI-Artefakt
       # (nicht ins Repo committet, s. cloudflare-turnen-iac/README.md-
-      # Prinzip "keine riesigen generierten Dateien committen"). ---
+      # Prinzip "keine riesigen generierten Dateien committen"). cyclonedx-
+      # npm liest den Abhängigkeitsbaum über "npm ls", braucht dafür
+      # tatsächlich installierte node_modules (anders als "npm audit"
+      # oben, das nur package-lock.json liest) - deshalb hier je ein
+      # eigener "npm ci" nötig.
       - name: Generate SBOM (worker)
         working-directory: turnen/worker
-        run: npx --yes @cyclonedx/cyclonedx-npm --output-file ../../sbom-worker.json
+        run: npm ci && npx --yes @cyclonedx/cyclonedx-npm --output-file ../../sbom-worker.json
       - name: Generate SBOM (frontend)
         working-directory: turnen
-        run: npx --yes @cyclonedx/cyclonedx-npm --output-file ../sbom-frontend.json
+        run: npm ci && npx --yes @cyclonedx/cyclonedx-npm --output-file ../sbom-frontend.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom
