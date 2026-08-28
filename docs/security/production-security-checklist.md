@@ -13,7 +13,7 @@ REQUIRED / LEGAL-PRIVACY REVIEW REQUIRED.
 - [x] `workers_dev=false` + `preview_urls=false` (beide Worker)
 - [x] D1 `database_name = turnen-eu`
 - [x] IaC: `jurisdiction = "eu"`, `prevent_destroy = true`
-- [x] `ARCHIVED_CHILD_RETENTION_DAYS` und `SECURITY_LOG_RETENTION_DAYS` gesetzt
+- [x] `ARCHIVED_CHILD_RETENTION_DAYS`, `SECURITY_LOG_RETENTION_DAYS` und `NOTIFICATION_RETENTION_DAYS` gesetzt
 - [x] CSP-Header vorhanden, kein `unsafe-eval`
 - [x] Session-Cookie `httpOnly: true`
 - [x] Kein JWT/Session-Token in `localStorage`

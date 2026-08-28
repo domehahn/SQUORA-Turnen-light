@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { useIdleTimer } from "../context/IdleTimerContext";
 import { DropdownPortal } from "./DropdownPortal";
 
 function initials(name: string | null, email: string | null): string {
@@ -13,6 +14,7 @@ function initials(name: string | null, email: string | null): string {
 
 export function UserMenu() {
   const { userName, userEmail, clubName, clubRole, isAdmin, signOut } = useAuth();
+  const { formattedTime } = useIdleTimer();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -56,6 +58,10 @@ export function UserMenu() {
                 {clubName} · {clubRole === "jugendleiter" ? "Jugendleitung" : "Turnleiter*in"}
               </p>
             )}
+            <div className="mt-2 flex items-center justify-between rounded bg-slate-50 px-2 py-1 text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+              <span>Session-Inaktivität:</span>
+              <span className="font-mono font-medium">{formattedTime} min</span>
+            </div>
           </div>
           <Link
             to="/profil"

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api } from "../../lib/api";
+import { ApiError, api } from "../../lib/api";
 import type {
   AttendanceSummary,
   CapacityRequest,
@@ -37,6 +37,7 @@ const emptyForm = {
 const STALE_ATTENDANCE_WEEKS = 4;
 const WAITLIST_PREFIX = "waitlist:";
 const CHILDREN_PAGE_SIZE = 10;
+const UNASSIGNED_GROUP_ID = "__none__";
 
 function csvCell(value: string): string {
   if (/[",\n;]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
@@ -520,6 +521,32 @@ export default function Children() {
       resetForm();
       load();
     } catch (err) {
+      const duplicate = err instanceof ApiError && err.status === 409
+        ? err.data as {
+            code?: string;
+            existingChildId?: string;
+            existingChildName?: string;
+            targetGroupId?: string | null;
+            targetGroupName?: string | null;
+          } | null
+        : null;
+      if (
+        duplicate?.code === "unassigned_child_duplicate" &&
+        duplicate.existingChildId &&
+        duplicate.targetGroupId &&
+        duplicate.targetGroupName
+      ) {
+        const assignExisting = window.confirm(
+          `${duplicate.existingChildName ?? "Dieses Kind"} ist bereits in „Ohne Gruppe“ vorhanden. ` +
+          `Soll der vorhandene Datensatz stattdessen „${duplicate.targetGroupName}“ zugeordnet werden? ` +
+          `Die vorhandenen Stammdaten bleiben erhalten.`
+        );
+        if (assignExisting) {
+          resetForm();
+          await handleMove(duplicate.existingChildId, duplicate.targetGroupId);
+        }
+        return;
+      }
       setError(err instanceof Error ? err.message : "Fehler beim Speichern");
     }
   }
@@ -542,10 +569,14 @@ export default function Children() {
   // nicht auf visibleChildren beschränkt, damit CSV und Druckansicht
   // dieselben Daten liefern.
   function exportCsv(mode: "namen" | "notfall") {
-    const selectedGroups = groups.filter((g) => printGroupIds.includes(g.id));
+    const selectedGroups = printGroupIds.flatMap((id) => {
+      if (id === UNASSIGNED_GROUP_ID) return [{ id, name: "Ohne Gruppe" }];
+      const group = groups.find((candidate) => candidate.id === id);
+      return group ? [{ id: group.id, name: group.name }] : [];
+    });
     const rows = selectedGroups.flatMap((g) =>
       children
-        .filter((c) => c.groupId === g.id)
+        .filter((c) => (g.id === UNASSIGNED_GROUP_ID ? c.groupId === null : c.groupId === g.id))
         .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
         .map((c) => ({ group: g, child: c }))
     );
@@ -1031,6 +1062,26 @@ export default function Children() {
               </button>
             );
           })}
+          {(() => {
+            const selected = printGroupIds.includes(UNASSIGNED_GROUP_ID);
+            return (
+              <button
+                type="button"
+                onClick={() =>
+                  setPrintGroupIds((prev) =>
+                    selected ? prev.filter((id) => id !== UNASSIGNED_GROUP_ID) : [...prev, UNASSIGNED_GROUP_ID]
+                  )
+                }
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                  selected
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                Ohne Gruppe
+              </button>
+            );
+          })()}
         </div>
         {printGroupIds.length > 0 && (
           <div className="flex flex-wrap gap-2">

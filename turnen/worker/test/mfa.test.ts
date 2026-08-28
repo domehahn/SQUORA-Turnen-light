@@ -699,7 +699,7 @@ describe("MFA-Backup-Codes: atomarer, echter One-Time-Verbrauch (AUTH-12/AUTH-13
     expect(rows?.n).toBe(8);
   });
 
-  it("ein während der Rotation als zweiter Faktor genutzter Backup-Code gilt danach als verbraucht (kein Rotation-Sonderfall)", async () => {
+  it("ein während der Rotation als zweiter Faktor genutzter Backup-Code gilt SOFORT als verbraucht (P1-1 Atomic Single Use)", async () => {
     await seedUser({ email: "mfa-rotate-consume@test.local", password: "password-123" });
     const token = await login(SELF, "mfa-rotate-consume@test.local", "password-123");
     const initialSetup = await SELF.fetch("https://example.test/api/me/mfa/setup", {
@@ -716,39 +716,20 @@ describe("MFA-Backup-Codes: atomarer, echter One-Time-Verbrauch (AUTH-12/AUTH-13
     });
     const { backupCodes } = (await initialConfirm.json()) as { backupCodes: string[] };
 
-    // Rotation mit einem Backup-Code (statt TOTP) als aktuellem Faktor
-    // bestätigen - verifyActiveMfaCode() prüft hier nur, verbraucht den
-    // Code aber bewusst NICHT (reine Re-Authentifizierung, kein Login).
+    // Erster Aufruf von setup mit backupCodes[0] verbraucht diesen Backup-Code
     const rotateSetup = await SELF.fetch("https://example.test/api/me/mfa/setup", {
       method: "POST",
       headers: authHeaders(token),
       body: JSON.stringify({ password: "password-123", currentCode: backupCodes[0] }),
     });
     expect(rotateSetup.status).toBe(200);
-    const { secret: newSecret } = (await rotateSetup.json()) as { secret: string };
-    await SELF.fetch("https://example.test/api/me/mfa/confirm", {
+
+    // Zweiter Aufruf mit DENSELBEN Backup-Code MUSS scheitern (403), da der Code bereits verbraucht ist
+    const rotateSetupReuse = await SELF.fetch("https://example.test/api/me/mfa/setup", {
       method: "POST",
       headers: authHeaders(token),
-      body: JSON.stringify({ code: await generateTotp(base32Decode(newSecret)) }),
+      body: JSON.stringify({ password: "password-123", currentCode: backupCodes[0] }),
     });
-
-    // Nach der Rotation sind ohnehin ALLE alten Codes durch neue ersetzt -
-    // der zur Re-Authentifizierung genutzte alte Code ist also so oder so
-    // ungültig. Die eigentliche Invariante (kein Rotation-Sonderfall im
-    // Verbrauchsmechanismus selbst) ist durch die vorherige Race-Condition-
-    // und Rows-Prüfung bereits belegt: verifyActiveMfaCode() nutzt exakt
-    // dieselbe Codeliste, ruft aber nie tryConsumeBackupCode() auf.
-    const loginRes = await SELF.fetch("https://example.test/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
-      body: JSON.stringify({ email: "mfa-rotate-consume@test.local", password: "password-123" }),
-    });
-    const { mfaToken } = (await loginRes.json()) as { mfaToken: string };
-    const reuseRes = await SELF.fetch("https://example.test/api/login/mfa", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
-      body: JSON.stringify({ mfaToken, code: backupCodes[0] }),
-    });
-    expect(reuseRes.status).toBe(401);
+    expect(rotateSetupReuse.status).toBe(403);
   });
 });

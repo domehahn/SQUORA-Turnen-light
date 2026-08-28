@@ -42,10 +42,17 @@ ARCHIVED_CHILD_RETENTION_DAYS = "1095"
 # unabhängig von dieser Frist). Wert per Nutzerentscheidung (2026-08-27).
 SECURITY_LOG_RETENTION_DAYS = "90"
 
-# JWT_SECRET und RESEND_API_KEY werden NICHT hier eingetragen, sondern per
+# In-App-Benachrichtigungen enthalten teilweise Namen und werden deshalb
+# unabhängig vom Lesestatus nach dieser Anzahl Tage automatisch gelöscht.
+# Festgelegt am 2026-08-28, passend zur bestehenden 90-Tage-Frist für
+# Security- und Betriebsdaten.
+NOTIFICATION_RETENTION_DAYS = "90"
+
+# JWT_SECRET, RESEND_API_KEY und RESEND_WEBHOOK_SECRET werden NICHT hier eingetragen, sondern per
 # Secret gesetzt:
 #   wrangler secret put JWT_SECRET
 #   wrangler secret put RESEND_API_KEY
+#   wrangler secret put RESEND_WEBHOOK_SECRET
 
 [observability]
 enabled = true

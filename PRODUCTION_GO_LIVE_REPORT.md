@@ -1,7 +1,7 @@
 # Production Go-Live Report — Turnen (SQUORA)
 
-Stand: 2026-08-27, Commit `e7d25358f7415e294f29d28a4575f8abb6277afa` +
-Dokumentations-Commits danach (siehe `git log`). Ergänzt
+Stand: 2026-08-27, Commit `664cf293a781c249765b64b82b230c522f594de4` +
+Härtungs- und E2E-Commits (P1-1 Backup-Code Einmalnutzung, P1-2 Single-Use Account Setup Token Flow, 115 Worker-Tests + 7 Playwright E2E Tests). Ergänzt
 `PRODUCTION_READINESS_ANALYSIS.md` (Findings im Detail) und
 `PRIVACY_SECURITY_GAP_ANALYSIS.md` (Historie der ersten sieben
 Prüfungsdurchgänge).

@@ -27,6 +27,7 @@ export default function ClubWaitlist() {
   const [entries, setEntries] = useState<ClubWaitlistEntry[]>([]);
   const [incoming, setIncoming] = useState<PlacementRequest[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [candidateChildren, setCandidateChildren] = useState<Pick<Child, "id" | "firstName" | "lastName">[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [childId, setChildId] = useState("");
   const [note, setNote] = useState("");
@@ -44,14 +45,16 @@ export default function ClubWaitlist() {
   async function load() {
     setLoading(true);
     try {
-      const [entryList, childList, groupList, incomingList] = await Promise.all([
+      const [entryList, childList, candidateList, groupList, incomingList] = await Promise.all([
         api.get<ClubWaitlistEntry[]>("/api/club-waitlist"),
         api.get<Child[]>("/api/children"),
+        api.get<Pick<Child, "id" | "firstName" | "lastName">[]>("/api/club-waitlist/candidates"),
         api.get<Group[]>("/api/groups"),
         api.get<PlacementRequest[]>("/api/placement-requests/incoming"),
       ]);
       setEntries(entryList);
       setChildren(childList);
+      setCandidateChildren(candidateList);
       setGroups(groupList);
       setIncoming(incomingList);
     } catch (err) {
@@ -90,11 +93,10 @@ export default function ClubWaitlist() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, groups, children]);
 
-  // Kinder ohne Gruppe sind die typischen Kandidaten für die Warteliste,
-  // aber ein Kind, das schon irgendwo trainiert, aber umziehen soll, wäre
-  // ein Fall für "Verschieben" bei den Kindern - hier daher nur ungruppierte.
-  const waitingChildIds = new Set(entries.map((e) => e.childId));
-  const candidateChildren = children.filter((c) => c.groupId === null && !waitingChildIds.has(c.id));
+  // Kandidaten kommen bewusst aus einem serverseitig gefilterten Endpoint:
+  // nur aktive, gruppenlose Kinder, die weder auf einer Gruppen- noch auf
+  // der Vereinswarteliste stehen. Die API erzwingt dieselbe Invariante beim
+  // Schreiben, damit eine alte/gecachte UI sie nicht umgehen kann.
 
   // Für jede Gruppe die aktuelle Auslastung (Kinder / Kapazität) - Basis für
   // den automatischen Vorschlag "passt vom Alter und ist am wenigsten voll".

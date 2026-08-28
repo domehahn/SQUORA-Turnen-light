@@ -201,6 +201,13 @@ function checkRetentionVariable(): void {
     status: securityLogOk ? "pass" : "fail",
     detail: securityLogOk ? "Gesetzt in wrangler.toml." : "Nicht gesetzt - Security-Tabellen (sessions/login_attempts/...) würden unbegrenzt wachsen.",
   });
+  const notificationOk = /^NOTIFICATION_RETENTION_DAYS\s*=\s*"\d+"/m.test(content);
+  record({
+    id: "notification-retention-variable",
+    description: "NOTIFICATION_RETENTION_DAYS in Production gesetzt",
+    status: notificationOk ? "pass" : "fail",
+    detail: notificationOk ? "Gesetzt in wrangler.toml." : "Nicht gesetzt - In-App-Benachrichtigungen würden unbegrenzt gespeichert.",
+  });
 }
 
 // --- CSP vorhanden -----------------------------------------------------------

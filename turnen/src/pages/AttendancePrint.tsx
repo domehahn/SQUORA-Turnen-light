@@ -12,6 +12,7 @@ const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag"
 // helle blaue Tabellenköpfe statt schlichtem Grau/Schwarz.
 const thClass = "border border-slate-300 bg-blue-100 px-2 py-1.5 font-semibold text-blue-900";
 const tdClass = "border border-slate-300 px-2 py-1.5";
+const UNASSIGNED_GROUP_ID = "__none__";
 
 type Mode = "anwesenheit" | "namen" | "notfall";
 
@@ -86,7 +87,7 @@ export default function AttendancePrint() {
   // Stand zeigt. Nur für eigene Gruppen abrufbar - bei fremden Gruppen
   // (403) bleiben die Spalten dann leer zum Ausfüllen von Hand.
   useEffect(() => {
-    if (mode !== "anwesenheit" || !primaryGroupId || !from || !to) return;
+    if (mode !== "anwesenheit" || !primaryGroupId || primaryGroupId === UNASSIGNED_GROUP_ID || !from || !to) return;
     api
       .get<Record<string, AttendanceEntry[]>>(`/api/attendance-range/${primaryGroupId}?from=${from}&to=${to}`)
       .then(setAttendance)
@@ -100,7 +101,9 @@ export default function AttendancePrint() {
   }
 
   function childrenOf(g: Group): Child[] {
-    return children.filter((c) => c.groupId === g.id).sort(sortByName);
+    return children
+      .filter((c) => (g.id === UNASSIGNED_GROUP_ID ? c.groupId === null : c.groupId === g.id))
+      .sort(sortByName);
   }
 
   if (loading) return <p className="min-h-screen bg-white p-6 text-sm text-slate-500">Lädt…</p>;
@@ -108,7 +111,29 @@ export default function AttendancePrint() {
   if (groupIds.length === 0) return <p className="min-h-screen bg-white p-6 text-sm text-slate-500">Keine Gruppe ausgewählt.</p>;
 
   const selectedGroups = groupIds
-    .map((id) => allGroups.find((g) => g.id === id))
+    .map((id) =>
+      id === UNASSIGNED_GROUP_ID
+        ? ({
+            id,
+            name: "Ohne Gruppe",
+            minAge: 0,
+            maxAge: 0,
+            sortOrder: Number.MAX_SAFE_INTEGER,
+            maxChildren: null,
+            weekday: null,
+            startTime: null,
+            endTime: null,
+            location: null,
+            ownerId: null,
+            ownerName: null,
+            clubId: null,
+            canEdit: false,
+            editableAsLeadership: false,
+            color: null,
+            createdAt: "",
+          } satisfies Group)
+        : allGroups.find((g) => g.id === id)
+    )
     .filter((g): g is Group => Boolean(g));
   if (selectedGroups.length === 0) return <p className="min-h-screen bg-white p-6 text-sm text-slate-500">Gruppe(n) nicht gefunden.</p>;
 
@@ -328,13 +353,15 @@ export default function AttendancePrint() {
               return (
                 <div key={g.id} className={i > 0 ? "break-before-page" : ""}>
                   <h1 className="text-xl font-semibold">{g.name}</h1>
-                  <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {g.ownerName ?? "–"}</p>
-                  <p className="mb-2 text-sm text-slate-600">
-                    {g.minAge}–{g.maxAge} Jahre
-                    {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}
-                    {g.startTime && g.endTime && ` ${g.startTime}–${g.endTime}`}
-                    {g.location && ` · ${g.location}`}
-                  </p>
+                  {g.id !== UNASSIGNED_GROUP_ID && <>
+                    <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {g.ownerName ?? "–"}</p>
+                    <p className="mb-2 text-sm text-slate-600">
+                      {g.minAge}–{g.maxAge} Jahre
+                      {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}
+                      {g.startTime && g.endTime && ` ${g.startTime}–${g.endTime}`}
+                      {g.location && ` · ${g.location}`}
+                    </p>
+                  </>}
                   <p className="mb-4 text-sm font-medium text-slate-800">Kinder gesamt: {list.length}</p>
                   <table className="w-full border-collapse text-sm">
                     <thead>
@@ -372,13 +399,15 @@ export default function AttendancePrint() {
               return (
                 <div key={g.id} className={i > 0 ? "break-before-page" : ""}>
                   <h1 className="text-xl font-semibold">{g.name}</h1>
-                  <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {g.ownerName ?? "–"}</p>
-                  <p className="mb-2 text-sm text-slate-600">
-                    {g.minAge}–{g.maxAge} Jahre
-                    {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}
-                    {g.startTime && g.endTime && ` ${g.startTime}–${g.endTime}`}
-                    {g.location && ` · ${g.location}`}
-                  </p>
+                  {g.id !== UNASSIGNED_GROUP_ID && <>
+                    <p className="mb-1 text-sm text-slate-600">Turntrainer*in: {g.ownerName ?? "–"}</p>
+                    <p className="mb-2 text-sm text-slate-600">
+                      {g.minAge}–{g.maxAge} Jahre
+                      {g.weekday !== null && ` · ${WEEKDAY_NAMES[g.weekday]}`}
+                      {g.startTime && g.endTime && ` ${g.startTime}–${g.endTime}`}
+                      {g.location && ` · ${g.location}`}
+                    </p>
+                  </>}
                   <p className="mb-4 text-sm font-medium text-slate-800">Kinder gesamt: {list.length}</p>
                   <table className="w-full border-collapse text-sm">
                     <thead>

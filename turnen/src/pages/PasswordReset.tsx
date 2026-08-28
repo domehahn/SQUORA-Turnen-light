@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { FloatingInput } from "../components/FloatingField";
@@ -23,23 +23,21 @@ import { MIN_PASSWORD_LENGTH, PASSWORD_POLICY_HINT } from "../lib/passwordPolicy
 // history.replaceState bereinigt - der Token verlässt diese Komponente
 // danach nur noch als Teil des einen POST /api/password-reset/confirm.
 export default function PasswordReset() {
-  const tokenRef = useRef<string | null>(null);
-  const [hasToken, setHasToken] = useState(false);
-
-  useEffect(() => {
+  const [tokenState] = useState<{ token: string | null; type: string | null }>(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("token");
+    const type = params.get("type");
     if (t) {
-      tokenRef.current = t;
-      setHasToken(true);
-      // Token unverzüglich aus Adresszeile/History entfernen - nichts
-      // anderes auf der Seite braucht ihn aus der URL heraus, nur diese
-      // Komponente selbst (via tokenRef).
+      // Token unverzüglich aus Adresszeile/History entfernen
       window.history.replaceState(null, "", window.location.pathname);
+      return { token: t, type };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const token = tokenRef.current;
+    return { token: null, type: null };
+  });
+
+  const token = tokenState.token;
+  const hasToken = Boolean(token);
+  const isSetup = tokenState.type === "setup";
 
   const [email, setEmail] = useState("");
   const [requestSent, setRequestSent] = useState(false);
@@ -72,10 +70,11 @@ export default function PasswordReset() {
     }
     setSubmitting(true);
     try {
-      await api.post("/api/password-reset/confirm", { token, newPassword });
+      const endpoint = isSetup ? "/api/account-setup/confirm" : "/api/password-reset/confirm";
+      await api.post(endpoint, { token, newPassword });
       setConfirmDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Zurücksetzen");
+      setError(err instanceof Error ? err.message : "Fehler beim Bestätigen");
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +94,7 @@ export default function PasswordReset() {
           confirmDone ? (
             <div className="space-y-3 text-center">
               <p className="text-sm text-emerald-700 dark:text-emerald-400">
-                Passwort geändert. Du kannst dich jetzt anmelden.
+                {isSetup ? "Konto erfolgreich aktiviert! Du kannst dich jetzt anmelden." : "Passwort geändert. Du kannst dich jetzt anmelden."}
               </p>
               <Link to="/login" className="text-sm text-emerald-700 hover:underline dark:text-emerald-400">
                 Zur Anmeldung
@@ -103,7 +102,9 @@ export default function PasswordReset() {
             </div>
           ) : (
             <form onSubmit={handleConfirm} className="space-y-3">
-              <p className="text-center text-sm text-slate-500 dark:text-slate-400">Neues Passwort festlegen.</p>
+              <p className="text-center text-sm text-slate-500 dark:text-slate-400">
+                {isSetup ? "Konto aktivieren & persönliches Passwort festlegen." : "Neues Passwort festlegen."}
+              </p>
               <FloatingInput
                 label="Neues Passwort"
                 type="password"

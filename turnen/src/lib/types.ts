@@ -43,6 +43,25 @@ export interface AttendanceEntry {
   present: boolean;
 }
 
+export interface AttendanceChildStat {
+  presentCount: number;
+  totalRecorded: number;
+  quote: number | null;
+  isInactive: boolean;
+}
+
+export interface AttendanceGroupStat {
+  presentCount: number;
+  totalRecorded: number;
+  quote: number | null;
+}
+
+export interface AttendanceStatsResponse {
+  childrenStats: Record<string, AttendanceChildStat>;
+  groupQuotes: Record<string, AttendanceGroupStat>;
+  clubQuote: AttendanceGroupStat;
+}
+
 export interface Club {
   id: string;
   name: string;
@@ -326,4 +345,98 @@ export interface Holiday {
   label: string;
   start: string;
   end: string;
+}
+
+export interface EventHelper {
+  id: string;
+  eventId: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string;
+  assignedBy: string | null;
+  assignedByName: string | null;
+  assignedTask: string | null;
+  createdAt: string;
+}
+
+export interface ClubEvent {
+  id: string;
+  clubId: string;
+  title: string;
+  description: string | null;
+  eventDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  requiredTrainers: number;
+  tasks: string | null;
+  materials: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  helpers: EventHelper[];
+  isRegistered: boolean;
+}
+
+export type EquipmentSeverity = "low" | "medium" | "high";
+export type EquipmentStatus = "open" | "in_progress" | "resolved";
+
+export interface EquipmentReport {
+  id: string;
+  clubId: string;
+  title: string;
+  location: string | null;
+  severity: EquipmentSeverity;
+  status: EquipmentStatus;
+  description: string | null;
+  reportedBy: string;
+  reportedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BulletinCategory = "general" | "hall" | "training" | "event" | "urgent";
+
+export interface BulletinPost {
+  id: string;
+  clubId: string;
+  title: string;
+  content: string;
+  category: BulletinCategory;
+  authorId: string;
+  authorName: string | null;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlacedEquipment {
+  id: string;
+  type: string;
+  label: string;
+  x: number;
+  y: number;
+  rotation: number;
+  notes?: string;
+}
+
+export interface TrainingPlanCanvasData {
+  equipment: PlacedEquipment[];
+  generalNotes?: string;
+  hallLayout?: "full" | "half_left" | "half_right";
+}
+
+export interface TrainingPlan {
+  id: string;
+  clubId: string;
+  title: string;
+  description: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  canvasData: TrainingPlanCanvasData;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

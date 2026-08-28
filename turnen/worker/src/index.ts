@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Webhook } from "svix";
 import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
@@ -11,15 +12,30 @@ import {
   IDLE_TIMEOUT_SECONDS,
   hashPassword,
   isPasswordPwned,
+  signAccountSetupToken,
   signMfaPendingToken,
   signPasswordResetToken,
   signSessionJwt,
+  verifyAccountSetupToken,
   verifyMfaPendingToken,
   verifyPassword,
   verifyPasswordResetToken,
   verifySessionJwt,
 } from "./auth";
-import { notifyUser, sendEmailOnly } from "./notifications";
+import { notifyUser, retryFailedEmails, sendEmailOnly } from "./notifications";
+import { calendarFeedForToken, createCalendarToken, hashCalendarToken } from "./calendar-feed";
+import {
+  applyEmailWebhook,
+  cleanupExpiredNotifications,
+  cleanupOperationalData,
+  finishCron,
+  getNotificationPreferences,
+  NOTIFICATION_CATEGORIES,
+  operationsSummary,
+  recordOperationalEvent,
+  setNotificationPreferences,
+  startCron,
+} from "./operations";
 import { encryptField, decryptField } from "./crypto";
 import { base32Decode, base32Encode, generateBackupCodes, generateTotpSecret, totpAuthUri, verifyTotp } from "./totp";
 import { redactError } from "./log-redaction";
@@ -169,10 +185,54 @@ function isSameOriginRequest(c: { req: { url: string; header: (name: string) => 
 }
 
 app.use("/api/*", async (c, next) => {
-  if (CSRF_UNSAFE_METHODS.has(c.req.method) && !isSameOriginRequest(c, c.env)) {
+  const isVerifiedExternalWebhook = c.req.path === "/api/webhooks/resend";
+  if (CSRF_UNSAFE_METHODS.has(c.req.method) && !isVerifiedExternalWebhook && !isSameOriginRequest(c, c.env)) {
     return c.json({ error: "Anfrage von fremder Herkunft abgelehnt" }, 403);
   }
   await next();
+});
+
+// Öffentlicher Provider-Callback: keine Session, daher eigene kryptografische
+// Authentisierung. Der rohe Body muss unverändert in die Svix-Prüfung gehen.
+app.post("/api/webhooks/resend", async (c) => {
+  if (!c.env.RESEND_WEBHOOK_SECRET) return c.json({ error: "Webhook nicht konfiguriert" }, 503);
+  const eventId = c.req.header("svix-id");
+  const timestamp = c.req.header("svix-timestamp");
+  const signature = c.req.header("svix-signature");
+  if (!eventId || !timestamp || !signature) return c.json({ error: "Ungültiger Webhook" }, 400);
+  try {
+    const payload = await c.req.text();
+    const event = new Webhook(c.env.RESEND_WEBHOOK_SECRET).verify(payload, {
+      "svix-id": eventId,
+      "svix-timestamp": timestamp,
+      "svix-signature": signature,
+    }) as { type?: string; created_at?: string; data?: { email_id?: string } };
+    if (!event.type || !event.created_at || !event.data?.email_id) return c.json({ ok: true });
+    await applyEmailWebhook(c.env.DB, {
+      eventId,
+      providerId: event.data.email_id,
+      type: event.type,
+      createdAt: event.created_at,
+    });
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ error: "Ungültiger Webhook" }, 400);
+  }
+});
+
+app.get("/api/calendar/feed/:token", async (c) => {
+  const token = c.req.param("token");
+  if (!/^[a-f0-9]{64}$/.test(token)) return c.text("Kalender nicht gefunden", 404);
+  const feed = await calendarFeedForToken(c.env.DB, token);
+  if (!feed) return c.text("Kalender nicht gefunden", 404);
+  return new Response(feed, {
+    headers: {
+      "Content-Type": "text/calendar; charset=utf-8",
+      "Content-Disposition": "inline; filename=turnen.ics",
+      "Cache-Control": "private, max-age=300",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 });
 
 // Serverseitiges Session-Management (s.o.): das JWT trägt nur eine
@@ -461,9 +521,62 @@ async function fileCapacityRequest(
   return { status: "pending_capacity_approval", requestId: request.id, groupName: input.groupName };
 }
 
+interface ClubNotificationInput {
+  type: string;
+  title: string;
+  body: string;
+  link: string;
+  childId?: string | null;
+  excludeUserIds?: (string | null | undefined)[];
+}
+
+// Vereinsweite Ereignisse landen ausschließlich im In-App-Postfach. So
+// bekommen alle Mitglieder denselben Vereinskontext, ohne dass jede
+// administrative Kind-Aktion eine Rundmail an den ganzen Verein auslöst.
+async function notifyClubInApp(env: Env, clubId: string | null, input: ClubNotificationInput): Promise<void> {
+  if (!clubId) return;
+  const excluded = new Set(input.excludeUserIds?.filter((id): id is string => Boolean(id)) ?? []);
+  const members = await db.listClubMembers(env.DB, clubId);
+  for (const member of members) {
+    if (excluded.has(member.id)) continue;
+    await db.createNotification(env.DB, {
+      userId: member.id,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      link: input.link,
+      childId: input.childId,
+    });
+  }
+}
+
+function groupLabel(group: Pick<GroupRow, "name"> | null): string {
+  return group ? `„${group.name}“` : "„Ohne Gruppe“";
+}
+
+function childMovedBody(childName: string, fromGroup: Pick<GroupRow, "name"> | null, toGroup: Pick<GroupRow, "name"> | null): string {
+  return `${childName} wurde von ${groupLabel(fromGroup)} nach ${groupLabel(toGroup)} verschoben.`;
+}
+
+function sessionChangedBody(
+  group: Pick<GroupRow, "name" | "start_time" | "end_time" | "location">,
+  date: string,
+  overrides: { startTime: string | null; endTime: string | null; location: string | null }
+): string {
+  const details: string[] = [];
+  if (overrides.startTime !== null || overrides.endTime !== null) {
+    const start = overrides.startTime ?? group.start_time;
+    const end = overrides.endTime ?? group.end_time;
+    if (start || end) details.push(`Uhrzeit: ${start ?? "?"}–${end ?? "?"}`);
+  }
+  if (overrides.location !== null) details.push(`Ort: ${overrides.location}`);
+  return `Der Termin am ${date} in „${group.name}“ wurde geändert${details.length ? ` (${details.join(", ")})` : ""}.`;
+}
+
 // Führt die ursprünglich geplante Aktion einer freigegebenen
 // Kapazitäts-Anfrage nachträglich aus.
-async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestRow, approvedBy: string): Promise<void> {
+async function applyCapacityRequest(env: Env, request: CapacityRequestRow, approvedBy: string): Promise<void> {
+  const dbEnv = env.DB;
   const payload = JSON.parse(request.payload);
   const group = await db.getGroupRowById(dbEnv, request.group_id);
   const actor = await db.getUserById(dbEnv, approvedBy);
@@ -479,10 +592,19 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
         groupId: request.group_id,
         childId: child.id,
       });
+      await notifyClubInApp(env, group?.club_id ?? null, {
+        type: "club_child_created",
+        title: "Kind neu hinzugefügt",
+        body: `${child.firstName} ${child.lastName} wurde ${group ? `der Gruppe „${group.name}“` : "dem Bereich „Ohne Gruppe“"} hinzugefügt.`,
+        link: "/kinder",
+        childId: child.id,
+      });
       break;
     }
     case "update_child":
       if (request.child_id) {
+        const previousChild = await db.getChildRowById(dbEnv, request.child_id);
+        const previousGroup = previousChild?.group_id ? await db.getGroupRowById(dbEnv, previousChild.group_id) : null;
         const child = await db.updateChild(dbEnv, request.child_id, payload);
         if (child) {
           await db.logAudit(dbEnv, {
@@ -494,12 +616,22 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
             groupId: request.group_id,
             childId: request.child_id,
           });
+          if (previousChild?.group_id !== child.groupId) {
+            await notifyClubInApp(env, group?.club_id ?? previousChild?.club_id ?? null, {
+              type: "club_child_moved",
+              title: "Kind verschoben",
+              body: childMovedBody(`${child.firstName} ${child.lastName}`, previousGroup, group),
+              link: "/kinder",
+              childId: child.id,
+            });
+          }
         }
       }
       break;
     case "move_child":
       if (request.child_id) {
         const child = await db.getChildRowById(dbEnv, request.child_id);
+        const previousGroup = child?.group_id ? await db.getGroupRowById(dbEnv, child.group_id) : null;
         await db.moveChildToGroup(dbEnv, request.child_id, payload.toGroupId);
         await db.logAudit(dbEnv, {
           clubId: group?.club_id ?? null,
@@ -510,12 +642,22 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
           groupId: request.group_id,
           childId: request.child_id,
         });
+        if (child) {
+          await notifyClubInApp(env, group?.club_id ?? child.club_id, {
+            type: "club_child_moved",
+            title: "Kind verschoben",
+            body: childMovedBody(`${child.first_name} ${child.last_name}`, previousGroup, group),
+            link: "/kinder",
+            childId: request.child_id,
+          });
+        }
       }
       break;
     case "approve_move_request": {
       const moveRequest = await db.getMoveRequestRowById(dbEnv, payload.moveRequestId);
       if (moveRequest && moveRequest.status === "pending") {
         const child = await db.getChildRowById(dbEnv, moveRequest.child_id);
+        const previousGroup = child?.group_id ? await db.getGroupRowById(dbEnv, child.group_id) : null;
         await db.moveChildToGroup(dbEnv, moveRequest.child_id, moveRequest.to_group_id);
         await db.setMoveRequestStatus(dbEnv, moveRequest.id, "approved", approvedBy);
         await db.logAudit(dbEnv, {
@@ -527,6 +669,15 @@ async function applyCapacityRequest(dbEnv: D1Database, request: CapacityRequestR
           groupId: moveRequest.to_group_id,
           childId: moveRequest.child_id,
         });
+        if (child) {
+          await notifyClubInApp(env, group?.club_id ?? child.club_id, {
+            type: "club_child_moved",
+            title: "Kind verschoben",
+            body: childMovedBody(`${child.first_name} ${child.last_name}`, previousGroup, group),
+            link: "/kinder",
+            childId: moveRequest.child_id,
+          });
+        }
       }
       break;
     }
@@ -558,9 +709,18 @@ async function promoteWaitlistIfPossible(c: { env: Env }, groupId: string): Prom
           title: `Platz frei in „${group.name}“`,
           body: `${promoted.childName} wurde von der Warteliste in „${group.name}“ nachgerückt.`,
           link: "/gruppen",
+          childId: promoted.childId,
         });
       }
     }
+    await notifyClubInApp(c.env, group.club_id, {
+      type: "club_child_moved",
+      title: "Kind verschoben",
+      body: `${promoted.childName} ist von der Warteliste in „${group.name}“ nachgerückt.`,
+      link: "/kinder",
+      childId: promoted.childId,
+      excludeUserIds: [promoted.requestedBy],
+    });
   }
 }
 
@@ -763,9 +923,8 @@ app.get("/api/me/mfa", requireAuth, async (c) => {
 // Verifiziert einen TOTP- oder Backup-Code gegen die AKTIVE (bereits
 // bestätigte) MFA einer Person - Hilfsfunktion für die Re-Authentifizierung
 // bei einer MFA-Rotation (s. POST /api/me/mfa/setup unten). Ein verwendeter
-// Backup-Code wird dabei bewusst NICHT verbraucht (reiner Nachweis "ich habe
-// weiterhin Zugriff auf den zweiten Faktor", kein Login-Vorgang) - anders
-// als beim eigentlichen Login mit Backup-Code (POST /api/login/mfa).
+// Backup-Code wird dabei immer atomar verbraucht (tryConsumeBackupCode) und ist
+// danach ungültig (P1 Security Hardening).
 async function verifyActiveMfaCode(
   db_: D1Database,
   userRow: { id: string; totp_secret: string | null },
@@ -778,7 +937,10 @@ async function verifyActiveMfaCode(
   const activeCodes = await db.listActiveBackupCodes(db_, userRow.id);
   const normalizedCode = code.toUpperCase().replace(/\s/g, "");
   for (const hc of activeCodes) {
-    if (await verifyPassword(normalizedCode, hc.code_hash, hc.code_salt, BACKUP_CODE_ITERATIONS)) return true;
+    if (await verifyPassword(normalizedCode, hc.code_hash, hc.code_salt, BACKUP_CODE_ITERATIONS)) {
+      const consumed = await db.tryConsumeBackupCode(db_, hc.id);
+      if (consumed) return true;
+    }
   }
   return false;
 }
@@ -966,6 +1128,46 @@ app.get("/api/me", requireAuth, async (c) => {
   });
 });
 
+app.get("/api/me/notification-preferences", requireAuth, async (c) => {
+  return c.json(await getNotificationPreferences(c.env.DB, c.get("userId")));
+});
+
+app.put("/api/me/notification-preferences", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object") return c.json({ error: "Ungültige Einstellungen" }, 400);
+  const preferences: Record<string, boolean> = {};
+  for (const category of NOTIFICATION_CATEGORIES) {
+    const value = (body as Record<string, unknown>)[category];
+    if (value !== undefined && typeof value !== "boolean") return c.json({ error: "Ungültige Einstellungen" }, 400);
+    if (typeof value === "boolean") preferences[category] = value;
+  }
+  await setNotificationPreferences(c.env.DB, c.get("userId"), preferences);
+  return c.json(await getNotificationPreferences(c.env.DB, c.get("userId")));
+});
+
+app.get("/api/me/calendar", requireAuth, async (c) => {
+  const active = await c.env.DB.prepare(
+    "SELECT created_at as createdAt FROM calendar_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1"
+  ).bind(c.get("userId")).first<{ createdAt: string }>();
+  return c.json({ active: Boolean(active), createdAt: active?.createdAt ?? null });
+});
+
+app.post("/api/me/calendar", requireAuth, async (c) => {
+  const token = createCalendarToken();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE calendar_tokens SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL").bind(c.get("userId")),
+    c.env.DB.prepare("INSERT INTO calendar_tokens (id, user_id, token_hash) VALUES (?, ?, ?)")
+      .bind(crypto.randomUUID(), c.get("userId"), await hashCalendarToken(token)),
+  ]);
+  return c.json({ url: `${c.env.FRONTEND_URL}/api/calendar/feed/${token}` }, 201);
+});
+
+app.delete("/api/me/calendar", requireAuth, async (c) => {
+  await c.env.DB.prepare("UPDATE calendar_tokens SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL")
+    .bind(c.get("userId")).run();
+  return c.body(null, 204);
+});
+
 // --- Vereinsübergreifende Administration -----------------------------------
 
 // Alle Vereine mit Mitgliederzahl - Übersicht für die Admin-Rolle, um zu
@@ -1129,17 +1331,24 @@ app.get("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   return c.json(await db.listAllUsersForAdmin(c.env.DB));
 });
 
+app.get("/api/admin/operations", requireAuth, requireAdmin, async (c) => {
+  return c.json(await operationsSummary(c.env.DB));
+});
+
+app.post("/api/admin/operations/retry-emails", requireAuth, requireAdmin, async (c) => {
+  await c.env.DB.prepare(
+    "UPDATE email_deliveries SET next_retry_at = datetime('now') WHERE status = 'failed' AND retryable = 1 AND attempt_count < 3"
+  ).run();
+  await retryFailedEmails(c.env);
+  return c.json({ ok: true });
+});
+
 app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => null);
   const email = normalizedEmail(body?.email);
   const name = optionalText(body?.name, 100);
-  const password = validPassword(body?.password);
   if (!email) return c.json({ error: "E-Mail fehlt oder ist ungültig" }, 400);
   if (name === undefined) return c.json({ error: "Name ist zu lang" }, 400);
-  if (!password) return c.json({ error: "Passwort ist ungültig (mind. 15 Zeichen)" }, 400);
-  if (await isPasswordPwned(password)) {
-    return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
-  }
   if (await db.getUserByEmail(c.env.DB, email)) return c.json({ error: "E-Mail bereits vergeben" }, 409);
 
   let clubId: string | null = null;
@@ -1155,33 +1364,27 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   }
   const isAdmin = "isAdmin" in (body ?? {}) ? Boolean(validBool(body.isAdmin)) : false;
 
-  const { hash, salt, iterations } = await hashPassword(password);
+  // Konto wird zunächst mit zufälligem Dummy-Hash angelegt & blocked (must_change_password=1)
+  const dummyPassword = crypto.randomUUID() + crypto.randomUUID();
+  const { hash, salt, iterations } = await hashPassword(dummyPassword);
   const user = await db.createUserAdmin(c.env.DB, { email, name, hash, salt, iterations, clubId, clubRole, isAdmin });
+
   await db.logAudit(c.env.DB, {
     clubId: null,
     actorId: c.get("userId"),
     actorName: c.get("name"),
-    // Niemals das Passwort selbst ins Audit-Log - targetLabel bleibt bei
-    // der E-Mail, unabhängig vom Mailversand unten.
     action: "admin.user_created",
     targetLabel: email,
   });
-  // Willkommens-Mail mit dem Einmal-Passwort (Nutzeranfrage 2026-08-27):
-  // createUserAdmin() setzt must_change_password bereits auf 1 - die neue
-  // Person MUSS dieses Passwort beim ersten Login sofort ersetzen, es ist
-  // also ein echtes Einmal-Credential und kein dauerhaftes Geheimnis, das
-  // im Postfach liegen bleibt. sendEmailOnly() statt notifyUser(): keine
-  // dauerhafte In-App-Benachrichtigung mit dem Klartext-Passwort in D1,
-  // best effort wie beim Passwort-Reset-Mailversand - ein Mail-Fehler darf
-  // das Anlegen des Accounts nicht rückgängig machen oder melden, die
-  // admin-ausführende Person sieht das Passwort ohnehin im Formular und
-  // kann es bei Bedarf selbst weitergeben.
+
+  // Einmal-Aktivierungs-Link statt Klartext-Passwort in E-Mail (P1 Hardening)
+  const setupToken = await signAccountSetupToken(user.id, c.env.JWT_SECRET);
   await sendEmailOnly(c.env, {
     to: email,
-    subject: "Dein Zugang für Turnen",
-    text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nE-Mail: ${email}\nEinmal-Passwort: ${password}\n\nBitte melde dich damit an und vergib beim ersten Login sofort ein eigenes Passwort - das ist erforderlich, bevor du die App weiter nutzen kannst.`,
-    link: `${c.env.FRONTEND_URL}/login`,
-    linkLabel: "Jetzt anmelden",
+    subject: "Dein Zugang für Turnen – Konto aktivieren",
+    text: `Für dich wurde ein Zugang für Turnen angelegt.\n\nBitte aktiviere dein Konto und vergib dein persönliches Passwort über folgenden Link:\n\nDer Link ist 60 Minuten gültig.`,
+    link: `${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${setupToken}&type=setup`,
+    linkLabel: "Konto aktivieren & Passwort festlegen",
   });
   return c.json({ id: user.id, email, name, clubId, clubRole, isAdmin }, 201);
 });
@@ -1491,6 +1694,72 @@ app.post("/api/password-reset/confirm", async (c) => {
   return c.json({ ok: true });
 });
 
+// Single-Use Account-Aktivierung (P1 Hardening)
+app.post("/api/account-setup/confirm", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const token = typeof body?.token === "string" ? body.token : null;
+  const newPassword = validPassword(body?.newPassword);
+  if (!token) return c.json({ error: "Token fehlt" }, 400);
+  if (!newPassword) return c.json({ error: "Neues Passwort muss mindestens 15 Zeichen lang sein" }, 400);
+
+  let payload: { userId: string; jti: string; expiresAt: number };
+  try {
+    payload = await verifyAccountSetupToken(token, c.env.JWT_SECRET);
+  } catch {
+    return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
+  }
+
+  const userRow = await db.getUserById(c.env.DB, payload.userId);
+  if (!userRow) return c.json({ error: "Link ist ungültig oder abgelaufen. Bitte erneut anfordern." }, 401);
+
+  if (await isPasswordPwned(newPassword)) {
+    return c.json({ error: "Dieses Passwort wurde in bekannten Datenlecks gefunden. Bitte ein anderes wählen." }, 400);
+  }
+
+  const expiresAtIso = toSqliteDatetime(new Date(payload.expiresAt * 1000));
+  const firstUse = await db.consumePasswordResetJti(c.env.DB, payload.jti, expiresAtIso);
+  if (!firstUse) return c.json({ error: "Dieser Link wurde bereits verwendet. Bitte einen neuen anfordern." }, 401);
+
+  await db.updateUserPassword(c.env.DB, userRow.id, await hashPassword(newPassword), false);
+  await db.revokeAllUserSessions(c.env.DB, userRow.id);
+  await db.logAudit(c.env.DB, {
+    clubId: userRow.clubId,
+    actorId: userRow.id,
+    actorName: userRow.name,
+    action: "admin.account_activated",
+    targetLabel: userRow.email,
+  });
+
+  return c.json({ ok: true, message: "Konto erfolgreich aktiviert" });
+});
+
+app.post("/api/admin/users/:id/resend-setup", requireAuth, requireAdmin, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const targetUser = await db.getUserById(c.env.DB, id);
+  if (!targetUser) return c.json({ error: "Nutzer nicht gefunden" }, 404);
+
+  const setupToken = await signAccountSetupToken(targetUser.id, c.env.JWT_SECRET);
+  await sendEmailOnly(c.env, {
+    to: targetUser.email,
+    subject: "Dein Zugang für Turnen – Konto aktivieren",
+    text: `Für dich wurde eine Aktivierung deines Zugangs für Turnen erneut angefordert.\n\nBitte aktiviere dein Konto über den folgenden Link und wähle dein persönliches Passwort:\n\nDer Link ist 60 Minuten gültig.`,
+    link: `${c.env.FRONTEND_URL}/passwort-zuruecksetzen?token=${setupToken}&type=setup`,
+    linkLabel: "Konto aktivieren & Passwort festlegen",
+  });
+
+  await db.logAudit(c.env.DB, {
+    clubId: null,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "admin.user_setup_resent",
+    targetLabel: targetUser.email,
+  });
+
+  return c.json({ ok: true, message: "Aktivierungs-E-Mail wurde erneut gesendet" });
+});
+
 // --- Vereine -------------------------------------------------------------
 
 app.get("/api/clubs", requireAuth, async (c) => {
@@ -1796,6 +2065,396 @@ app.delete("/api/holidays/:id", requireAuth, async (c) => {
   return c.body(null, 204);
 });
 
+// --- Events & Helfer-Zuteilung ---
+
+app.get("/api/events", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listEventsForClub(c.env.DB, clubId, c.get("userId")));
+});
+
+app.post("/api/events", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin"));
+  if (!isLeadership) {
+    return c.json({ error: "Nur die Jugendleitung oder Admins können Events erstellen" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const eventDate = validDate(body.eventDate);
+  if (!title) return c.json({ error: "Titel ist erforderlich" }, 400);
+  if (!eventDate) return c.json({ error: "Gültiges Datum erforderlich (JJJJ-MM-TT)" }, 400);
+
+  const startTime = typeof body.startTime === "string" && body.startTime.trim() ? body.startTime.trim() : null;
+  const endTime = typeof body.endTime === "string" && body.endTime.trim() ? body.endTime.trim() : null;
+  const location = typeof body.location === "string" && body.location.trim() ? body.location.trim() : null;
+  const requiredTrainers = typeof body.requiredTrainers === "number" && body.requiredTrainers > 0 ? Math.floor(body.requiredTrainers) : 1;
+  const tasks = typeof body.tasks === "string" && body.tasks.trim() ? body.tasks.trim() : null;
+  const materials = typeof body.materials === "string" && body.materials.trim() ? body.materials.trim() : null;
+  const description = typeof body.description === "string" && body.description.trim() ? body.description.trim() : null;
+
+  const event = await db.createEvent(c.env.DB, {
+    clubId,
+    title,
+    description,
+    eventDate,
+    startTime,
+    endTime,
+    location,
+    requiredTrainers,
+    tasks,
+    materials,
+    createdBy: c.get("userId"),
+  });
+
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "event.created",
+    targetLabel: `${title} (${eventDate})`,
+  });
+
+  return c.json(event, 201);
+});
+
+app.put("/api/events/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getEventById(c.env.DB, id, clubId, c.get("userId"));
+  if (!existing) return c.json({ error: "Event nicht gefunden" }, 404);
+
+  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin")) || existing.createdBy === c.get("userId");
+  if (!isLeadership) {
+    return c.json({ error: "Keine Berechtigung zum Bearbeiten" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const title = typeof body.title === "string" ? body.title.trim() : undefined;
+  const eventDate = body.eventDate ? validDate(body.eventDate) : undefined;
+  const startTime = body.startTime !== undefined ? (typeof body.startTime === "string" && body.startTime.trim() ? body.startTime.trim() : null) : undefined;
+  const endTime = body.endTime !== undefined ? (typeof body.endTime === "string" && body.endTime.trim() ? body.endTime.trim() : null) : undefined;
+  const location = body.location !== undefined ? (typeof body.location === "string" && body.location.trim() ? body.location.trim() : null) : undefined;
+  const requiredTrainers = typeof body.requiredTrainers === "number" && body.requiredTrainers > 0 ? Math.floor(body.requiredTrainers) : undefined;
+  const tasks = body.tasks !== undefined ? (typeof body.tasks === "string" && body.tasks.trim() ? body.tasks.trim() : null) : undefined;
+  const materials = body.materials !== undefined ? (typeof body.materials === "string" && body.materials.trim() ? body.materials.trim() : null) : undefined;
+  const description = body.description !== undefined ? (typeof body.description === "string" && body.description.trim() ? body.description.trim() : null) : undefined;
+
+  const updated = await db.updateEvent(c.env.DB, id, clubId, c.get("userId"), {
+    title,
+    description,
+    eventDate,
+    startTime,
+    endTime,
+    location,
+    requiredTrainers,
+    tasks,
+    materials,
+  });
+
+  return c.json(updated);
+});
+
+app.delete("/api/events/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getEventById(c.env.DB, id, clubId, c.get("userId"));
+  if (!existing) return c.body(null, 204);
+
+  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin")) || existing.createdBy === c.get("userId");
+  if (!isLeadership) {
+    return c.json({ error: "Keine Berechtigung zum Löschen" }, 403);
+  }
+
+  await db.deleteEvent(c.env.DB, id, clubId);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "event.deleted",
+    targetLabel: `${existing.title} (${existing.eventDate})`,
+  });
+
+  return c.body(null, 204);
+});
+
+app.post("/api/events/:id/register", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+
+  const existing = await db.getEventById(c.env.DB, id, clubId, c.get("userId"));
+  if (!existing) return c.json({ error: "Event nicht gefunden" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const unregister = Boolean(body.unregister);
+
+  if (unregister) {
+    await db.unregisterEventHelper(c.env.DB, id, c.get("userId"));
+  } else {
+    await db.registerEventHelper(c.env.DB, id, c.get("userId"), null);
+  }
+
+  const updated = await db.getEventById(c.env.DB, id, clubId, c.get("userId"));
+  return c.json(updated);
+});
+
+app.post("/api/events/:id/assign", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin"));
+  if (!isLeadership) {
+    return c.json({ error: "Nur die Jugendleitung oder Admins können Helfer zuteilen" }, 403);
+  }
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Event-ID" }, 400);
+
+  const existing = await db.getEventById(c.env.DB, id, clubId, c.get("userId"));
+  if (!existing) return c.json({ error: "Event nicht gefunden" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const targetUserId = validId(body.userId);
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+  const unassign = Boolean(body.unassign);
+  const assignedTask = optionalText(body.assignedTask, 200);
+
+  if (unassign) {
+    await db.unregisterEventHelper(c.env.DB, id, targetUserId);
+  } else {
+    await db.registerEventHelper(c.env.DB, id, targetUserId, c.get("userId"), assignedTask);
+  }
+
+  const updated = await db.getEventById(c.env.DB, id, clubId, c.get("userId"));
+  return c.json(updated);
+});
+
+// --- Geräte- & Mängelmelder ----------------------------------------------
+
+app.get("/api/equipment-reports", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const reports = await db.listEquipmentReportsForClub(c.env.DB, clubId);
+  return c.json(reports);
+});
+
+app.post("/api/equipment-reports", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  const title = requiredText(body?.title, 150);
+  if (!title) return c.json({ error: "Titel / Bezeichnung der Mängelmeldung ist erforderlich" }, 400);
+
+  const location = optionalText(body?.location, 150);
+  const description = optionalText(body?.description, 2000);
+  const severityRaw = body?.severity;
+  const severity = severityRaw === "low" || severityRaw === "high" ? severityRaw : "medium";
+
+  const created = await db.createEquipmentReport(c.env.DB, {
+    clubId,
+    title,
+    location,
+    severity,
+    description,
+    reportedBy: c.get("userId"),
+  });
+
+  return c.json(created, 201);
+});
+
+app.put("/api/equipment-reports/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Mängelmeldung-ID" }, 400);
+
+  const body = await c.req.json().catch(() => ({}));
+  const title = optionalText(body.title, 150);
+  const location = optionalText(body.location, 150);
+  const description = optionalText(body.description, 2000);
+
+  const severityRaw = body.severity;
+  const severity = severityRaw === "low" || severityRaw === "medium" || severityRaw === "high" ? severityRaw : undefined;
+
+  const statusRaw = body.status;
+  const status = statusRaw === "open" || statusRaw === "in_progress" || statusRaw === "resolved" ? statusRaw : undefined;
+
+  const updated = await db.updateEquipmentReport(c.env.DB, id, clubId, {
+    title: title ?? undefined,
+    location,
+    severity,
+    status,
+    description,
+  });
+
+  return c.json(updated);
+});
+
+app.delete("/api/equipment-reports/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Mängelmeldung-ID" }, 400);
+
+  await db.deleteEquipmentReport(c.env.DB, id, clubId);
+  return c.json({ ok: true });
+});
+
+// --- Schwarzes Brett & Pinnwand ------------------------------------------
+
+app.get("/api/bulletin-posts", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const posts = await db.listBulletinPostsForClub(c.env.DB, clubId);
+  return c.json(posts);
+});
+
+app.post("/api/bulletin-posts", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  const title = requiredText(body?.title, 150);
+  const content = requiredText(body?.content, 5000);
+  if (!title || !content) return c.json({ error: "Titel und Inhalt sind erforderlich" }, 400);
+
+  const categoryRaw = body?.category;
+  const validCategories = ["general", "hall", "training", "event", "urgent"];
+  const category = validCategories.includes(categoryRaw) ? categoryRaw : "general";
+
+  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin"));
+  const isPinned = isLeadership ? Boolean(body?.isPinned) : false;
+
+  const created = await db.createBulletinPost(c.env.DB, {
+    clubId,
+    title,
+    content,
+    category,
+    authorId: c.get("userId"),
+    isPinned,
+  });
+
+  return c.json(created, 201);
+});
+
+app.put("/api/bulletin-posts/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Beitrags-ID" }, 400);
+
+  const body = await c.req.json().catch(() => ({}));
+  const title = optionalText(body.title, 150);
+  const content = optionalText(body.content, 5000);
+
+  const categoryRaw = body.category;
+  const validCategories = ["general", "hall", "training", "event", "urgent"];
+  const category = validCategories.includes(categoryRaw) ? categoryRaw : undefined;
+
+  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin"));
+  const isPinned = isLeadership && body.isPinned !== undefined ? Boolean(body.isPinned) : undefined;
+
+  const updated = await db.updateBulletinPost(c.env.DB, id, clubId, {
+    title: title ?? undefined,
+    content: content ?? undefined,
+    category,
+    isPinned,
+  });
+
+  return c.json(updated);
+});
+
+app.delete("/api/bulletin-posts/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Beitrags-ID" }, 400);
+
+  await db.deleteBulletinPost(c.env.DB, id, clubId);
+  return c.json({ ok: true });
+});
+
+// --- Turnplaner & Hallen-Aufbauplaner -------------------------------------
+
+app.get("/api/training-plans", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const plans = await db.listTrainingPlansForClub(c.env.DB, clubId);
+  return c.json(plans);
+});
+
+app.post("/api/training-plans", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  const title = requiredText(body?.title, 150);
+  if (!title) return c.json({ error: "Titel / Name des Hallenaufbaus ist erforderlich" }, 400);
+
+  const description = optionalText(body?.description, 2000);
+  const groupId = optionalId(body?.groupId);
+  const canvasData = body?.canvasData ?? { equipment: [] };
+
+  const created = await db.createTrainingPlan(c.env.DB, {
+    clubId,
+    title,
+    description,
+    groupId,
+    canvasData,
+    createdBy: c.get("userId"),
+  });
+
+  return c.json(created, 201);
+});
+
+app.put("/api/training-plans/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Plan-ID" }, 400);
+
+  const body = await c.req.json().catch(() => ({}));
+  const title = optionalText(body.title, 150);
+  const description = optionalText(body.description, 2000);
+  const groupId = optionalId(body.groupId);
+  const canvasData = body.canvasData;
+
+  const updated = await db.updateTrainingPlan(c.env.DB, id, clubId, {
+    title: title ?? undefined,
+    description,
+    groupId,
+    canvasData,
+  });
+
+  return c.json(updated);
+});
+
+app.delete("/api/training-plans/:id", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige Plan-ID" }, 400);
+
+  await db.deleteTrainingPlan(c.env.DB, id, clubId);
+  return c.json({ ok: true });
+});
+
 // Ein anderes Vereinsmitglied zur Jugendleitung befördern - nur für
 // bestehende Jugendleitungen desselben Vereins.
 app.post("/api/clubs/mine/members/:userId/promote", requireAuth, async (c) => {
@@ -1851,6 +2510,49 @@ app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
 
 app.get("/api/groups", requireAuth, async (c) => {
   return c.json(await db.listGroupsForUser(c.env.DB, c.get("userId"), c.get("clubId"), c.get("clubRole")));
+});
+
+// Saisonwechsel-Assistent: reine, jederzeit neu berechenbare Vorschläge.
+// Die eigentliche Ausführung nutzt anschließend bewusst den etablierten
+// /children/:id/move-Flow mit Kapazitätsprüfung, Audit und Freigaben.
+app.get("/api/season-transition/proposals", requireAuth, async (c) => {
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+  const referenceDate = validDate(c.req.query("referenceDate"));
+  if (!referenceDate) return c.json({ error: "Stichtag ist ungültig (Format JJJJ-MM-TT)" }, 400);
+  const at = new Date(`${referenceDate}T12:00:00Z`);
+  const ageAt = (birthDate: string) => {
+    const [year, month, day] = birthDate.split("-").map(Number);
+    let age = at.getUTCFullYear() - year;
+    if (at.getUTCMonth() + 1 < month || (at.getUTCMonth() + 1 === month && at.getUTCDate() < day)) age--;
+    return age;
+  };
+  const [groups, children] = await Promise.all([
+    db.listGroupsForUser(c.env.DB, c.get("userId"), c.get("clubId"), c.get("clubRole")),
+    db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId")),
+  ]);
+  const counts = new Map<string, number>();
+  for (const child of children) if (child.groupId) counts.set(child.groupId, (counts.get(child.groupId) ?? 0) + 1);
+  const clubGroups = groups.filter((group) => group.clubId === clubId);
+  const byId = new Map(clubGroups.map((group) => [group.id, group]));
+  const proposals = children.flatMap((child) => {
+    if (!child.groupId) return [];
+    const current = byId.get(child.groupId);
+    if (!current) return [];
+    const age = ageAt(child.birthDate);
+    if (age >= current.minAge && age < current.maxAge) return [];
+    const candidates = clubGroups
+      .filter((group) => group.id !== current.id && age >= group.minAge && age < group.maxAge)
+      .map((group) => ({
+        id: group.id,
+        name: group.name,
+        availablePlaces: group.maxChildren === null ? null : Math.max(0, group.maxChildren - (counts.get(group.id) ?? 0)),
+      }))
+      .sort((a, b) => (b.availablePlaces ?? Number.MAX_SAFE_INTEGER) - (a.availablePlaces ?? Number.MAX_SAFE_INTEGER));
+    return [{ childId: child.id, childName: `${child.firstName} ${child.lastName}`, birthDate: child.birthDate, age, fromGroupId: current.id, fromGroupName: current.name, candidates }];
+  });
+  return c.json({ referenceDate, proposals });
 });
 
 app.post("/api/groups", requireAuth, async (c) => {
@@ -2230,12 +2932,27 @@ app.post("/api/children", requireAuth, async (c) => {
     familyId,
   };
 
+  const duplicate = clubIdForChild
+    ? await db.findUnassignedChildDuplicate(c.env.DB, { clubId: clubIdForChild, firstName, lastName, birthDate })
+    : null;
+
   if (groupId) {
     const group = targetGroup as GroupRow;
     const canWriteTarget =
       (await db.canWriteGroupAsync(c.env.DB, group, c.get("userId"))) ||
       (c.get("clubRole") === "jugendleiter" && Boolean(group.club_id) && group.club_id === c.get("clubId"));
     if (!canWriteTarget) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+    if (duplicate) {
+      return c.json({
+        error: `${duplicate.firstName} ${duplicate.lastName} ist bereits ohne Gruppe angelegt`,
+        code: "unassigned_child_duplicate",
+        existingChildId: duplicate.id,
+        existingChildName: `${duplicate.firstName} ${duplicate.lastName}`,
+        targetGroupId: group.id,
+        targetGroupName: group.name,
+      }, 409);
+    }
 
     const gate = await capacityGate(c.env.DB, group, undefined, {
       userId: c.get("userId"),
@@ -2257,6 +2974,17 @@ app.post("/api/children", requireAuth, async (c) => {
     }
   }
 
+  if (duplicate) {
+    return c.json({
+      error: `${duplicate.firstName} ${duplicate.lastName} ist bereits ohne Gruppe angelegt`,
+      code: "unassigned_child_duplicate",
+      existingChildId: duplicate.id,
+      existingChildName: `${duplicate.firstName} ${duplicate.lastName}`,
+      targetGroupId: null,
+      targetGroupName: null,
+    }, 409);
+  }
+
   const child = await db.createChild(c.env.DB, childInput);
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
@@ -2265,6 +2993,13 @@ app.post("/api/children", requireAuth, async (c) => {
     action: "child.created",
     targetLabel: `${firstName} ${lastName}`,
     groupId,
+    childId: child.id,
+  });
+  await notifyClubInApp(c.env, clubIdForChild, {
+    type: "club_child_created",
+    title: "Kind neu hinzugefügt",
+    body: `${firstName} ${lastName} wurde ${targetGroup ? `der Gruppe „${targetGroup.name}“` : "dem Bereich „Ohne Gruppe“"} hinzugefügt.`,
+    link: "/kinder",
     childId: child.id,
   });
   return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY), 201);
@@ -2367,6 +3102,17 @@ app.put("/api/children/:id", requireAuth, async (c) => {
     childId: id,
   });
 
+  if (previousGroupId !== groupId) {
+    const previousGroup = previousGroupId ? await db.getGroupRowById(c.env.DB, previousGroupId) : null;
+    await notifyClubInApp(c.env, clubIdForChild, {
+      type: "club_child_moved",
+      title: "Kind verschoben",
+      body: childMovedBody(`${firstName} ${lastName}`, previousGroup, targetGroup),
+      link: "/kinder",
+      childId: id,
+    });
+  }
+
   // Verließ das Kind eine kapazitätsbeschränkte Gruppe, kann jetzt jemand
   // von deren Warteliste nachrücken.
   if (previousGroupId && previousGroupId !== groupId) {
@@ -2406,6 +3152,16 @@ app.delete("/api/children/:id", requireAuth, async (c) => {
     await promoteWaitlistIfPossible(c, existing.group_id);
     await notifyClubWaitlistOnFreedCapacity(c, existing.group_id);
   }
+  // Diese Meldung wird bewusst erst nach redactChildTraces() ohne
+  // child_id-Referenz angelegt: Der ausdrücklich gewünschte Löschhinweis
+  // bleibt im vereinsinternen Postfach sichtbar, enthält aber weder
+  // Geburtsdatum noch Kontakt- oder Gesundheitsdaten.
+  await notifyClubInApp(c.env, existing.club_id, {
+    type: "club_child_deleted",
+    title: "Kind gelöscht",
+    body: `${existing.first_name} ${existing.last_name} wurde endgültig gelöscht.`,
+    link: "/kinder",
+  });
   return c.body(null, 204);
 });
 
@@ -2433,6 +3189,16 @@ app.post("/api/children/:id/archive", requireAuth, async (c) => {
     action: "child.archived",
     targetLabel: `${existing.first_name} ${existing.last_name}`,
     groupId: existing.group_id,
+    childId: id,
+  });
+  const previousGroup = existing.group_id ? await db.getGroupRowById(c.env.DB, existing.group_id) : null;
+  await notifyClubInApp(c.env, existing.club_id, {
+    type: "club_child_archived",
+    title: "Kind ausgetreten",
+    body: previousGroup
+      ? `${existing.first_name} ${existing.last_name} ist aus „${previousGroup.name}“ ausgetreten.`
+      : `${existing.first_name} ${existing.last_name} wurde als ausgetreten markiert (zuletzt „Ohne Gruppe“).`,
+    link: "/kinder",
     childId: id,
   });
   return c.json(await decryptChild(child, c.env.ENCRYPTION_KEY));
@@ -2676,16 +3442,25 @@ app.post("/api/substitute-requests", requireAuth, async (c) => {
 
   if (group.club_id) {
     const members = await db.listClubMembers(c.env.DB, group.club_id);
-    for (const member of members.filter((m) => m.id !== c.get("userId"))) {
-      await notifyUser(c.env, {
-        userId: member.id,
-        userEmail: member.email,
-        userName: member.name,
-        type: "substitute_request",
-        title: `Vertretung gesucht für „${group.name}“`,
-        body: `${c.get("name") ?? c.get("email")} sucht für den Termin am ${sessionDate} in „${group.name}“ eine Vertretung.${note ? ` (${note})` : ""}`,
-        link: "/vertretungen",
-      });
+    const notification = {
+      type: "substitute_request",
+      title: `Vertretung gesucht für „${group.name}“`,
+      body: `${c.get("name") ?? c.get("email")} sucht für den Termin am ${sessionDate} in „${group.name}“ eine Vertretung.${note ? ` (${note})` : ""}`,
+      link: "/vertretungen",
+    };
+    for (const member of members) {
+      if (member.id === c.get("userId")) {
+        // Die anfragende Person erhält die vereinsweite In-App-Meldung
+        // ebenfalls, aber keine E-Mail über die eigene Aktion.
+        await db.createNotification(c.env.DB, { userId: member.id, ...notification });
+      } else {
+        await notifyUser(c.env, {
+          userId: member.id,
+          userEmail: member.email,
+          userName: member.name,
+          ...notification,
+        });
+      }
     }
   }
 
@@ -2905,6 +3680,7 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
       return c.json(pending, 202);
     }
     const previousGroupId = child.group_id;
+    const previousGroup = previousGroupId ? await db.getGroupRowById(c.env.DB, previousGroupId) : null;
     await db.moveChildToGroup(c.env.DB, id, toGroupId);
     await db.logAudit(c.env.DB, {
       clubId: c.get("clubId"),
@@ -2913,6 +3689,13 @@ app.post("/api/children/:id/move", requireAuth, async (c) => {
       action: "child.moved",
       targetLabel: `${child.first_name} ${child.last_name} → ${targetGroup.name}`,
       groupId: toGroupId,
+      childId: id,
+    });
+    await notifyClubInApp(c.env, targetGroup.club_id ?? child.club_id, {
+      type: "club_child_moved",
+      title: "Kind verschoben",
+      body: childMovedBody(`${child.first_name} ${child.last_name}`, previousGroup, targetGroup),
+      link: "/kinder",
       childId: id,
     });
     if (previousGroupId) {
@@ -3038,6 +3821,7 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
         title: `Verschiebe-Anfrage genehmigt: „${targetGroup.name}“`,
         body: `${movedChildName} wurde von „${fromGroup.name}“ in „${targetGroup.name}“ verschoben.`,
         link: "/gruppen",
+        childId: request.child_id,
       });
     }
   }
@@ -3052,9 +3836,21 @@ app.post("/api/move-requests/:id/approve", requireAuth, async (c) => {
         title: `Deine Verschiebe-Anfrage wurde genehmigt`,
         body: `${movedChildName} wurde in „${targetGroup.name}“ aufgenommen.`,
         link: "/gruppen",
+        childId: request.child_id,
       });
     }
   }
+  await notifyClubInApp(c.env, targetGroup.club_id, {
+    type: "club_child_moved",
+    title: "Kind verschoben",
+    body: childMovedBody(movedChildName, fromGroup, targetGroup),
+    link: "/kinder",
+    childId: request.child_id,
+    excludeUserIds: [
+      fromGroup?.owner_id !== c.get("userId") ? fromGroup?.owner_id : null,
+      request.requested_by !== c.get("userId") && request.requested_by !== fromGroup?.owner_id ? request.requested_by : null,
+    ],
+  });
 
   return c.json({ ok: true });
 });
@@ -3173,7 +3969,7 @@ app.post("/api/capacity-requests/:id/approve", requireAuth, async (c) => {
   // Warteliste nachrücken zu lassen.
   const previousGroupId = request.child_id ? (await db.getChildRowById(c.env.DB, request.child_id))?.group_id ?? null : null;
 
-  await applyCapacityRequest(c.env.DB, request, c.get("userId"));
+  await applyCapacityRequest(c.env, request, c.get("userId"));
   await db.setCapacityRequestStatus(c.env.DB, id, "approved", c.get("userId"));
   if (previousGroupId && previousGroupId !== request.group_id) {
     await promoteWaitlistIfPossible(c, previousGroupId);
@@ -3252,6 +4048,9 @@ app.post("/api/groups/:id/waitlist", requireAuth, async (c) => {
 
   const child = await db.getChildRowById(c.env.DB, childId);
   if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
+  if (await db.hasActiveClubWaitlistEntry(c.env.DB, childId)) {
+    return c.json({ error: "Kind steht bereits auf der Vereinswarteliste" }, 409);
+  }
   if (!(await isChildWritable(c.env.DB, child, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") })))
     return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
@@ -3319,6 +4118,10 @@ app.post("/api/club-waitlist", requireAuth, async (c) => {
 
   const child = await db.getChildRowById(c.env.DB, childId);
   if (!child) return c.json({ error: "Kind nicht gefunden" }, 404);
+  if (child.group_id !== null) return c.json({ error: "Kind ist bereits einer Gruppe zugeordnet" }, 409);
+  if (await db.hasActiveGroupWaitlistEntry(c.env.DB, childId)) {
+    return c.json({ error: "Kind steht bereits auf der Warteliste einer Gruppe" }, 409);
+  }
   const allowed = await isChildWritable(c.env.DB, child, c.get("userId"), { clubId: c.get("clubId"), clubRole: c.get("clubRole") });
   if (!allowed) return c.json({ error: "Keine Berechtigung für dieses Kind" }, 403);
 
@@ -3359,6 +4162,12 @@ app.post("/api/club-waitlist", requireAuth, async (c) => {
   }
 
   return c.json(entry, 201);
+});
+
+app.get("/api/club-waitlist/candidates", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json([]);
+  return c.json(await db.listClubWaitlistCandidates(c.env.DB, clubId));
 });
 
 // Vereinsweite Sicht auf die Warteliste - für alle Vereinsmitglieder
@@ -3583,6 +4392,7 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
     if (warning && body?.confirmOverCapacity !== true) return c.json(warning, 409);
   }
 
+  const previousGroup = child.group_id ? await db.getGroupRowById(c.env.DB, child.group_id) : null;
   await db.moveChildToGroup(c.env.DB, entry.child_id, request.group_id);
   await db.setPlacementRequestStatus(c.env.DB, id, "confirmed");
   await db.setClubWaitlistStatus(c.env.DB, entry.id, "placed");
@@ -3635,6 +4445,17 @@ app.post("/api/placement-requests/:id/confirm", requireAuth, async (c) => {
       });
     }
   }
+  await notifyClubInApp(c.env, group.club_id, {
+    type: "club_child_moved",
+    title: "Kind verschoben",
+    body: childMovedBody(`${child.first_name} ${child.last_name}`, previousGroup, group),
+    link: "/kinder",
+    childId: child.id,
+    excludeUserIds: [
+      request.proposed_by,
+      group.owner_id !== c.get("userId") && group.owner_id !== request.proposed_by ? group.owner_id : null,
+    ],
+  });
 
   return c.json({ ok: true });
 });
@@ -3953,6 +4774,11 @@ async function canReadAttendance(
   return isLeadership || (await db.canWriteGroupAsync(dbEnv, group, requester.userId));
 }
 
+app.get("/api/attendance-stats", requireAuth, async (c) => {
+  const stats = await db.getAttendanceStats(c.env.DB, c.get("userId"), c.get("clubId"));
+  return c.json(stats);
+});
+
 app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
   const groupId = validId(c.req.param("groupId"));
   const from = validDate(c.req.query("from"));
@@ -4131,6 +4957,14 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   }
 
   await db.saveAttendance(c.env.DB, groupId, date, entries, ledBy, overridesToApply);
+  if (overrideRequested && overridesToApply !== null) {
+    await notifyClubInApp(c.env, group.club_id, {
+      type: "club_session_rescheduled",
+      title: `Termin geändert: „${group.name}“`,
+      body: sessionChangedBody(group, date, overridesToApply),
+      link: "/anwesenheit",
+    });
+  }
 
   // Wurde jemand anderes als die eintragende Person als Leitung erfasst,
   // ist das eine Vertretung: sie zählt ab jetzt in deren Stundennachweis
@@ -4243,6 +5077,17 @@ app.post("/api/session-override-requests/:id/approve", requireAuth, async (c) =>
       });
     }
   }
+  await notifyClubInApp(c.env, group.club_id, {
+    type: "club_session_rescheduled",
+    title: `Termin geändert: „${group.name}“`,
+    body: sessionChangedBody(group, request.session_date, {
+      startTime: request.start_time,
+      endTime: request.end_time,
+      location: request.location,
+    }),
+    link: "/anwesenheit",
+    excludeUserIds: [request.requested_by],
+  });
 
   return c.json({ ok: true });
 });
@@ -4342,9 +5187,10 @@ app.post("/api/attendance/:groupId/:date/uncancel", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
-app.onError((error, c) => {
+app.onError(async (error, c) => {
   console.error("Unbehandelter API-Fehler:", redactError(error));
   if (error instanceof SyntaxError) return c.json({ error: "Ungültiger JSON-Request" }, 400);
+  await recordOperationalEvent(c.env.DB, "api.unhandled_error", "critical", c.req.path);
   return c.json({ error: "Interner Serverfehler" }, 500);
 });
 
@@ -4453,11 +5299,34 @@ async function cleanupSecurityLogs(env: Env): Promise<void> {
   await db.cleanupSecurityLogs(env.DB, retentionDays);
 }
 
+// Allgemeine Speicherbegrenzung fürs In-App-Postfach. Die Frist gilt für
+// gelesene und ungelesene Meldungen gleichermaßen; ohne gültige positive
+// Konfiguration wird nichts gelöscht.
+async function cleanupNotifications(env: Env): Promise<void> {
+  const retentionDays = Number(env.NOTIFICATION_RETENTION_DAYS);
+  if (!Number.isInteger(retentionDays) || retentionDays <= 0) return;
+  await cleanupExpiredNotifications(env.DB, retentionDays);
+}
+
+async function runTrackedCron(env: Env, jobName: string, job: () => Promise<void>): Promise<void> {
+  await startCron(env.DB, jobName);
+  try {
+    await job();
+    await finishCron(env.DB, jobName);
+  } catch (error) {
+    await finishCron(env.DB, jobName, error);
+    console.error(`Cron ${jobName} fehlgeschlagen:`, redactError(error));
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(remindStaleRequests(env));
-    ctx.waitUntil(deleteStaleArchivedChildren(env));
-    ctx.waitUntil(cleanupSecurityLogs(env));
+    ctx.waitUntil(runTrackedCron(env, "stale-request-reminders", () => remindStaleRequests(env)));
+    ctx.waitUntil(runTrackedCron(env, "archived-child-retention", () => deleteStaleArchivedChildren(env)));
+    ctx.waitUntil(runTrackedCron(env, "security-log-retention", () => cleanupSecurityLogs(env)));
+    ctx.waitUntil(runTrackedCron(env, "notification-retention", () => cleanupNotifications(env)));
+    ctx.waitUntil(runTrackedCron(env, "email-retries", () => retryFailedEmails(env)));
+    ctx.waitUntil(runTrackedCron(env, "operational-data-retention", () => cleanupOperationalData(env.DB)));
   },
 } satisfies ExportedHandler<Env>;
