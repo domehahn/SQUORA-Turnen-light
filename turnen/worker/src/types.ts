@@ -9,6 +9,9 @@ export interface Env {
   // Resend-Schlüssel ausschließlich als Cloudflare Worker Secret setzen.
   // Optional, damit lokale Tests/Entwicklung ohne echten Mailversand laufen.
   RESEND_API_KEY?: string;
+  // Signing Secret des Resend-Webhooks (whsec_...), ebenfalls ausschließlich
+  // als Worker Secret. Ohne Secret lehnt der Endpoint jedes Event ab.
+  RESEND_WEBHOOK_SECRET?: string;
   EMAIL_FROM_ADDRESS?: string;
   // Speicherbegrenzung (Finding PRIV-05, Art. 5(1)(e) DSGVO): Anzahl Tage,
   // die ein archiviertes (ausgetretenes) Kind noch aufbewahrt wird, bevor
@@ -25,6 +28,101 @@ export interface Env {
   // (2026-08-27) auf 90 Tage. Optional, gleiche Logik wie oben: ohne
   // gesetzten Wert läuft kein Cleanup.
   SECURITY_LOG_RETENTION_DAYS?: string;
+  // Allgemeine Aufbewahrungsdauer für gelesene und ungelesene In-App-
+  // Benachrichtigungen. Ohne gültigen positiven Wert löscht der tägliche
+  // Cron sicherheitshalber keine Meldungen.
+  NOTIFICATION_RETENTION_DAYS?: string;
+}
+
+// --- Vereinsveranstaltungen -------------------------------------------------
+
+export interface EventHelper {
+  id: string;
+  eventId: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string;
+  assignedBy: string | null;
+  assignedByName: string | null;
+  assignedTask: string | null;
+  createdAt: string;
+}
+
+export interface ClubEvent {
+  id: string;
+  clubId: string;
+  title: string;
+  description: string | null;
+  eventDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  requiredTrainers: number;
+  tasks: string | null;
+  materials: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  helpers: EventHelper[];
+  isRegistered: boolean;
+}
+
+// --- Material, Pinnwand und Turnplaner --------------------------------------
+
+export interface EquipmentReport {
+  id: string;
+  clubId: string;
+  title: string;
+  location: string | null;
+  severity: "low" | "medium" | "high";
+  status: "open" | "in_progress" | "resolved";
+  description: string | null;
+  reportedBy: string;
+  reportedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BulletinPost {
+  id: string;
+  clubId: string;
+  title: string;
+  content: string;
+  category: "general" | "hall" | "training" | "event" | "urgent";
+  authorId: string;
+  authorName: string | null;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrainingPlanCanvasData {
+  equipment: Array<{
+    id: string;
+    type: string;
+    label: string;
+    x: number;
+    y: number;
+    rotation: number;
+    notes?: string;
+  }>;
+  generalNotes?: string;
+  hallLayout?: "full" | "half_left" | "half_right";
+}
+
+export interface TrainingPlan {
+  id: string;
+  clubId: string;
+  title: string;
+  description: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  canvasData: TrainingPlanCanvasData;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type ClubRole = "member" | "jugendleiter";

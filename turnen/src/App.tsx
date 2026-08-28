@@ -25,6 +25,12 @@ import AdminClubs from "./pages/admin/AdminClubs";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAuditLog from "./pages/admin/AdminAuditLog";
 import Profile from "./pages/Profile";
+import SeasonTransition from "./pages/admin/SeasonTransition";
+import Operations from "./pages/admin/Operations";
+import Events from "./pages/admin/Events";
+import Equipment from "./pages/admin/Equipment";
+import BulletinBoard from "./pages/admin/BulletinBoard";
+import Turnplaner from "./pages/admin/Turnplaner";
 
 // "/" lokal, "/turnen-light" im Produktions-Build (BASE_URL endet auf "/",
 // React Router mag kein trailing slash im basename) - siehe .env.production
@@ -54,14 +60,20 @@ export default function App() {
               <Route path="auslastung" element={<Utilization />} />
               <Route path="mitgliederstatistik" element={<MemberStats />} />
               <Route path="kalender" element={<Calendar />} />
+              <Route path="events" element={<Events />} />
+              <Route path="geraete" element={<Equipment />} />
+              <Route path="pinnwand" element={<BulletinBoard />} />
+              <Route path="turnplaner" element={<Turnplaner />} />
               <Route path="export" element={<Export />} />
               <Route path="verlauf" element={<AuditLog />} />
               <Route path="vertretungen" element={<Substitutes />} />
               <Route path="warteliste" element={<ClubWaitlist />} />
+              <Route path="saisonwechsel" element={<SeasonTransition />} />
               <Route path="verein" element={<ClubPage />} />
               <Route path="admin/vereine" element={<AdminClubs />} />
               <Route path="admin/nutzer" element={<AdminUsers />} />
               <Route path="admin/verlauf" element={<AdminAuditLog />} />
+              <Route path="admin/betrieb" element={<Operations />} />
               <Route path="profil" element={<Profile />} />
             </Route>
           </Route>

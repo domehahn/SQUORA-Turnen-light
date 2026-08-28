@@ -1,6 +1,16 @@
 import * as db from "./db";
 import type { Env } from "./types";
 import { redactError } from "./log-redaction";
+import {
+  createEmailDelivery,
+  getNotificationPreferences,
+  listDueRetries,
+  markEmailFailed,
+  markEmailSent,
+  notificationCategory,
+  recordOperationalEvent,
+  type RetryPayload,
+} from "./operations";
 
 // E-Mail-Design (Farben/Schrift/Wrapper/Button/Footer) übernimmt bewusst 1:1
 // den bereits etablierten Stil der Schwester-Apps im selben SQUORA-Familien-
@@ -63,15 +73,17 @@ function bodyHtml(text: string, link: string | null, linkLabel: string): string 
 
 async function sendViaResend(
   env: Env,
-  input: { to: string; subject: string; text: string; html: string }
-): Promise<boolean> {
-  if (!env.RESEND_API_KEY || !env.EMAIL_FROM_ADDRESS) return false;
+  input: RetryPayload,
+  idempotencyKey?: string
+): Promise<string> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM_ADDRESS) throw new Error("email_not_configured");
 
   const response = await fetch(RESEND_EMAILS_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
       "Content-Type": "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from: `Turnen <${env.EMAIL_FROM_ADDRESS}>`,
@@ -92,7 +104,9 @@ async function sendViaResend(
       `Resend-Versand fehlgeschlagen (HTTP ${response.status}${requestId ? `, Request-ID ${requestId}` : ""})`
     );
   }
-  return true;
+  const result = await response.json<{ id?: string }>();
+  if (!result.id) throw new Error("resend_response_without_id");
+  return result.id;
 }
 
 // Legt eine In-App-Benachrichtigung an und verschickt sie best effort per
@@ -126,7 +140,7 @@ export async function notifyUser(
     childId?: string | null;
   }
 ): Promise<void> {
-  await db.createNotification(env.DB, {
+  const notification = await db.createNotification(env.DB, {
     userId: input.userId,
     type: input.type,
     title: input.title,
@@ -135,16 +149,33 @@ export async function notifyUser(
     childId: input.childId,
   });
 
+  const category = notificationCategory(input.type);
+  const preferences = await getNotificationPreferences(env.DB, input.userId);
+  if (!preferences[category]) return;
+
+  let deliveryId: string | null = null;
   try {
     const emailText = input.emailBody ?? input.body;
     const linkUrl = input.link ? `${env.FRONTEND_URL}${input.link}` : null;
-    await sendViaResend(env, {
+    const payload = {
       to: input.userEmail,
       subject: input.title,
       text: `${emailText}${linkUrl ? `\n\n${linkUrl}` : ""}`,
       html: WRAPPER(bodyHtml(emailText, linkUrl, "In der App ansehen")),
+    };
+    deliveryId = await createEmailDelivery(env, {
+      notificationId: notification.id,
+      userId: input.userId,
+      category,
+      recipient: input.userEmail,
+      retryPayload: payload,
     });
+    const providerId = await sendViaResend(env, payload, deliveryId ? `${deliveryId}-1` : undefined);
+    await markEmailSent(env.DB, deliveryId, providerId);
   } catch (err) {
+    const code = err instanceof Error ? err.message : "unknown_error";
+    await markEmailFailed(env.DB, deliveryId, code);
+    await recordOperationalEvent(env.DB, "email.send_failed", "warning", code);
     console.error("E-Mail-Versand fehlgeschlagen:", redactError(err));
   }
 }
@@ -168,16 +199,43 @@ export async function sendEmailOnly(
     linkLabel?: string;
   }
 ): Promise<boolean> {
+  let deliveryId: string | null = null;
   try {
-    return await sendViaResend(env, {
+    const payload = {
       to: input.to,
       subject: input.subject,
       text: `${input.text}${input.link ? `\n\n${input.link}` : ""}`,
       html: WRAPPER(bodyHtml(input.text, input.link ?? null, input.linkLabel ?? "Jetzt öffnen")),
-    });
+    };
+    // Security-Mails werden nur als Metadaten erfasst. Ihre kurzlebigen
+    // Tokens/Einmalpasswörter landen weder im Delivery-Ledger noch im Retry.
+    deliveryId = await createEmailDelivery(env, { category: "security", recipient: input.to });
+    const providerId = await sendViaResend(env, payload, deliveryId ? `${deliveryId}-1` : undefined);
+    if (env.DB) await markEmailSent(env.DB, deliveryId, providerId);
+    return true;
   } catch (err) {
+    const code = err instanceof Error ? err.message : "unknown_error";
+    if (env.DB) {
+      await markEmailFailed(env.DB, deliveryId, code);
+      await recordOperationalEvent(env.DB, "email.send_failed", "warning", code);
+    }
     console.error("E-Mail-Versand fehlgeschlagen:", redactError(err));
     return false;
+  }
+}
+
+// Höchstens drei Versuche, mit serverseitigem Idempotency-Key. Nur normale
+// App-Benachrichtigungen besitzen eine verschlüsselte Retry-Nutzlast.
+export async function retryFailedEmails(env: Env): Promise<void> {
+  for (const delivery of await listDueRetries(env)) {
+    try {
+      const providerId = await sendViaResend(env, delivery.payload, `${delivery.id}-${delivery.attemptCount + 1}`);
+      await markEmailSent(env.DB, delivery.id, providerId);
+    } catch (err) {
+      const code = err instanceof Error ? err.message : "unknown_error";
+      await markEmailFailed(env.DB, delivery.id, code);
+      await recordOperationalEvent(env.DB, "email.retry_failed", "warning", code);
+    }
   }
 }
 

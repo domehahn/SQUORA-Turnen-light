@@ -72,7 +72,7 @@ export default function CalendarPrint() {
                       </p>
                     )}
                     {g.location && <p className="break-words opacity-80">{g.location}</p>}
-                    {g.ownerName && <p className="break-words opacity-80">{g.ownerName}</p>}
+                    {g.ownerName && <p className="break-words font-medium opacity-90">👤 {g.ownerName}</p>}
                   </div>
                 ))}
                 {byWeekday[day].length === 0 && <p className="text-xs text-slate-400">–</p>}

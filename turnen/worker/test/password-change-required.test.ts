@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { authHeaders, ensureMigrated, login, seedUser } from "./helpers";
+import { signAccountSetupToken } from "../src/auth";
 
 beforeAll(async () => {
   await ensureMigrated();
@@ -79,15 +80,29 @@ describe("Erzwungener Passwortwechsel (must_change_password)", () => {
     const createRes = await SELF.fetch("https://example.test/api/admin/users", {
       method: "POST",
       headers: authHeaders(adminToken),
-      body: JSON.stringify({ email: "pw-change-new-user@test.local", password: "temp-password-789" }),
+      body: JSON.stringify({ email: "pw-change-new-user@test.local" }),
     });
     expect(createRes.status).toBe(201);
+    const { id: newUserId } = (await createRes.json()) as { id: string };
 
-    const newUserToken = await login(SELF, "pw-change-new-user@test.local", "temp-password-789");
-    const res = await SELF.fetch("https://example.test/api/families", { headers: authHeaders(newUserToken) });
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { passwordChangeRequired?: boolean };
-    expect(body.passwordChangeRequired).toBe(true);
+    // Vor der Aktivierung schlägt Login fehl
+    const failLogin = await SELF.fetch("https://example.test/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+      body: JSON.stringify({ email: "pw-change-new-user@test.local", password: "dummy-password" }),
+    });
+    expect(failLogin.status).toBe(401);
+
+    // Account aktivieren mit account_setup Token
+    const setupToken = await signAccountSetupToken(newUserId, env.JWT_SECRET);
+    await SELF.fetch("https://example.test/api/account-setup/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+      body: JSON.stringify({ token: setupToken, newPassword: "user-chosen-password-123" }),
+    });
+
+    const newUserToken = await login(SELF, "pw-change-new-user@test.local", "user-chosen-password-123");
+    expect(newUserToken).toBeTruthy();
   });
 
   it("PUT /api/admin/users/:id/password (Admin setzt fremdes Passwort zurück) setzt must_change_password wieder auf 1", async () => {

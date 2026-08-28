@@ -9,10 +9,14 @@ import type {
   Child,
   ChildRow,
   Club,
+  ClubEvent,
   ClubRole,
   ClubRow,
   Family,
   FamilyRow,
+  EventHelper,
+  EquipmentReport,
+  BulletinPost,
   Group,
   GroupRow,
   Holiday,
@@ -37,6 +41,8 @@ import type {
   SubstituteRequestDetail,
   SubstituteRequestRow,
   SubstituteRequestStatus,
+  TrainingPlan,
+  TrainingPlanCanvasData,
   User,
   UserRow,
   WaitlistEntryDetail,
@@ -838,6 +844,22 @@ export async function getChildRowById(db: D1Database, id: string): Promise<Child
   return db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
 }
 
+export async function findUnassignedChildDuplicate(
+  db: D1Database,
+  input: { clubId: string; firstName: string; lastName: string; birthDate: string }
+): Promise<{ id: string; firstName: string; lastName: string } | null> {
+  return db.prepare(
+    `SELECT id, first_name as firstName, last_name as lastName
+     FROM children
+     WHERE club_id = ?1 AND group_id IS NULL AND status = 'active'
+       AND lower(trim(first_name)) = lower(trim(?2))
+       AND lower(trim(last_name)) = lower(trim(?3))
+       AND birth_date = ?4
+     ORDER BY created_at ASC LIMIT 1`
+  ).bind(input.clubId, input.firstName, input.lastName, input.birthDate)
+    .first<{ id: string; firstName: string; lastName: string }>();
+}
+
 // Alle Kind-Rohdatensätze (alle Vereine, inkl. archiviert) - nur für den
 // einmaligen Verschlüsselungs-Backfill (Finding PRIV-02), sonst nirgends
 // verwenden (keine Sichtbarkeits-/Vereinsfilterung).
@@ -938,8 +960,8 @@ export async function createChild(db: D1Database, input: ChildInput): Promise<Ch
 }
 
 export async function updateChild(db: D1Database, id: string, input: ChildInput): Promise<Child | null> {
-  await db
-    .prepare(
+  const statements = [
+    db.prepare(
       `UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, group_id = ?, club_id = ?,
               emergency_contact_name = ?, emergency_contact_phone = ?, family_id = ? WHERE id = ?`
     )
@@ -953,8 +975,16 @@ export async function updateChild(db: D1Database, id: string, input: ChildInput)
       input.emergencyContactPhone,
       input.familyId,
       id
-    )
-    .run();
+    ),
+  ];
+  if (input.groupId !== null) {
+    statements.push(
+      db.prepare(
+        "UPDATE club_waitlist_entries SET status = 'placed', resolved_at = datetime('now') WHERE child_id = ? AND status = 'waiting'"
+      ).bind(id)
+    );
+  }
+  await db.batch(statements);
   const row = await db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
   return row ? rowToChild(row, true) : null;
 }
@@ -1075,6 +1105,103 @@ export async function getAttendanceRange(
     (map[row.session_date] ??= []).push({ childId: row.child_id, present: row.present === 1 });
   }
   return map;
+}
+
+export interface AttendanceChildStat {
+  presentCount: number;
+  totalRecorded: number;
+  quote: number | null;
+  isInactive: boolean;
+}
+
+export interface AttendanceGroupStat {
+  presentCount: number;
+  totalRecorded: number;
+  quote: number | null;
+}
+
+export interface AttendanceStatsResponse {
+  childrenStats: Record<string, AttendanceChildStat>;
+  groupQuotes: Record<string, AttendanceGroupStat>;
+  clubQuote: AttendanceGroupStat;
+}
+
+export async function getAttendanceStats(
+  db: D1Database,
+  userId: string,
+  clubId: string | null
+): Promise<AttendanceStatsResponse> {
+  const { results } = clubId
+    ? await db
+        .prepare(
+          `SELECT s.group_id as groupId, e.child_id as childId,
+                  COUNT(e.session_id) as totalRecorded,
+                  SUM(CASE WHEN e.present = 1 THEN 1 ELSE 0 END) as presentCount
+           FROM attendance_entries e
+           JOIN attendance_sessions s ON s.id = e.session_id
+           JOIN groups g ON g.id = s.group_id
+           WHERE (s.cancelled IS NULL OR s.cancelled = 0) AND g.club_id = ?
+           GROUP BY s.group_id, e.child_id`
+        )
+        .bind(clubId)
+        .all<{ groupId: string; childId: string; totalRecorded: number; presentCount: number }>()
+    : await db
+        .prepare(
+          `SELECT s.group_id as groupId, e.child_id as childId,
+                  COUNT(e.session_id) as totalRecorded,
+                  SUM(CASE WHEN e.present = 1 THEN 1 ELSE 0 END) as presentCount
+           FROM attendance_entries e
+           JOIN attendance_sessions s ON s.id = e.session_id
+           JOIN groups g ON g.id = s.group_id
+           WHERE (s.cancelled IS NULL OR s.cancelled = 0)
+             AND (g.owner_id = ?1 OR g.id IN (SELECT group_id FROM group_co_leaders WHERE user_id = ?1))
+           GROUP BY s.group_id, e.child_id`
+        )
+        .bind(userId)
+        .all<{ groupId: string; childId: string; totalRecorded: number; presentCount: number }>();
+
+  const childrenStats: Record<string, AttendanceChildStat> = {};
+  const groupRaw: Record<string, { presentCount: number; totalRecorded: number }> = {};
+  let clubPresentCount = 0;
+  let clubTotalRecorded = 0;
+
+  for (const row of results) {
+    const existing = childrenStats[row.childId] || { presentCount: 0, totalRecorded: 0, quote: null, isInactive: false };
+    const newPresent = existing.presentCount + row.presentCount;
+    const newRecorded = existing.totalRecorded + row.totalRecorded;
+    const quote = newRecorded > 0 ? newPresent / newRecorded : null;
+    childrenStats[row.childId] = {
+      presentCount: newPresent,
+      totalRecorded: newRecorded,
+      quote,
+      isInactive: newRecorded > 0 && quote !== null && quote < 0.5,
+    };
+
+    const grp = groupRaw[row.groupId] || { presentCount: 0, totalRecorded: 0 };
+    grp.presentCount += row.presentCount;
+    grp.totalRecorded += row.totalRecorded;
+    groupRaw[row.groupId] = grp;
+
+    clubPresentCount += row.presentCount;
+    clubTotalRecorded += row.totalRecorded;
+  }
+
+  const groupQuotes: Record<string, AttendanceGroupStat> = {};
+  for (const [groupId, data] of Object.entries(groupRaw)) {
+    groupQuotes[groupId] = {
+      presentCount: data.presentCount,
+      totalRecorded: data.totalRecorded,
+      quote: data.totalRecorded > 0 ? Math.round((data.presentCount / data.totalRecorded) * 100) : null,
+    };
+  }
+
+  const clubQuote: AttendanceGroupStat = {
+    presentCount: clubPresentCount,
+    totalRecorded: clubTotalRecorded,
+    quote: clubTotalRecorded > 0 ? Math.round((clubPresentCount / clubTotalRecorded) * 100) : null,
+  };
+
+  return { childrenStats, groupQuotes, clubQuote };
 }
 
 export interface SessionLeader {
@@ -1335,10 +1462,12 @@ export async function moveChildToGroup(db: D1Database, childId: string, groupId:
   // ein Kind nach einem Gruppenwechsel in eine andere Vereinsgruppe mit dem
   // club_id des alten Vereins stehen, was die Mandantengrenze verletzt.
   const group = await db.prepare("SELECT club_id FROM groups WHERE id = ?").bind(groupId).first<{ club_id: string | null }>();
-  await db
-    .prepare("UPDATE children SET group_id = ?, club_id = ? WHERE id = ?")
-    .bind(groupId, group?.club_id ?? null, childId)
-    .run();
+  await db.batch([
+    db.prepare("UPDATE children SET group_id = ?, club_id = ? WHERE id = ?").bind(groupId, group?.club_id ?? null, childId),
+    db.prepare(
+      "UPDATE club_waitlist_entries SET status = 'placed', resolved_at = datetime('now') WHERE child_id = ? AND status = 'waiting'"
+    ).bind(childId),
+  ]);
 }
 
 export async function getPendingMoveRequestForChild(db: D1Database, childId: string): Promise<MoveRequestRow | null> {
@@ -1589,6 +1718,12 @@ export async function getWaitlistEntryById(db: D1Database, id: string): Promise<
   return db.prepare("SELECT * FROM waitlist_entries WHERE id = ?").bind(id).first<WaitlistEntryRow>();
 }
 
+export async function hasActiveGroupWaitlistEntry(db: D1Database, childId: string): Promise<boolean> {
+  return Boolean(
+    await db.prepare("SELECT 1 FROM waitlist_entries WHERE child_id = ? AND status = 'waiting' LIMIT 1").bind(childId).first()
+  );
+}
+
 export async function setWaitlistEntryStatus(db: D1Database, id: string, status: WaitlistStatus): Promise<void> {
   await db
     .prepare("UPDATE waitlist_entries SET status = ?, resolved_at = datetime('now') WHERE id = ?")
@@ -1665,6 +1800,9 @@ export async function promoteNextWaitlistEntry(db: D1Database, groupId: string):
   await db.batch([
     db.prepare("UPDATE children SET group_id = ? WHERE id = ?").bind(groupId, next.child_id),
     db.prepare("UPDATE waitlist_entries SET status = 'promoted', resolved_at = datetime('now') WHERE id = ?").bind(next.id),
+    db.prepare(
+      "UPDATE club_waitlist_entries SET status = 'placed', resolved_at = datetime('now') WHERE child_id = ? AND status = 'waiting'"
+    ).bind(next.child_id),
   ]);
   return rowToWaitlistDetail(next);
 }
@@ -2359,6 +2497,33 @@ export async function addToClubWaitlist(
   return row as ClubWaitlistRow;
 }
 
+export async function hasActiveClubWaitlistEntry(db: D1Database, childId: string): Promise<boolean> {
+  return Boolean(
+    await db.prepare("SELECT 1 FROM club_waitlist_entries WHERE child_id = ? AND status = 'waiting' LIMIT 1").bind(childId).first()
+  );
+}
+
+export async function listClubWaitlistCandidates(
+  db: D1Database,
+  clubId: string
+): Promise<{ id: string; firstName: string; lastName: string }[]> {
+  const { results } = await db.prepare(
+    `SELECT c.id, c.first_name as firstName, c.last_name as lastName
+     FROM children c
+     WHERE c.club_id = ?
+       AND c.status = 'active'
+       AND c.group_id IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM waitlist_entries w WHERE w.child_id = c.id AND w.status = 'waiting'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM club_waitlist_entries cw WHERE cw.child_id = c.id AND cw.status = 'waiting'
+       )
+     ORDER BY c.last_name, c.first_name`
+  ).bind(clubId).all<{ id: string; firstName: string; lastName: string }>();
+  return results;
+}
+
 export async function getClubWaitlistEntryById(db: D1Database, id: string): Promise<ClubWaitlistRow | null> {
   return db.prepare("SELECT * FROM club_waitlist_entries WHERE id = ?").bind(id).first<ClubWaitlistRow>();
 }
@@ -2692,4 +2857,656 @@ export async function getHolidayRowById(db: D1Database, id: string): Promise<Hol
 
 export async function deleteHoliday(db: D1Database, id: string): Promise<void> {
   await db.prepare("DELETE FROM holidays WHERE id = ?").bind(id).run();
+}
+
+export interface EventRow {
+  id: string;
+  club_id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  location: string | null;
+  required_trainers: number;
+  tasks: string | null;
+  materials: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventHelperRow {
+  id: string;
+  event_id: string;
+  user_id: string;
+  assigned_by: string | null;
+  assigned_task: string | null;
+  created_at: string;
+}
+
+export async function listEventsForClub(
+  db: D1Database,
+  clubId: string,
+  currentUserId: string
+): Promise<ClubEvent[]> {
+  const { results: eventRows } = await db
+    .prepare(
+      `SELECT e.*, u.name as created_by_name
+       FROM events e
+       LEFT JOIN users u ON u.id = e.created_by
+       WHERE e.club_id = ?
+       ORDER BY e.event_date ASC, e.start_time ASC`
+    )
+    .bind(clubId)
+    .all<EventRow & { created_by_name: string | null }>();
+
+  if (!eventRows || eventRows.length === 0) return [];
+
+  const eventIds = eventRows.map((e) => e.id);
+  const placeholders = eventIds.map(() => "?").join(",");
+  const { results: helperRows } = await db
+    .prepare(
+      `SELECT h.*, u.name as user_name, u.email as user_email, ab.name as assigned_by_name
+       FROM event_helpers h
+       JOIN users u ON u.id = h.user_id
+       LEFT JOIN users ab ON ab.id = h.assigned_by
+       WHERE h.event_id IN (${placeholders})
+       ORDER BY h.created_at ASC`
+    )
+    .bind(...eventIds)
+    .all<
+      EventHelperRow & {
+        user_name: string | null;
+        user_email: string;
+        assigned_by_name: string | null;
+      }
+    >();
+
+  const helpersByEvent = new Map<string, EventHelper[]>();
+  for (const h of helperRows || []) {
+    const list = helpersByEvent.get(h.event_id) ?? [];
+    list.push({
+      id: h.id,
+      eventId: h.event_id,
+      userId: h.user_id,
+      userName: h.user_name ?? h.user_email,
+      userEmail: h.user_email,
+      assignedBy: h.assigned_by,
+      assignedByName: h.assigned_by_name,
+      assignedTask: h.assigned_task ?? null,
+      createdAt: h.created_at,
+    });
+    helpersByEvent.set(h.event_id, list);
+  }
+
+  return eventRows.map((e) => {
+    const helpers = helpersByEvent.get(e.id) ?? [];
+    const isRegistered = helpers.some((h) => h.userId === currentUserId);
+    return {
+      id: e.id,
+      clubId: e.club_id,
+      title: e.title,
+      description: e.description,
+      eventDate: e.event_date,
+      startTime: e.start_time,
+      endTime: e.end_time,
+      location: e.location,
+      requiredTrainers: e.required_trainers,
+      tasks: e.tasks,
+      materials: e.materials,
+      createdBy: e.created_by,
+      createdByName: e.created_by_name,
+      createdAt: e.created_at,
+      updatedAt: e.updated_at,
+      helpers,
+      isRegistered,
+    };
+  });
+}
+
+export async function getEventById(
+  db: D1Database,
+  id: string,
+  clubId: string,
+  currentUserId?: string
+): Promise<ClubEvent | null> {
+  const events = await listEventsForClub(db, clubId, currentUserId ?? "");
+  return events.find((e) => e.id === id) ?? null;
+}
+
+export async function createEvent(
+  db: D1Database,
+  input: {
+    clubId: string;
+    title: string;
+    description?: string | null;
+    eventDate: string;
+    startTime?: string | null;
+    endTime?: string | null;
+    location?: string | null;
+    requiredTrainers?: number;
+    tasks?: string | null;
+    materials?: string | null;
+    createdBy: string;
+  }
+): Promise<ClubEvent> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO events (
+        id, club_id, title, description, event_date, start_time, end_time, location,
+        required_trainers, tasks, materials, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      input.clubId,
+      input.title,
+      input.description ?? null,
+      input.eventDate,
+      input.startTime ?? null,
+      input.endTime ?? null,
+      input.location ?? null,
+      input.requiredTrainers ?? 1,
+      input.tasks ?? null,
+      input.materials ?? null,
+      input.createdBy,
+      now,
+      now
+    )
+    .run();
+
+  const created = await getEventById(db, id, input.clubId, input.createdBy);
+  if (!created) throw new Error("Event konnte nicht erstellt werden");
+  return created;
+}
+
+export async function updateEvent(
+  db: D1Database,
+  id: string,
+  clubId: string,
+  currentUserId: string,
+  input: {
+    title?: string;
+    description?: string | null;
+    eventDate?: string;
+    startTime?: string | null;
+    endTime?: string | null;
+    location?: string | null;
+    requiredTrainers?: number;
+    tasks?: string | null;
+    materials?: string | null;
+  }
+): Promise<ClubEvent> {
+  const existing = await getEventById(db, id, clubId, currentUserId);
+  if (!existing) throw new Error("Event nicht gefunden");
+
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `UPDATE events SET
+        title = COALESCE(?, title),
+        description = ?,
+        event_date = COALESCE(?, event_date),
+        start_time = ?,
+        end_time = ?,
+        location = ?,
+        required_trainers = COALESCE(?, required_trainers),
+        tasks = ?,
+        materials = ?,
+        updated_at = ?
+       WHERE id = ? AND club_id = ?`
+    )
+    .bind(
+      input.title ?? null,
+      input.description !== undefined ? input.description : existing.description,
+      input.eventDate ?? null,
+      input.startTime !== undefined ? input.startTime : existing.startTime,
+      input.endTime !== undefined ? input.endTime : existing.endTime,
+      input.location !== undefined ? input.location : existing.location,
+      input.requiredTrainers ?? null,
+      input.tasks !== undefined ? input.tasks : existing.tasks,
+      input.materials !== undefined ? input.materials : existing.materials,
+      now,
+      id,
+      clubId
+    )
+    .run();
+
+  const updated = await getEventById(db, id, clubId, currentUserId);
+  if (!updated) throw new Error("Event konnte nicht aktualisiert werden");
+  return updated;
+}
+
+export async function deleteEvent(db: D1Database, id: string, clubId: string): Promise<void> {
+  await db.prepare("DELETE FROM events WHERE id = ? AND club_id = ?").bind(id, clubId).run();
+}
+
+export async function registerEventHelper(
+  db: D1Database,
+  eventId: string,
+  userId: string,
+  assignedBy?: string | null,
+  assignedTask?: string | null
+): Promise<void> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO event_helpers (id, event_id, user_id, assigned_by, assigned_task)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(event_id, user_id) DO UPDATE SET assigned_by = excluded.assigned_by, assigned_task = excluded.assigned_task`
+    )
+    .bind(id, eventId, userId, assignedBy ?? null, assignedTask ?? null)
+    .run();
+}
+
+export async function unregisterEventHelper(
+  db: D1Database,
+  eventId: string,
+  userId: string
+): Promise<void> {
+  await db
+    .prepare("DELETE FROM event_helpers WHERE event_id = ? AND user_id = ?")
+    .bind(eventId, userId)
+    .run();
+}
+
+// ---------------------------------------------------------------------------
+// Geräte- & Mängelmelder (Equipment Reports)
+// ---------------------------------------------------------------------------
+
+export interface EquipmentReportRow {
+  id: string;
+  club_id: string;
+  title: string;
+  location: string | null;
+  severity: "low" | "medium" | "high";
+  status: "open" | "in_progress" | "resolved";
+  description: string | null;
+  reported_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listEquipmentReportsForClub(
+  db: D1Database,
+  clubId: string
+): Promise<EquipmentReport[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT r.*, u.name as reported_by_name
+       FROM equipment_reports r
+       LEFT JOIN users u ON u.id = r.reported_by
+       WHERE r.club_id = ?
+       ORDER BY CASE r.status WHEN 'open' THEN 1 WHEN 'in_progress' THEN 2 ELSE 3 END,
+                CASE r.severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                r.created_at DESC`
+    )
+    .bind(clubId)
+    .all<EquipmentReportRow & { reported_by_name: string | null }>();
+
+  if (!results) return [];
+  return results.map((r) => ({
+    id: r.id,
+    clubId: r.club_id,
+    title: r.title,
+    location: r.location,
+    severity: r.severity,
+    status: r.status,
+    description: r.description,
+    reportedBy: r.reported_by,
+    reportedByName: r.reported_by_name,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function createEquipmentReport(
+  db: D1Database,
+  input: {
+    clubId: string;
+    title: string;
+    location?: string | null;
+    severity?: "low" | "medium" | "high";
+    description?: string | null;
+    reportedBy: string;
+  }
+): Promise<EquipmentReport> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO equipment_reports (id, club_id, title, location, severity, status, description, reported_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      input.clubId,
+      input.title,
+      input.location ?? null,
+      input.severity ?? "medium",
+      input.description ?? null,
+      input.reportedBy,
+      now,
+      now
+    )
+    .run();
+
+  const reports = await listEquipmentReportsForClub(db, input.clubId);
+  return reports.find((r) => r.id === id)!;
+}
+
+export async function updateEquipmentReport(
+  db: D1Database,
+  id: string,
+  clubId: string,
+  input: {
+    title?: string;
+    location?: string | null;
+    severity?: "low" | "medium" | "high";
+    status?: "open" | "in_progress" | "resolved";
+    description?: string | null;
+  }
+): Promise<EquipmentReport> {
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `UPDATE equipment_reports
+       SET title = COALESCE(?, title),
+           location = COALESCE(?, location),
+           severity = COALESCE(?, severity),
+           status = COALESCE(?, status),
+           description = COALESCE(?, description),
+           updated_at = ?
+       WHERE id = ? AND club_id = ?`
+    )
+    .bind(
+      input.title ?? null,
+      input.location ?? null,
+      input.severity ?? null,
+      input.status ?? null,
+      input.description ?? null,
+      now,
+      id,
+      clubId
+    )
+    .run();
+
+  const reports = await listEquipmentReportsForClub(db, clubId);
+  return reports.find((r) => r.id === id)!;
+}
+
+export async function deleteEquipmentReport(
+  db: D1Database,
+  id: string,
+  clubId: string
+): Promise<void> {
+  await db.prepare("DELETE FROM equipment_reports WHERE id = ? AND club_id = ?").bind(id, clubId).run();
+}
+
+// ---------------------------------------------------------------------------
+// Digitales Schwarzes Brett & Trainer-Pinnwand (Bulletin Board)
+// ---------------------------------------------------------------------------
+
+export interface BulletinPostRow {
+  id: string;
+  club_id: string;
+  title: string;
+  content: string;
+  category: "general" | "hall" | "training" | "event" | "urgent";
+  author_id: string;
+  is_pinned: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listBulletinPostsForClub(
+  db: D1Database,
+  clubId: string
+): Promise<BulletinPost[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT p.*, u.name as author_name
+       FROM bulletin_posts p
+       LEFT JOIN users u ON u.id = p.author_id
+       WHERE p.club_id = ?
+       ORDER BY p.is_pinned DESC, p.created_at DESC`
+    )
+    .bind(clubId)
+    .all<BulletinPostRow & { author_name: string | null }>();
+
+  if (!results) return [];
+  return results.map((p) => ({
+    id: p.id,
+    clubId: p.club_id,
+    title: p.title,
+    content: p.content,
+    category: p.category,
+    authorId: p.author_id,
+    authorName: p.author_name,
+    isPinned: Boolean(p.is_pinned),
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+  }));
+}
+
+export async function createBulletinPost(
+  db: D1Database,
+  input: {
+    clubId: string;
+    title: string;
+    content: string;
+    category?: "general" | "hall" | "training" | "event" | "urgent";
+    authorId: string;
+    isPinned?: boolean;
+  }
+): Promise<BulletinPost> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO bulletin_posts (id, club_id, title, content, category, author_id, is_pinned, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      input.clubId,
+      input.title,
+      input.content,
+      input.category ?? "general",
+      input.authorId,
+      input.isPinned ? 1 : 0,
+      now,
+      now
+    )
+    .run();
+
+  const posts = await listBulletinPostsForClub(db, input.clubId);
+  return posts.find((p) => p.id === id)!;
+}
+
+export async function updateBulletinPost(
+  db: D1Database,
+  id: string,
+  clubId: string,
+  input: {
+    title?: string;
+    content?: string;
+    category?: "general" | "hall" | "training" | "event" | "urgent";
+    isPinned?: boolean;
+  }
+): Promise<BulletinPost> {
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `UPDATE bulletin_posts
+       SET title = COALESCE(?, title),
+           content = COALESCE(?, content),
+           category = COALESCE(?, category),
+           is_pinned = COALESCE(?, is_pinned),
+           updated_at = ?
+       WHERE id = ? AND club_id = ?`
+    )
+    .bind(
+      input.title ?? null,
+      input.content ?? null,
+      input.category ?? null,
+      input.isPinned !== undefined ? (input.isPinned ? 1 : 0) : null,
+      now,
+      id,
+      clubId
+    )
+    .run();
+
+  const posts = await listBulletinPostsForClub(db, clubId);
+  return posts.find((p) => p.id === id)!;
+}
+
+export async function deleteBulletinPost(
+  db: D1Database,
+  id: string,
+  clubId: string
+): Promise<void> {
+  await db.prepare("DELETE FROM bulletin_posts WHERE id = ? AND club_id = ?").bind(id, clubId).run();
+}
+
+// ---------------------------------------------------------------------------
+// Turnplaner & Hallen-Aufbauplaner (Training Plans)
+// ---------------------------------------------------------------------------
+
+export interface TrainingPlanRow {
+  id: string;
+  club_id: string;
+  title: string;
+  description: string | null;
+  group_id: string | null;
+  canvas_data: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listTrainingPlansForClub(
+  db: D1Database,
+  clubId: string
+): Promise<TrainingPlan[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT p.*, u.name as created_by_name, g.name as group_name
+       FROM training_plans p
+       LEFT JOIN users u ON u.id = p.created_by
+       LEFT JOIN groups g ON g.id = p.group_id
+       WHERE p.club_id = ?
+       ORDER BY p.created_at DESC`
+    )
+    .bind(clubId)
+    .all<TrainingPlanRow & { created_by_name: string | null; group_name: string | null }>();
+
+  if (!results) return [];
+  return results.map((p) => {
+    let canvasData: TrainingPlanCanvasData = { equipment: [] };
+    try {
+      canvasData = JSON.parse(p.canvas_data);
+    } catch {
+      canvasData = { equipment: [] };
+    }
+
+    return {
+      id: p.id,
+      clubId: p.club_id,
+      title: p.title,
+      description: p.description,
+      groupId: p.group_id,
+      groupName: p.group_name,
+      canvasData,
+      createdBy: p.created_by,
+      createdByName: p.created_by_name,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+    };
+  });
+}
+
+export async function createTrainingPlan(
+  db: D1Database,
+  input: {
+    clubId: string;
+    title: string;
+    description?: string | null;
+    groupId?: string | null;
+    canvasData: TrainingPlanCanvasData;
+    createdBy: string;
+  }
+): Promise<TrainingPlan> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const canvasJson = JSON.stringify(input.canvasData);
+  await db
+    .prepare(
+      `INSERT INTO training_plans (id, club_id, title, description, group_id, canvas_data, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      input.clubId,
+      input.title,
+      input.description ?? null,
+      input.groupId ?? null,
+      canvasJson,
+      input.createdBy,
+      now,
+      now
+    )
+    .run();
+
+  const plans = await listTrainingPlansForClub(db, input.clubId);
+  return plans.find((p) => p.id === id)!;
+}
+
+export async function updateTrainingPlan(
+  db: D1Database,
+  id: string,
+  clubId: string,
+  input: {
+    title?: string;
+    description?: string | null;
+    groupId?: string | null;
+    canvasData?: TrainingPlanCanvasData;
+  }
+): Promise<TrainingPlan> {
+  const now = new Date().toISOString();
+  const canvasJson = input.canvasData ? JSON.stringify(input.canvasData) : null;
+  await db
+    .prepare(
+      `UPDATE training_plans
+       SET title = COALESCE(?, title),
+           description = COALESCE(?, description),
+           group_id = COALESCE(?, group_id),
+           canvas_data = COALESCE(?, canvas_data),
+           updated_at = ?
+       WHERE id = ? AND club_id = ?`
+    )
+    .bind(
+      input.title ?? null,
+      input.description ?? null,
+      input.groupId ?? null,
+      canvasJson,
+      now,
+      id,
+      clubId
+    )
+    .run();
+
+  const plans = await listTrainingPlansForClub(db, clubId);
+  return plans.find((p) => p.id === id)!;
+}
+
+export async function deleteTrainingPlan(
+  db: D1Database,
+  id: string,
+  clubId: string
+): Promise<void> {
+  await db.prepare("DELETE FROM training_plans WHERE id = ? AND club_id = ?").bind(id, clubId).run();
 }

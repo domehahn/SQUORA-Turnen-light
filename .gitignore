@@ -6,3 +6,6 @@ dist/
 cf-token.txt
 .DS_Store
 *.tsbuildinfo
+coverage/
+test-results/
+playwright-report/

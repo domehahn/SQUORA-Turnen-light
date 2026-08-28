@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import type {
+  AttendanceStatsResponse,
   CapacityRequest,
   Child,
   ClubJoinRequest,
@@ -15,6 +16,7 @@ import type {
 import { useAuth } from "../../context/useAuth";
 import { calculateAgeYears, groupForAge } from "../../lib/age";
 import { capacityLevel } from "../../lib/capacity";
+import { buildDropoutWhatsAppUrl } from "../../lib/whatsapp";
 
 function formatShortDate(iso: string): string {
   const [, month, day] = iso.split("-");
@@ -103,12 +105,97 @@ function MismatchRow({
   );
 }
 
+function DropoutRiskSection({
+  childrenList,
+  groups,
+  attendanceStats,
+  suffix,
+}: {
+  childrenList: Child[];
+  groups: Group[];
+  attendanceStats: AttendanceStatsResponse | null;
+  suffix: string;
+}) {
+  if (childrenList.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/40">
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-red-800 dark:text-red-300">
+          ⚠️ Erhöhte Dropout-Wahrscheinlichkeit{suffix} ({childrenList.length})
+        </h3>
+      </div>
+      <p className="mb-3 text-xs text-red-700 dark:text-red-300/90">
+        Diese Kinder haben eine Anwesenheitsquote von 25% oder weniger. Es empfiehlt sich, bei den Eltern nachzufragen, ob das Kind weiterhin am Training teilnimmt oder austreten möchte.
+      </p>
+      <ul className="space-y-2">
+        {childrenList.map((child) => {
+          const group = groups.find((g) => g.id === child.groupId);
+          const stat = attendanceStats?.childrenStats[child.id];
+          return (
+            <li
+              key={child.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/80 p-2.5 text-sm dark:bg-slate-900/60"
+            >
+              <div>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {child.firstName} {child.lastName}
+                </span>
+                {group && (
+                  <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                    · Gruppe: {group.name}
+                  </span>
+                )}
+                {(child.emergencyContactName || child.emergencyContactPhone) && (
+                  <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                    📞 Elternkontakt: {child.emergencyContactName ?? "Eltern"}
+                    {child.emergencyContactPhone ? ` (${child.emergencyContactPhone})` : ""}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {child.emergencyContactPhone && (
+                  <a
+                    href={buildDropoutWhatsAppUrl({
+                      phone: child.emergencyContactPhone,
+                      childFirstName: child.firstName,
+                      contactName: child.emergencyContactName,
+                      quote: stat?.quote,
+                    })}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
+                  >
+                    📱 WhatsApp senden
+                  </a>
+                )}
+                <div className="text-right">
+                  <span className="inline-block rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700 dark:bg-red-900/60 dark:text-red-300">
+                    {stat?.quote !== null ? `${stat?.quote}% Quote` : "≤25%"}
+                  </span>
+                  {stat && (
+                    <p className="mt-0.5 text-[0.65rem] text-slate-500 dark:text-slate-400">
+                      {stat.presentCount} von {stat.totalRecorded} Einheiten
+                    </p>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function Dashboard() {
-  const { userName, userEmail, clubName, clubRole } = useAuth();
+  const { userName, userEmail, clubName, clubRole, isAdmin } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
+  const isJugendleiterOrAdmin = isJugendleiter || isAdmin;
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [attendanceStats, setAttendanceStats] = useState<AttendanceStatsResponse | null>(null);
   const [openSubstitutes, setOpenSubstitutes] = useState<SubstituteRequest[]>([]);
   const [upcomingSubstitutes, setUpcomingSubstitutes] = useState<SubstituteRequest[]>([]);
   const [myOverrideRequests, setMyOverrideRequests] = useState<SessionOverrideRequest[]>([]);
@@ -135,6 +222,7 @@ export default function Dashboard() {
       const [
         groupList,
         childrenList,
+        attStats,
         openSubs,
         upcomingSubs,
         myOverrides,
@@ -149,20 +237,22 @@ export default function Dashboard() {
       ] = await Promise.all([
         safe(api.get<Group[]>("/api/groups"), []),
         safe(api.get<Child[]>("/api/children"), []),
+        safe(api.get<AttendanceStatsResponse>("/api/attendance-stats"), null),
         safe(api.get<SubstituteRequest[]>("/api/substitute-requests/open"), []),
         safe(api.get<SubstituteRequest[]>("/api/substitute-requests/upcoming"), []),
         safe(api.get<SessionOverrideRequest[]>("/api/session-override-requests/mine"), []),
-        safe(isJugendleiter ? api.get<SessionOverrideRequest[]>("/api/session-override-requests/incoming") : Promise.resolve([]), []),
+        safe(isJugendleiterOrAdmin ? api.get<SessionOverrideRequest[]>("/api/session-override-requests/incoming") : Promise.resolve([]), []),
         safe(api.get<MoveRequest[]>("/api/move-requests/incoming"), []),
         safe(api.get<CapacityRequest[]>("/api/capacity-requests/incoming"), []),
-        safe(isJugendleiter ? api.get<ClubWaitlistEntry[]>("/api/club-waitlist") : Promise.resolve([]), []),
+        safe(isJugendleiterOrAdmin ? api.get<ClubWaitlistEntry[]>("/api/club-waitlist") : Promise.resolve([]), []),
         safe(api.get<PlacementRequest[]>("/api/placement-requests/incoming"), []),
-        safe(isJugendleiter ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]), []),
+        safe(isJugendleiterOrAdmin ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]), []),
         safe(api.get<MoveRequest[]>("/api/move-requests/outgoing"), []),
         safe(api.get<CapacityRequest[]>("/api/capacity-requests/outgoing"), []),
       ]);
       setGroups(groupList);
       setChildren(childrenList);
+      setAttendanceStats(attStats);
       setOpenSubstitutes(openSubs);
       setUpcomingSubstitutes(upcomingSubs);
       setMyOverrideRequests(myOverrides.filter((r) => r.status === "pending"));
@@ -177,7 +267,7 @@ export default function Dashboard() {
       setLoading(false);
     }
     load();
-  }, [isJugendleiter]);
+  }, [isJugendleiterOrAdmin]);
 
   // "Eigene Gruppen" meint hier wirklich eigene Gruppen (Besitz oder
   // Mit-Trainerschaft) - editableAsLeadership ausgeschlossen, sonst würde
@@ -186,14 +276,58 @@ export default function Dashboard() {
   const ownGroups = groups.filter((g) => g.canEdit && !g.editableAsLeadership);
   const ownGroupIds = new Set(ownGroups.map((g) => g.id));
   const allActiveChildren = children.filter((c) => c.status === "active");
-  // Kinder (aktiv)-Kachel oben: für alle Rollen nur die eigene(n) Gruppe(n) -
-  // die vereinsweite Gesamtzahl für die Jugendleitung steht separat weiter
-  // unten (konsolidiert, ohne Tabelle) bzw. je Gruppe aufgeschlüsselt in
-  // "Gruppen im Verein im Detail".
   const activeChildren = allActiveChildren.filter((c) => c.groupId && ownGroupIds.has(c.groupId));
-  // Vertretungsbörse/-kalender sind bewusst vereinsweit für ALLE Rollen -
-  // eine Turnleitung soll hier genauso sehen können, ob sie eine fremde
-  // offene Anfrage übernehmen könnte, nicht nur die eigenen Anfragen.
+
+  // Auswertung für eigene Gruppen: wirklich aktive vs. inaktive (<50% Quote) Kinder & Gesamtquote
+  const ownStats = useMemo(() => {
+    let reallyActiveCount = 0;
+    let inactiveCount = 0;
+    for (const child of activeChildren) {
+      const stat = attendanceStats?.childrenStats[child.id];
+      if (stat?.isInactive) {
+        inactiveCount++;
+      } else {
+        reallyActiveCount++;
+      }
+    }
+    let totalPresent = 0;
+    let totalRecorded = 0;
+    for (const group of ownGroups) {
+      const gQuote = attendanceStats?.groupQuotes[group.id];
+      if (gQuote) {
+        totalPresent += gQuote.presentCount;
+        totalRecorded += gQuote.totalRecorded;
+      }
+    }
+    const overallQuote = totalRecorded > 0 ? Math.round((totalPresent / totalRecorded) * 100) : null;
+    return {
+      total: activeChildren.length,
+      reallyActiveCount,
+      inactiveCount,
+      overallQuote,
+    };
+  }, [activeChildren, ownGroups, attendanceStats]);
+
+  // Auswertung vereinsweit (für Jugendleitung & Admin): wirklich aktive vs. inaktive Kinder & Gesamtquote
+  const clubStats = useMemo(() => {
+    let reallyActiveCount = 0;
+    let inactiveCount = 0;
+    for (const child of allActiveChildren) {
+      const stat = attendanceStats?.childrenStats[child.id];
+      if (stat?.isInactive) {
+        inactiveCount++;
+      } else {
+        reallyActiveCount++;
+      }
+    }
+    const overallQuote = attendanceStats?.clubQuote?.quote ?? null;
+    return {
+      total: allActiveChildren.length,
+      reallyActiveCount,
+      inactiveCount,
+      overallQuote,
+    };
+  }, [allActiveChildren, attendanceStats]);
 
   // Kinder, deren Alter nicht (mehr) zur aktuellen Gruppe passt - gleiche
   // Logik wie auf der Kinder-Seite, hier als kompakter Hinweis. Zwei
@@ -225,11 +359,26 @@ export default function Dashboard() {
     [allActiveChildren, groups]
   );
 
+  // Kinder mit erhöhter Dropout-Wahrscheinlichkeit (Quote <= 25%)
+  const highDropoutRiskOwn = useMemo(() => {
+    return activeChildren.filter((c) => {
+      const stat = attendanceStats?.childrenStats[c.id];
+      return stat && stat.quote !== null && stat.quote <= 25 && stat.totalRecorded > 0;
+    });
+  }, [activeChildren, attendanceStats]);
+
+  const highDropoutRiskAll = useMemo(() => {
+    return allActiveChildren.filter((c) => {
+      const stat = attendanceStats?.childrenStats[c.id];
+      return stat && stat.quote !== null && stat.quote <= 25 && stat.totalRecorded > 0;
+    });
+  }, [allActiveChildren, attendanceStats]);
+
   // Kapazitätswarnung: Gruppen, die voll oder überbelegt sind (gleiche
   // Schwellwerte wie auf der Gruppen-/Auslastungsseite) - Turnleiter*innen
   // sehen nur die eigene(n) Gruppe(n), Jugendleitung alle Vereinsgruppen.
   const capacityWarnings = useMemo(() => {
-    const relevantGroups = isJugendleiter ? groups : ownGroups;
+    const relevantGroups = isJugendleiterOrAdmin ? groups : ownGroups;
     return relevantGroups
       .map((group) => {
         const count = allActiveChildren.filter((c) => c.groupId === group.id).length;
@@ -238,7 +387,7 @@ export default function Dashboard() {
       .filter((g) => g.level === "warn" || g.level === "over")
       .sort((a, b) => (b.count / (b.group.maxChildren ?? 1)) - (a.count / (a.group.maxChildren ?? 1)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isJugendleiter, groups, ownGroups, allActiveChildren]);
+  }, [isJugendleiterOrAdmin, groups, ownGroups, allActiveChildren]);
 
   const todos: TodoItem[] = [
     { label: "Verschiebe-Anfragen für deine Gruppen", count: incomingMoveRequests.length, to: "/gruppen", tone: "amber" as const },
@@ -246,7 +395,7 @@ export default function Dashboard() {
     { label: "Platzvorschläge für deine Gruppen", count: incomingPlacementRequests.length, to: "/warteliste", tone: "amber" as const },
     { label: "Eigene offene Anfragen für abweichende Termine", count: myOverrideRequests.length, to: "/anwesenheit", tone: "amber" as const },
     { label: "Eigene offene Kapazitäts-Anfragen", count: myCapacityRequests.length, to: "/kinder", tone: "amber" as const },
-    ...(isJugendleiter
+    ...(isJugendleiterOrAdmin
       ? [
           { label: "Anfragen für abweichende Termine", count: incomingOverrideRequests.length, to: "/anwesenheit", tone: "amber" as const },
           { label: "Kinder auf der Warteliste", count: clubWaitlist.length, to: "/warteliste", tone: "amber" as const },
@@ -270,13 +419,13 @@ export default function Dashboard() {
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Link
               to="/gruppen"
               className="rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700"
             >
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                {isJugendleiter ? "Eigene Gruppen" : "Meine Gruppen"}
+                {isJugendleiterOrAdmin ? "Eigene Gruppen" : "Meine Gruppen"}
               </p>
               <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{ownGroups.length}</p>
             </Link>
@@ -284,8 +433,35 @@ export default function Dashboard() {
               to="/kinder"
               className="rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700"
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Kinder (aktiv)</p>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{activeChildren.length}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Kinder (wirklich aktiv)</p>
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{ownStats.reallyActiveCount}</p>
+                <span className="text-xs text-slate-400 dark:text-slate-500">/ {ownStats.total}</span>
+              </div>
+              <p className="mt-1 text-xs">
+                {ownStats.inactiveCount > 0 ? (
+                  <span className="font-medium text-amber-600 dark:text-amber-400">
+                    {ownStats.inactiveCount} inaktiv (&lt;50%)
+                    {highDropoutRiskOwn.length > 0 && (
+                      <span className="font-semibold text-red-600 dark:text-red-400 block sm:inline sm:ml-1">
+                        · {highDropoutRiskOwn.length} Dropout-Risiko (≤25%)
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400">Alle aktiv (≥50%)</span>
+                )}
+              </p>
+            </Link>
+            <Link
+              to="/anwesenheit"
+              className="rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700"
+            >
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Anwesenheitsquote</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                {ownStats.overallQuote !== null ? `${ownStats.overallQuote}%` : "–"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Eigene Gruppe(n)</p>
             </Link>
             <Link
               to="/vertretungen"
@@ -307,19 +483,43 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          {isJugendleiter && (
+          {isJugendleiterOrAdmin && (
             <div>
               <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {clubName ?? "Verein"} gesamt (alle Gruppen)
               </h3>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Gruppen im Verein</p>
                   <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{groups.length}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Kinder (aktiv)</p>
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{allActiveChildren.length}</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Kinder (wirklich aktiv)</p>
+                  <div className="flex items-baseline gap-1.5">
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{clubStats.reallyActiveCount}</p>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">/ {clubStats.total}</span>
+                  </div>
+                  <p className="mt-1 text-xs">
+                    {clubStats.inactiveCount > 0 ? (
+                      <span className="font-medium text-amber-600 dark:text-amber-400">
+                        {clubStats.inactiveCount} inaktiv (&lt;50%)
+                        {highDropoutRiskAll.length > 0 && (
+                          <span className="font-semibold text-red-600 dark:text-red-400 block sm:inline sm:ml-1">
+                            · {highDropoutRiskAll.length} Dropout-Risiko (≤25%)
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="font-medium text-emerald-600 dark:text-emerald-400">Alle aktiv (≥50%)</span>
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Gesamtquote Verein</p>
+                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                    {clubStats.overallQuote !== null ? `${clubStats.overallQuote}%` : "–"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Alle Gruppen im Verein</p>
                 </div>
               </div>
             </div>
@@ -411,9 +611,25 @@ export default function Dashboard() {
             </div>
           )}
 
-          <MismatchRow mismatched={mismatchedOwn} suffix={isJugendleiter ? " (eigene Gruppen)" : ""} />
+          <DropoutRiskSection
+            childrenList={highDropoutRiskOwn}
+            groups={groups}
+            attendanceStats={attendanceStats}
+            suffix={isJugendleiterOrAdmin ? " (eigene Gruppen)" : ""}
+          />
 
-          {isJugendleiter && <MismatchRow mismatched={mismatchedAll} suffix=" (alle Gruppen)" />}
+          {isJugendleiterOrAdmin && (
+            <DropoutRiskSection
+              childrenList={highDropoutRiskAll}
+              groups={groups}
+              attendanceStats={attendanceStats}
+              suffix=" (alle Gruppen)"
+            />
+          )}
+
+          <MismatchRow mismatched={mismatchedOwn} suffix={isJugendleiterOrAdmin ? " (eigene Gruppen)" : ""} />
+
+          {isJugendleiterOrAdmin && <MismatchRow mismatched={mismatchedAll} suffix=" (alle Gruppen)" />}
 
           {upcomingSubstitutes.length > 0 && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/40">

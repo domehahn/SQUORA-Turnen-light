@@ -13,6 +13,66 @@ export default function Profile() {
   const [sessionsInfo, setSessionsInfo] = useState<string | null>(null);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
 
+  const preferenceLabels = {
+    requests: "Anfragen und Gruppenwechsel",
+    substitutes: "Vertretungen",
+    waitlist: "Warteliste und Platzvorschläge",
+    membership: "Verein und Mitgliedschaft",
+    attendance: "Termine und Anwesenheit",
+    system: "Sonstige App-Hinweise",
+  };
+  type PreferenceKey = keyof typeof preferenceLabels;
+  const [preferences, setPreferences] = useState<Record<PreferenceKey, boolean> | null>(null);
+  const [preferenceBusy, setPreferenceBusy] = useState(false);
+  const [preferenceInfo, setPreferenceInfo] = useState<string | null>(null);
+  const [calendarActive, setCalendarActive] = useState(false);
+  const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<Record<PreferenceKey, boolean>>("/api/me/notification-preferences"),
+      api.get<{ active: boolean }>("/api/me/calendar"),
+    ]).then(([prefs, calendar]) => {
+      setPreferences(prefs);
+      setCalendarActive(calendar.active);
+    }).catch(() => undefined);
+  }, []);
+
+  async function savePreferences() {
+    if (!preferences) return;
+    setPreferenceBusy(true);
+    setPreferenceInfo(null);
+    try {
+      setPreferences(await api.put<Record<PreferenceKey, boolean>>("/api/me/notification-preferences", preferences));
+      setPreferenceInfo("E-Mail-Einstellungen gespeichert.");
+    } finally {
+      setPreferenceBusy(false);
+    }
+  }
+
+  async function createCalendarSubscription() {
+    setCalendarBusy(true);
+    try {
+      const result = await api.post<{ url: string }>("/api/me/calendar", {});
+      setCalendarActive(true);
+      setCalendarUrl(result.url);
+    } finally {
+      setCalendarBusy(false);
+    }
+  }
+
+  async function revokeCalendarSubscription() {
+    setCalendarBusy(true);
+    try {
+      await api.del("/api/me/calendar");
+      setCalendarActive(false);
+      setCalendarUrl(null);
+    } finally {
+      setCalendarBusy(false);
+    }
+  }
+
   useEffect(() => {
     api
       .get<{ id: string; current: boolean }[]>("/api/me/sessions")
@@ -233,6 +293,51 @@ export default function Profile() {
           Speichern
         </button>
       </form>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Benachrichtigungen</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          In-App-Nachrichten bleiben immer aktiv. Hier legst du fest, welche Kategorien zusätzlich per E-Mail kommen.
+          Sicherheitsmails wie Passwort-Reset sind davon nicht betroffen.
+        </p>
+        {preferences && Object.entries(preferenceLabels).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={preferences[key as PreferenceKey]}
+              onChange={(event) => setPreferences({ ...preferences, [key]: event.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+        {preferenceInfo && <p className="text-sm text-emerald-700 dark:text-emerald-400">{preferenceInfo}</p>}
+        <button type="button" onClick={savePreferences} disabled={!preferences || preferenceBusy} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+          E-Mail-Einstellungen speichern
+        </button>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Kalender-Abonnement</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Abonniere eigene und mitgeleitete Trainings sowie übernommene Vertretungen in Apple Kalender, Google Calendar oder Outlook. Der geheime Link enthält keine Kinderdaten.
+        </p>
+        {calendarUrl && (
+          <div className="space-y-2 rounded-md bg-amber-50 p-3 dark:bg-amber-950/30">
+            <p className="text-xs text-amber-800 dark:text-amber-300">Diesen Link jetzt kopieren – er wird aus Sicherheitsgründen nur einmal angezeigt.</p>
+            <input readOnly value={calendarUrl} className="w-full rounded border border-amber-300 bg-white p-2 text-xs dark:bg-slate-900" />
+            <button type="button" onClick={() => navigator.clipboard.writeText(calendarUrl)} className="rounded-md border border-amber-400 px-3 py-1.5 text-xs">Link kopieren</button>
+          </div>
+        )}
+        <p className={`text-sm ${calendarActive ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500"}`}>
+          {calendarActive ? "Abonnement aktiv." : "Noch kein Abonnement aktiv."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={createCalendarSubscription} disabled={calendarBusy} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+            {calendarActive ? "Neuen Link erzeugen" : "Abonnement erstellen"}
+          </button>
+          {calendarActive && <button type="button" onClick={revokeCalendarSubscription} disabled={calendarBusy} className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 dark:border-red-800 dark:text-red-400">Widerrufen</button>}
+        </div>
+      </div>
 
       <form
         onSubmit={handleChangePassword}

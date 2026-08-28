@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import type { Club, ClubRole } from "../../lib/types";
 import { useAuth } from "../../context/useAuth";
-import { MIN_PASSWORD_LENGTH, PASSWORD_POLICY_HINT } from "../../lib/passwordPolicy";
+import { MIN_PASSWORD_LENGTH } from "../../lib/passwordPolicy";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 
 interface AdminUser {
@@ -40,7 +40,6 @@ export default function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false);
   const [createEmail, setCreateEmail] = useState("");
   const [createName, setCreateName] = useState("");
-  const [createPassword, setCreatePassword] = useState("");
   const [createClubId, setCreateClubId] = useState("");
   const [createClubRole, setCreateClubRole] = useState<ClubRole>("member");
   const [createIsAdmin, setCreateIsAdmin] = useState(false);
@@ -145,6 +144,20 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleResendSetup(u: AdminUser) {
+    setError(null);
+    setInfo(null);
+    setBusyId(u.id);
+    try {
+      await api.post(`/api/admin/users/${u.id}/resend-setup`, {});
+      setInfo(`Aktivierungs-E-Mail an ${u.email} erneut gesendet.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler beim Senden der Aktivierungs-E-Mail");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -154,16 +167,14 @@ export default function AdminUsers() {
       await api.post("/api/admin/users", {
         email: createEmail,
         name: createName || null,
-        password: createPassword,
         clubId: createClubId || null,
         clubRole: createClubRole,
         isAdmin: createIsAdmin,
       });
-      setInfo(`Account für ${createEmail} angelegt.`);
+      setInfo(`Account für ${createEmail} angelegt. Eine Aktivierungs-E-Mail wurde gesendet.`);
       setShowCreate(false);
       setCreateEmail("");
       setCreateName("");
-      setCreatePassword("");
       setCreateClubId("");
       setCreateClubRole("member");
       setCreateIsAdmin(false);
@@ -181,7 +192,7 @@ export default function AdminUsers() {
         <div>
           <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Admin – Nutzer*innen</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Alle Accounts vereinsübergreifend: Verein, Rolle und Admin-Status ändern, Passwort zurücksetzen oder
+            Alle Accounts vereinsübergreifend: Verein, Rolle und Admin-Status ändern, Aktivierungs-E-Mail senden oder
             Account löschen.
           </p>
         </div>
@@ -198,6 +209,9 @@ export default function AdminUsers() {
           onSubmit={handleCreate}
           className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
         >
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Der/die neue Nutzer*in erhält eine Aktivierungs-E-Mail mit einem Einmal-Link (60 Min. gültig), um ein eigenes Passwort festzulegen.
+          </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <FloatingInput
               label="E-Mail *"
@@ -207,18 +221,6 @@ export default function AdminUsers() {
               onChange={(e) => setCreateEmail(e.target.value)}
             />
             <FloatingInput label="Name" type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} />
-            <div>
-              <FloatingInput
-                label={`Passwort * (mind. ${MIN_PASSWORD_LENGTH} Zeichen)`}
-                type="password"
-                required
-                minLength={MIN_PASSWORD_LENGTH}
-                autoComplete="new-password"
-                value={createPassword}
-                onChange={(e) => setCreatePassword(e.target.value)}
-              />
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{PASSWORD_POLICY_HINT}</p>
-            </div>
             <FloatingSelect label="Verein" value={createClubId} onChange={(e) => setCreateClubId(e.target.value)}>
               <option value="">– kein Verein –</option>
               {clubs.map((c) => (
@@ -332,6 +334,14 @@ export default function AdminUsers() {
                   <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{formatLastLogin(u.lastLoginAt)}</td>
                   <td className="px-4 py-2">
                     <div className="flex flex-wrap justify-end gap-1.5">
+                      <button
+                        onClick={() => handleResendSetup(u)}
+                        disabled={busyId === u.id}
+                        title="Schickt dem/der Nutzer*in einen neuen Aktivierungs-Link per E-Mail"
+                        className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-200 disabled:opacity-50 dark:bg-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900"
+                      >
+                        Aktivierung senden
+                      </button>
                       <button
                         onClick={() => handleResetPassword(u)}
                         disabled={busyId === u.id}

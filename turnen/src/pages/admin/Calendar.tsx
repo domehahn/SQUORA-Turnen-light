@@ -107,6 +107,7 @@ export default function Calendar() {
                         </p>
                       )}
                       {g.location && <p className="break-words opacity-80">{g.location}</p>}
+                      {g.ownerName && <p className="break-words font-medium opacity-90">👤 {g.ownerName}</p>}
                     </div>
                   ))}
                   {byWeekday[day].length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">–</p>}
@@ -122,7 +123,10 @@ export default function Calendar() {
               </h3>
               <ul className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
                 {unscheduled.map((g) => (
-                  <li key={g.id}>{g.name}</li>
+                  <li key={g.id} className="flex items-center gap-2">
+                    <span>{g.name}</span>
+                    {g.ownerName && <span className="text-xs text-slate-400 dark:text-slate-500">(👤 {g.ownerName})</span>}
+                  </li>
                 ))}
               </ul>
             </div>

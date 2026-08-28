@@ -76,7 +76,9 @@ großzügigere der beiden Berechtigungen. Details siehe [Berechtigungen](#berech
 - Alle Druckseiten sind unabhängig vom App-Darkmode immer hell/kontrastreich gestaltet, im SQUORA-Formularstil (Logo, blaue Tabellenköpfe).
 
 ### Benachrichtigungen & Nachvollziehbarkeit
-- In-App-Postfach plus E-Mail-Benachrichtigung (Resend) bei Vertretungen, Genehmigungs-Anfragen, Wartelisten-Vorschlägen, Beitrittsanfragen etc.
+- In-App-Postfach plus konfigurierbare E-Mail-Benachrichtigung (Resend) bei Vertretungen, Genehmigungs-Anfragen, Wartelisten-Vorschlägen, Beitrittsanfragen etc.; Zustellstatus, signierte Webhooks und begrenzter Retry sind im Admin-Betriebsbereich sichtbar.
+- Vereinsweite In-App-Meldungen informieren alle Mitglieder darüber, welches Kind neu hinzugefügt, verschoben, als ausgetreten markiert oder gelöscht wurde, sowie über neue Vertretungsanfragen und tatsächlich geänderte Termine. Diese Vereinsmeldungen erzeugen keine zusätzlichen Rundmails.
+- Widerrufbares iCal-Abonnement für eigene/mitgeleitete Trainings und übernommene Vertretungen, Saisonwechsel-Assistent für die Jugendleitung und App-Level-Monitoring für Admins.
 - **Verlauf/Audit-Log**: wer hat wann was geändert. Turnleiter*innen sehen nur Einträge zu ihrer eigenen Gruppe, die Jugendleitung den gesamten Verein.
 - **Suche** über Kinder und Gruppen.
 

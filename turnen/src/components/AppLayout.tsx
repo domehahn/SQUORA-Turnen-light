@@ -6,6 +6,8 @@ import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
 import { GlobalSearch } from "./GlobalSearch";
 import { AdminClubSwitcher } from "./AdminClubSwitcher";
+import { IdleTimerProvider } from "../context/IdleTimerContext";
+import { SessionTimerBadge } from "./SessionTimerBadge";
 import { IdleLockOverlay } from "./IdleLockOverlay";
 import { MfaEnforcementOverlay } from "./MfaEnforcementOverlay";
 import { PasswordChangeRequiredOverlay } from "./PasswordChangeRequiredOverlay";
@@ -26,6 +28,9 @@ const NAV_GROUPS: {
       { to: "/kinder", label: "Kinder" },
       { to: "/anwesenheit", label: "Anwesenheit" },
       { to: "/kalender", label: "Kalender" },
+      { to: "/events", label: "Events" },
+      { to: "/geraete", label: "Gerätemelder" },
+      { to: "/pinnwand", label: "Schwarzes Brett" },
     ],
   },
   {
@@ -35,6 +40,8 @@ const NAV_GROUPS: {
       { to: "/auslastung", label: "Auslastung" },
       { to: "/vertretungen", label: "Vertretungen" },
       { to: "/warteliste", label: "Warteliste" },
+      { to: "/turnplaner", label: "Turnplaner" },
+      { to: "/saisonwechsel", label: "Saisonwechsel", jugendleiterOnly: true },
     ],
   },
   {
@@ -58,6 +65,7 @@ const NAV_GROUPS: {
       { to: "/admin/vereine", label: "Admin: Vereine", adminOnly: true },
       { to: "/admin/nutzer", label: "Admin: Nutzer*innen", adminOnly: true },
       { to: "/admin/verlauf", label: "Admin: Verlauf", adminOnly: true },
+      { to: "/admin/betrieb", label: "Admin: Betrieb", adminOnly: true },
     ],
   },
 ];
@@ -101,53 +109,56 @@ export function AppLayout() {
   );
 
   return (
-    <div className="min-h-screen">
-      <IdleLockOverlay />
-      {passwordChangeRequired ? <PasswordChangeRequiredOverlay /> : mfaSetupRequired && <MfaEnforcementOverlay />}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setNavOpen((prev) => !prev)}
-              aria-label="Navigation öffnen"
-              className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:hidden"
-            >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                <path fillRule="evenodd" d="M2 5h16v1.5H2V5Zm0 4.25h16v1.5H2v-1.5ZM2 13.5h16V15H2v-1.5Z" clipRule="evenodd" />
-              </svg>
-            </button>
-            <SquoraBrand />
+    <IdleTimerProvider>
+      <div className="min-h-screen">
+        <IdleLockOverlay />
+        {passwordChangeRequired ? <PasswordChangeRequiredOverlay /> : mfaSetupRequired && <MfaEnforcementOverlay />}
+        <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setNavOpen((prev) => !prev)}
+                aria-label="Navigation öffnen"
+                className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:hidden"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path fillRule="evenodd" d="M2 5h16v1.5H2V5Zm0 4.25h16v1.5H2v-1.5ZM2 13.5h16V15H2v-1.5Z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <SquoraBrand />
+            </div>
+            <div className="flex items-center gap-2">
+              {isAdmin && <AdminClubSwitcher />}
+              <GlobalSearch />
+              <NotificationBell />
+              <SessionTimerBadge />
+              <ThemeToggle />
+              <UserMenu />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {isAdmin && <AdminClubSwitcher />}
-            <GlobalSearch />
-            <NotificationBell />
-            <ThemeToggle />
-            <UserMenu />
-          </div>
+        </header>
+
+        <div className="mx-auto flex max-w-6xl gap-6 px-4 py-6">
+          {/* Mobil: ausklappbare Overlay-Navigation samt Backdrop; ab sm:
+              feste Seitenspalte statt der bisherigen, mit 13 Punkten
+              überladenen horizontalen Zeile. */}
+          {navOpen && (
+            <div className="fixed inset-0 z-30 bg-black/30 sm:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
+          )}
+          <nav
+            className={`fixed inset-y-0 left-0 z-40 w-64 overflow-y-auto border-r border-slate-200 bg-white p-4 transition-transform dark:border-slate-800 dark:bg-slate-900 sm:static sm:z-auto sm:w-48 sm:shrink-0 sm:translate-x-0 sm:border-r-0 sm:bg-transparent sm:p-0 sm:dark:bg-transparent ${
+              navOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
+          >
+            {sidebarContent}
+          </nav>
+
+          <main className="min-w-0 flex-1 pb-6">
+            <Outlet />
+          </main>
         </div>
-      </header>
-
-      <div className="mx-auto flex max-w-6xl gap-6 px-4 py-6">
-        {/* Mobil: ausklappbare Overlay-Navigation samt Backdrop; ab sm:
-            feste Seitenspalte statt der bisherigen, mit 13 Punkten
-            überladenen horizontalen Zeile. */}
-        {navOpen && (
-          <div className="fixed inset-0 z-30 bg-black/30 sm:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
-        )}
-        <nav
-          className={`fixed inset-y-0 left-0 z-40 w-64 overflow-y-auto border-r border-slate-200 bg-white p-4 transition-transform dark:border-slate-800 dark:bg-slate-900 sm:static sm:z-auto sm:w-48 sm:shrink-0 sm:translate-x-0 sm:border-r-0 sm:bg-transparent sm:p-0 sm:dark:bg-transparent ${
-            navOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          {sidebarContent}
-        </nav>
-
-        <main className="min-w-0 flex-1 pb-6">
-          <Outlet />
-        </main>
       </div>
-    </div>
+    </IdleTimerProvider>
   );
 }

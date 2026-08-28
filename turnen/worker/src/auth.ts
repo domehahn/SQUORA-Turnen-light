@@ -181,3 +181,29 @@ export async function verifyPasswordResetToken(token: string, secret: string): P
   }
   return { userId: payload.sub as string, jti: payload.jti, expiresAt: payload.exp };
 }
+
+// Account-Setup Tokens (Einmalige Account-Aktivierung ohne Klartext-Passwort-Mail, P1 Hardening)
+const ACCOUNT_SETUP_LIFETIME_SECONDS = 60 * 60; // 60 Minuten Gültigkeit
+
+export interface AccountSetupTokenPayload {
+  userId: string;
+  jti: string;
+  expiresAt: number;
+}
+
+export async function signAccountSetupToken(userId: string, secret: string): Promise<string> {
+  return new SignJWT({ typ: "account_setup", jti: crypto.randomUUID() })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime(`${ACCOUNT_SETUP_LIFETIME_SECONDS}s`)
+    .sign(new TextEncoder().encode(secret));
+}
+
+export async function verifyAccountSetupToken(token: string, secret: string): Promise<AccountSetupTokenPayload> {
+  const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+  if (payload.typ !== "account_setup" || typeof payload.jti !== "string" || typeof payload.exp !== "number") {
+    throw new Error("Kein Account-Setup-Token");
+  }
+  return { userId: payload.sub as string, jti: payload.jti, expiresAt: payload.exp };
+}
