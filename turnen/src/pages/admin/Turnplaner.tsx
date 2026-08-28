@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { EquipmentIcon } from "../../components/EquipmentIcon";
 import { api } from "../../lib/api";
 import type { Group, PlacedEquipment, TrainingPlan } from "../../lib/types";
 
@@ -404,7 +405,7 @@ export default function Turnplaner() {
               const isDragging = item.id === draggingItemId;
               const width = tmpl?.defaultWidth ?? 12;
               const height = tmpl?.defaultHeight ?? 8;
-              const colorClass = tmpl?.colorClass ?? "bg-slate-200 border-slate-500 text-slate-900";
+              const displayLabel = item.label || tmpl?.name || "Eigenes Material";
 
               return (
                 <div
@@ -424,18 +425,31 @@ export default function Turnplaner() {
                     top: `${item.y}%`,
                     width: `${width}%`,
                     height: `${height}%`,
-                    transform: `rotate(${item.rotation}deg)`,
                   }}
-                  className={`absolute flex touch-none flex-col items-center justify-center rounded border-2 p-1 text-center shadow-sm ${colorClass} ${
-                    isDragging ? "z-30 cursor-grabbing" : "cursor-grab transition-all"
-                  } ${
-                    isSelected ? "ring-4 ring-emerald-500 ring-offset-1 z-20 scale-105" : "hover:z-10 hover:opacity-90"
-                  }`}
+                  title={item.notes ? `${displayLabel} – ${item.notes}` : displayLabel}
+                  className={`absolute flex touch-none items-center justify-center overflow-visible text-center ${
+                    isDragging ? "z-30 cursor-grabbing" : "cursor-grab"
+                  } ${isSelected ? "z-20" : "hover:z-10"}`}
                 >
-                  <span className="text-xs font-bold leading-tight">
-                    {tmpl?.icon} {item.label || tmpl?.name}
+                  <span
+                    data-testid="turnplaner-equipment-icon"
+                    style={{ transform: `rotate(${item.rotation}deg)` }}
+                    className={`flex shrink-0 items-center justify-center transition-[filter,transform] ${
+                      isSelected
+                        ? "text-emerald-800 [filter:drop-shadow(0_0_1px_white)_drop-shadow(0_0_5px_#10b981)] dark:text-emerald-300"
+                        : "text-slate-800 [filter:drop-shadow(0_1px_1px_rgba(255,255,255,0.9))] hover:scale-110 dark:text-slate-100"
+                    }`}
+                  >
+                    <EquipmentIcon type={item.type} className="size-12 sm:size-14" />
                   </span>
-                  {item.notes && <span className="text-[0.6rem] opacity-75 truncate max-w-full">ℹ️ {item.notes}</span>}
+                  <span
+                    data-testid="turnplaner-equipment-label"
+                    className="pointer-events-none absolute left-1/2 top-[calc(50%+1.8rem)] w-max max-w-40 -translate-x-1/2 truncate text-[0.65rem] font-bold leading-tight text-slate-950 dark:text-white"
+                    style={{ textShadow: "0 1px 2px white, 0 0 4px white" }}
+                  >
+                    {displayLabel}
+                    {item.notes && <span className="ml-1" aria-label="Notiz vorhanden">ℹ️</span>}
+                  </span>
                 </div>
               );
             })}
@@ -471,10 +485,11 @@ export default function Turnplaner() {
               {EQUIPMENT_TEMPLATES.filter((t) => t.category === activePaletteCategory).map((tmpl) => (
                 <button
                   key={tmpl.type}
+                  data-testid={`turnplaner-template-${tmpl.type}`}
                   onClick={() => addEquipmentToCanvas(tmpl)}
                   className="flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-emerald-400 hover:bg-emerald-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-emerald-600 dark:hover:bg-emerald-950/40"
                 >
-                  <span>{tmpl.icon}</span>
+                  <EquipmentIcon type={tmpl.type} className="size-5 shrink-0" />
                   <span>{tmpl.name}</span>
                 </button>
               ))}
@@ -698,6 +713,7 @@ export default function Turnplaner() {
                 const tmpl = EQUIPMENT_TEMPLATES.find((t) => t.type === item.type);
                 const width = tmpl?.defaultWidth ?? 12;
                 const height = tmpl?.defaultHeight ?? 8;
+                const displayLabel = item.label || tmpl?.name || "Eigenes Material";
                 return (
                   <div
                     key={item.id}
@@ -706,12 +722,19 @@ export default function Turnplaner() {
                       top: `${item.y}%`,
                       width: `${width}%`,
                       height: `${height}%`,
-                      transform: `rotate(${item.rotation}deg)`,
                     }}
-                    className="absolute flex flex-col items-center justify-center border-2 border-slate-800 bg-white p-1 text-center font-bold text-xs"
+                    className="absolute flex items-center justify-center overflow-visible text-center"
                   >
-                    <span>{tmpl?.icon} {item.label || tmpl?.name}</span>
-                    {item.notes && <span className="text-[0.65rem] font-normal text-slate-600">ℹ️ {item.notes}</span>}
+                    <span
+                      style={{ transform: `rotate(${item.rotation}deg)` }}
+                      className="flex items-center justify-center text-slate-900"
+                    >
+                      <EquipmentIcon type={item.type} className="size-12" />
+                    </span>
+                    <span className="absolute left-1/2 top-[calc(50%+1.55rem)] w-max max-w-36 -translate-x-1/2 truncate text-[0.6rem] font-bold leading-tight text-slate-900">
+                      {displayLabel}
+                      {item.notes && " ℹ️"}
+                    </span>
                   </div>
                 );
               })}
