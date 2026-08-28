@@ -5,4 +5,44 @@ test.describe("Turnplaner & Hallen-Aufbauplaner UI Flow", () => {
     await page.goto("/turnplaner");
     await expect(page).toHaveURL(/\/login/, { timeout: 10000 });
   });
+
+  test("Geräte lassen sich mit der Maus auf der Hallenfläche verschieben", async ({ page }) => {
+    await page.route("**/api/me", (route) =>
+      route.fulfill({
+        json: {
+          id: "user-1",
+          email: "trainer@example.com",
+          name: "Test Trainer",
+          clubId: "club-1",
+          clubName: "Testverein",
+          clubRole: "trainer",
+          isAdmin: false,
+          mfaSetupRequired: false,
+          passwordChangeRequired: false,
+        },
+      })
+    );
+    await page.route("**/api/training-plans", (route) => route.fulfill({ json: [] }));
+    await page.route("**/api/groups", (route) => route.fulfill({ json: [] }));
+    await page.route("**/api/holidays/custom", (route) => route.fulfill({ json: [] }));
+    await page.route("**/api/notifications**", (route) => route.fulfill({ json: [] }));
+
+    await page.goto("/turnplaner");
+    await expect(page.getByTestId("turnplaner-hall-floor")).toBeVisible();
+    await page.getByRole("button", { name: "+ Neuer Hallenaufbau" }).click();
+
+    const equipment = page.locator('[data-testid^="turnplaner-equipment-"]').first();
+    const originalLeft = await equipment.evaluate((element) => (element as HTMLElement).style.left);
+    const originalTop = await equipment.evaluate((element) => (element as HTMLElement).style.top);
+    const box = await equipment.boundingBox();
+    expect(box).not.toBeNull();
+
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 120, box!.y + box!.height / 2 + 60, { steps: 5 });
+    await page.mouse.up();
+
+    await expect.poll(() => equipment.evaluate((element) => (element as HTMLElement).style.left)).not.toBe(originalLeft);
+    await expect.poll(() => equipment.evaluate((element) => (element as HTMLElement).style.top)).not.toBe(originalTop);
+  });
 });
