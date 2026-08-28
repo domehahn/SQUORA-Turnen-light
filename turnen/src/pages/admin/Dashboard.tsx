@@ -18,6 +18,10 @@ import { calculateAgeYears, groupForAge } from "../../lib/age";
 import { capacityLevel } from "../../lib/capacity";
 import { buildDropoutWhatsAppUrl } from "../../lib/whatsapp";
 
+const DROPOUT_LOOKBACK_DAYS = 90;
+const DROPOUT_MIN_RECORDED = 4;
+const DROPOUT_MAX_QUOTE = 25;
+
 function formatShortDate(iso: string): string {
   const [, month, day] = iso.split("-");
   return `${day}.${month}.`;
@@ -126,7 +130,7 @@ function DropoutRiskSection({
         </h3>
       </div>
       <p className="mb-3 text-xs text-red-700 dark:text-red-300/90">
-        Diese Kinder haben eine Anwesenheitsquote von 25% oder weniger. Es empfiehlt sich, bei den Eltern nachzufragen, ob das Kind weiterhin am Training teilnimmt oder austreten möchte.
+        Diese Kinder waren in den letzten {DROPOUT_LOOKBACK_DAYS} Tagen bei mindestens {DROPOUT_MIN_RECORDED} erfassten Einheiten zu höchstens {DROPOUT_MAX_QUOTE}% anwesend. Es empfiehlt sich, bei den Eltern nachzufragen, ob das Kind weiterhin am Training teilnimmt oder austreten möchte.
       </p>
       <ul className="space-y-2">
         {childrenList.map((child) => {
@@ -196,6 +200,7 @@ export default function Dashboard() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStatsResponse | null>(null);
+  const [dropoutAttendanceStats, setDropoutAttendanceStats] = useState<AttendanceStatsResponse | null>(null);
   const [openSubstitutes, setOpenSubstitutes] = useState<SubstituteRequest[]>([]);
   const [upcomingSubstitutes, setUpcomingSubstitutes] = useState<SubstituteRequest[]>([]);
   const [myOverrideRequests, setMyOverrideRequests] = useState<SessionOverrideRequest[]>([]);
@@ -223,6 +228,7 @@ export default function Dashboard() {
         groupList,
         childrenList,
         attStats,
+        dropoutStats,
         openSubs,
         upcomingSubs,
         myOverrides,
@@ -238,6 +244,7 @@ export default function Dashboard() {
         safe(api.get<Group[]>("/api/groups"), []),
         safe(api.get<Child[]>("/api/children"), []),
         safe(api.get<AttendanceStatsResponse>("/api/attendance-stats"), null),
+        safe(api.get<AttendanceStatsResponse>(`/api/attendance-stats?days=${DROPOUT_LOOKBACK_DAYS}`), null),
         safe(api.get<SubstituteRequest[]>("/api/substitute-requests/open"), []),
         safe(api.get<SubstituteRequest[]>("/api/substitute-requests/upcoming"), []),
         safe(api.get<SessionOverrideRequest[]>("/api/session-override-requests/mine"), []),
@@ -253,6 +260,7 @@ export default function Dashboard() {
       setGroups(groupList);
       setChildren(childrenList);
       setAttendanceStats(attStats);
+      setDropoutAttendanceStats(dropoutStats);
       setOpenSubstitutes(openSubs);
       setUpcomingSubstitutes(upcomingSubs);
       setMyOverrideRequests(myOverrides.filter((r) => r.status === "pending"));
@@ -359,20 +367,21 @@ export default function Dashboard() {
     [allActiveChildren, groups]
   );
 
-  // Kinder mit erhöhter Dropout-Wahrscheinlichkeit (Quote <= 25%)
+  // Kinder mit erhöhter Dropout-Wahrscheinlichkeit: rollierende 90 Tage,
+  // mindestens vier erfasste Einheiten und höchstens 25 % Anwesenheit.
   const highDropoutRiskOwn = useMemo(() => {
     return activeChildren.filter((c) => {
-      const stat = attendanceStats?.childrenStats[c.id];
-      return stat && stat.quote !== null && stat.quote <= 25 && stat.totalRecorded > 0;
+      const stat = dropoutAttendanceStats?.childrenStats[c.id];
+      return stat && stat.quote !== null && stat.quote <= DROPOUT_MAX_QUOTE && stat.totalRecorded >= DROPOUT_MIN_RECORDED;
     });
-  }, [activeChildren, attendanceStats]);
+  }, [activeChildren, dropoutAttendanceStats]);
 
   const highDropoutRiskAll = useMemo(() => {
     return allActiveChildren.filter((c) => {
-      const stat = attendanceStats?.childrenStats[c.id];
-      return stat && stat.quote !== null && stat.quote <= 25 && stat.totalRecorded > 0;
+      const stat = dropoutAttendanceStats?.childrenStats[c.id];
+      return stat && stat.quote !== null && stat.quote <= DROPOUT_MAX_QUOTE && stat.totalRecorded >= DROPOUT_MIN_RECORDED;
     });
-  }, [allActiveChildren, attendanceStats]);
+  }, [allActiveChildren, dropoutAttendanceStats]);
 
   // Kapazitätswarnung: Gruppen, die voll oder überbelegt sind (gleiche
   // Schwellwerte wie auf der Gruppen-/Auslastungsseite) - Turnleiter*innen
@@ -614,7 +623,7 @@ export default function Dashboard() {
           <DropoutRiskSection
             childrenList={highDropoutRiskOwn}
             groups={groups}
-            attendanceStats={attendanceStats}
+            attendanceStats={dropoutAttendanceStats}
             suffix={isJugendleiterOrAdmin ? " (eigene Gruppen)" : ""}
           />
 
@@ -622,7 +631,7 @@ export default function Dashboard() {
             <DropoutRiskSection
               childrenList={highDropoutRiskAll}
               groups={groups}
-              attendanceStats={attendanceStats}
+              attendanceStats={dropoutAttendanceStats}
               suffix=" (alle Gruppen)"
             />
           )}

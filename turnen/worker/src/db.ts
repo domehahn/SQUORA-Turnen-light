@@ -1129,8 +1129,11 @@ export interface AttendanceStatsResponse {
 export async function getAttendanceStats(
   db: D1Database,
   userId: string,
-  clubId: string | null
+  clubId: string | null,
+  fromDate?: string,
+  toDate?: string
 ): Promise<AttendanceStatsResponse> {
+  const dateFilter = fromDate && toDate ? " AND s.session_date BETWEEN ? AND ?" : "";
   const { results } = clubId
     ? await db
         .prepare(
@@ -1140,10 +1143,10 @@ export async function getAttendanceStats(
            FROM attendance_entries e
            JOIN attendance_sessions s ON s.id = e.session_id
            JOIN groups g ON g.id = s.group_id
-           WHERE (s.cancelled IS NULL OR s.cancelled = 0) AND g.club_id = ?
+           WHERE (s.cancelled IS NULL OR s.cancelled = 0) AND g.club_id = ?${dateFilter}
            GROUP BY s.group_id, e.child_id`
         )
-        .bind(clubId)
+        .bind(...(fromDate && toDate ? [clubId, fromDate, toDate] : [clubId]))
         .all<{ groupId: string; childId: string; totalRecorded: number; presentCount: number }>()
     : await db
         .prepare(
@@ -1155,9 +1158,10 @@ export async function getAttendanceStats(
            JOIN groups g ON g.id = s.group_id
            WHERE (s.cancelled IS NULL OR s.cancelled = 0)
              AND (g.owner_id = ?1 OR g.id IN (SELECT group_id FROM group_co_leaders WHERE user_id = ?1))
+             ${dateFilter}
            GROUP BY s.group_id, e.child_id`
         )
-        .bind(userId)
+        .bind(...(fromDate && toDate ? [userId, fromDate, toDate] : [userId]))
         .all<{ groupId: string; childId: string; totalRecorded: number; presentCount: number }>();
 
   const childrenStats: Record<string, AttendanceChildStat> = {};
@@ -1169,12 +1173,12 @@ export async function getAttendanceStats(
     const existing = childrenStats[row.childId] || { presentCount: 0, totalRecorded: 0, quote: null, isInactive: false };
     const newPresent = existing.presentCount + row.presentCount;
     const newRecorded = existing.totalRecorded + row.totalRecorded;
-    const quote = newRecorded > 0 ? newPresent / newRecorded : null;
+    const ratio = newRecorded > 0 ? newPresent / newRecorded : null;
     childrenStats[row.childId] = {
       presentCount: newPresent,
       totalRecorded: newRecorded,
-      quote,
-      isInactive: newRecorded > 0 && quote !== null && quote < 0.5,
+      quote: ratio === null ? null : Math.round(ratio * 100),
+      isInactive: ratio !== null && ratio < 0.5,
     };
 
     const grp = groupRaw[row.groupId] || { presentCount: 0, totalRecorded: 0 };

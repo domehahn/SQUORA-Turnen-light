@@ -4775,7 +4775,21 @@ async function canReadAttendance(
 }
 
 app.get("/api/attendance-stats", requireAuth, async (c) => {
-  const stats = await db.getAttendanceStats(c.env.DB, c.get("userId"), c.get("clubId"));
+  const daysRaw = c.req.query("days");
+  let fromDate: string | undefined;
+  let toDate: string | undefined;
+  if (daysRaw !== undefined) {
+    const days = Number(daysRaw);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      return c.json({ error: "Ungültiger Auswertungszeitraum" }, 400);
+    }
+    const today = new Date();
+    const firstDay = new Date(today);
+    firstDay.setUTCDate(firstDay.getUTCDate() - (days - 1));
+    fromDate = firstDay.toISOString().slice(0, 10);
+    toDate = today.toISOString().slice(0, 10);
+  }
+  const stats = await db.getAttendanceStats(c.env.DB, c.get("userId"), c.get("clubId"), fromDate, toDate);
   return c.json(stats);
 });
 
