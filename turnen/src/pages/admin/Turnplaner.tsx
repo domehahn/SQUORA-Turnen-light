@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api } from "../../lib/api";
 import type { Group, PlacedEquipment, TrainingPlan } from "../../lib/types";
 
@@ -63,6 +63,19 @@ const EQUIPMENT_TEMPLATES: EquipmentTemplate[] = [
   { type: "balancekissen", name: "Balance-Kissen / Wackelbrett", category: "kleingeraete", icon: "🛹", defaultWidth: 6, defaultHeight: 6, colorClass: "bg-sky-200 border-sky-500 text-sky-900" },
 ];
 
+interface EquipmentDragState {
+  itemId: string;
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  height: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 function formatDateDisplay(isoDate: string): string {
   if (!isoDate) return "";
   const d = new Date(isoDate);
@@ -70,6 +83,8 @@ function formatDateDisplay(isoDate: string): string {
 }
 
 export default function Turnplaner() {
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef<EquipmentDragState | null>(null);
   const [plans, setPlans] = useState<TrainingPlan[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +97,7 @@ export default function Turnplaner() {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [placedItems, setPlacedItems] = useState<PlacedEquipment[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [generalNotes, setGeneralNotes] = useState("");
 
   const [saving, setSaving] = useState(false);
@@ -176,6 +192,59 @@ export default function Turnplaner() {
     if (!selectedItemId) return;
     setPlacedItems((prev) => prev.filter((item) => item.id !== selectedItemId));
     setSelectedItemId(null);
+  }
+
+  function handleEquipmentPointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+    item: PlacedEquipment,
+    width: number,
+    height: number
+  ) {
+    if ((event.pointerType === "mouse" && event.button !== 0) || !canvasRef.current) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const canvasRect = canvasRef.current.getBoundingClientRect();
+    const pointerX = ((event.clientX - canvasRect.left) / canvasRect.width) * 100;
+    const pointerY = ((event.clientY - canvasRect.top) / canvasRect.height) * 100;
+
+    dragStateRef.current = {
+      itemId: item.id,
+      pointerId: event.pointerId,
+      offsetX: pointerX - item.x,
+      offsetY: pointerY - item.y,
+      width,
+      height,
+    };
+    setSelectedItemId(item.id);
+    setDraggingItemId(item.id);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleEquipmentPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const dragState = dragStateRef.current;
+    const canvas = canvasRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId || !canvas) return;
+
+    event.preventDefault();
+    const canvasRect = canvas.getBoundingClientRect();
+    const pointerX = ((event.clientX - canvasRect.left) / canvasRect.width) * 100;
+    const pointerY = ((event.clientY - canvasRect.top) / canvasRect.height) * 100;
+    const x = clamp(pointerX - dragState.offsetX, 0, 100 - dragState.width);
+    const y = clamp(pointerY - dragState.offsetY, 0, 100 - dragState.height);
+
+    setPlacedItems((currentItems) =>
+      currentItems.map((currentItem) =>
+        currentItem.id === dragState.itemId ? { ...currentItem, x: Math.round(x), y: Math.round(y) } : currentItem
+      )
+    );
+  }
+
+  function finishEquipmentDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (dragStateRef.current?.pointerId !== event.pointerId) return;
+    dragStateRef.current = null;
+    setDraggingItemId(null);
   }
 
   async function handleSavePlan() {
@@ -303,22 +372,36 @@ export default function Turnplaner() {
           </div>
 
           {/* 2D Gymnasium Hall Canvas */}
-          <div className="relative w-full rounded-lg border-2 border-dashed border-slate-300 bg-amber-50/40 p-4 shadow-inner dark:border-slate-700 dark:bg-slate-950 min-h-[380px] overflow-hidden select-none">
-            {/* Hall Grid lines */}
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
+          <div
+            ref={canvasRef}
+            data-testid="turnplaner-canvas"
+            className="relative min-h-[380px] w-full touch-none select-none overflow-hidden rounded-lg border-2 border-slate-400 bg-[#d8aa6b] p-4 shadow-inner dark:border-slate-700 dark:bg-[#8c6038]"
+          >
+            {/* Sporthallenboden mit Holzplanken und typischen Spielfeldlinien */}
+            <div data-testid="turnplaner-hall-floor" className="pointer-events-none absolute inset-0" aria-hidden="true">
+              <div className="absolute inset-0 bg-[repeating-linear-gradient(90deg,transparent_0,transparent_47px,rgba(86,51,22,0.14)_48px,transparent_49px),repeating-linear-gradient(0deg,rgba(255,255,255,0.045)_0,rgba(255,255,255,0.045)_3px,transparent_3px,transparent_12px)]" />
+              <div className="absolute inset-[7%] rounded-sm border-2 border-white/75 shadow-[0_0_0_1px_rgba(15,23,42,0.08)]" />
+              <div className="absolute bottom-[7%] left-1/2 top-[7%] border-l-2 border-white/75" />
+              <div className="absolute left-1/2 top-1/2 aspect-square h-[30%] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/75" />
+              <div className="absolute inset-x-[19%] inset-y-[12%] border-2 border-blue-600/55 dark:border-blue-400/55" />
+              <div className="absolute left-[7%] top-1/2 h-[46%] w-[15%] -translate-y-1/2 rounded-r-full border-2 border-l-0 border-red-700/55 dark:border-red-400/55" />
+              <div className="absolute right-[7%] top-1/2 h-[46%] w-[15%] -translate-y-1/2 rounded-l-full border-2 border-r-0 border-red-700/55 dark:border-red-400/55" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_55%,rgba(55,32,14,0.14)_100%)]" />
+            </div>
 
             {/* Hall Labels */}
-            <div className="absolute top-2 left-3 text-[0.65rem] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">
+            <div className="pointer-events-none absolute top-2 left-3 rounded bg-white/70 px-1.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-600 shadow-sm backdrop-blur-[1px] dark:bg-slate-900/65 dark:text-slate-300">
               🏋️‍♂️ Turnhalle · Geräte-Aufbaufläche
             </div>
-            <div className="absolute bottom-2 right-3 text-[0.65rem] text-slate-400 dark:text-slate-600 italic">
-              Klicke auf Geräte auf der Fläche, um sie zu drehen oder zu verschieben.
+            <div className="pointer-events-none absolute bottom-2 right-3 rounded bg-white/70 px-1.5 py-0.5 text-[0.65rem] italic text-slate-600 shadow-sm backdrop-blur-[1px] dark:bg-slate-900/65 dark:text-slate-300">
+              Geräte mit Maus oder Finger ziehen; zum Bearbeiten anklicken.
             </div>
 
             {/* Placed Items on Canvas */}
             {placedItems.map((item) => {
               const tmpl = EQUIPMENT_TEMPLATES.find((t) => t.type === item.type);
               const isSelected = item.id === selectedItemId;
+              const isDragging = item.id === draggingItemId;
               const width = tmpl?.defaultWidth ?? 12;
               const height = tmpl?.defaultHeight ?? 8;
               const colorClass = tmpl?.colorClass ?? "bg-slate-200 border-slate-500 text-slate-900";
@@ -326,6 +409,12 @@ export default function Turnplaner() {
               return (
                 <div
                   key={item.id}
+                  data-testid={`turnplaner-equipment-${item.id}`}
+                  onPointerDown={(event) => handleEquipmentPointerDown(event, item, width, height)}
+                  onPointerMove={handleEquipmentPointerMove}
+                  onPointerUp={finishEquipmentDrag}
+                  onPointerCancel={finishEquipmentDrag}
+                  onLostPointerCapture={finishEquipmentDrag}
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedItemId(item.id);
@@ -337,7 +426,9 @@ export default function Turnplaner() {
                     height: `${height}%`,
                     transform: `rotate(${item.rotation}deg)`,
                   }}
-                  className={`absolute flex cursor-pointer flex-col items-center justify-center rounded border-2 p-1 text-center shadow-sm transition-all ${colorClass} ${
+                  className={`absolute flex touch-none flex-col items-center justify-center rounded border-2 p-1 text-center shadow-sm ${colorClass} ${
+                    isDragging ? "z-30 cursor-grabbing" : "cursor-grab transition-all"
+                  } ${
                     isSelected ? "ring-4 ring-emerald-500 ring-offset-1 z-20 scale-105" : "hover:z-10 hover:opacity-90"
                   }`}
                 >

@@ -141,6 +141,19 @@ turnen/
 
 Voraussetzung: Node.js, `npm`.
 
+### Pre-Push-Prüfungen aktivieren
+
+Der versionierte Git-Hook prüft vor jedem Push Worker-Typecheck, Lint,
+Worker-Tests, Frontend-Build und Production Readiness. Einmal pro lokaler
+Repository-Kopie aktivieren:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Die Playwright-E2E-Tests bleiben bewusst außerhalb des Hooks und laufen
+separat über `npm --prefix turnen run test:e2e` beziehungsweise in CI.
+
 ### 1. API-Worker
 
 ```sh

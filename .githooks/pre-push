@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -eu
+
+repository_root=$(git rev-parse --show-toplevel)
+cd "$repository_root"
+
+run_check() {
+  label=$1
+  shift
+  printf '\n==> %s\n' "$label"
+  "$@"
+}
+
+printf 'SQUORA Turnen: Pre-Push-Prüfungen werden ausgeführt.\n'
+
+run_check "Diff prüfen" git diff --check
+
+run_check "Worker: TypeScript prüfen" npm --prefix turnen/worker run typecheck
+run_check "Worker: Lint prüfen" npm --prefix turnen/worker run lint
+run_check "Worker: Tests ausführen" npm --prefix turnen/worker test
+
+run_check "Frontend: Lint prüfen" npm --prefix turnen run lint
+run_check "Frontend: Produktions-Build erstellen" npm --prefix turnen run build
+
+run_check "Production Readiness prüfen" node --import tsx scripts/production-readiness-check.ts
+
+printf '\nPre-Push-Prüfung erfolgreich. Push wird fortgesetzt.\n'
