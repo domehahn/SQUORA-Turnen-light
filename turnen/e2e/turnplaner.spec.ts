@@ -29,9 +29,34 @@ test.describe("Turnplaner & Hallen-Aufbauplaner UI Flow", () => {
 
     await page.goto("/turnplaner");
     await expect(page.getByTestId("turnplaner-hall-floor")).toBeVisible();
+
+    for (const category of [
+      { name: "🟦 Matten & AirTrack", iconCount: 5 },
+      { name: "🤸‍♂️ Großgeräte", iconCount: 9 },
+      { name: "🚀 Sprunggeräte", iconCount: 4 },
+      { name: "🧱 Kästen, Bänke & Tau", iconCount: 6 },
+      { name: "⚽ Kleingeräte & Parcours", iconCount: 7 },
+    ]) {
+      await page.getByRole("button", { name: category.name }).click();
+      const templates = page.locator('[data-testid^="turnplaner-template-"]');
+      await expect(templates).toHaveCount(category.iconCount);
+      await expect(templates.locator("svg")).toHaveCount(category.iconCount);
+    }
+
     await page.getByRole("button", { name: "+ Neuer Hallenaufbau" }).click();
 
     const equipment = page.locator('[data-testid^="turnplaner-equipment-"]').first();
+    const equipmentIcon = equipment.getByTestId("turnplaner-equipment-icon");
+    const equipmentLabel = equipment.getByTestId("turnplaner-equipment-label");
+    await expect(equipmentIcon).toBeVisible();
+    await expect(equipmentIcon.locator("svg")).toBeVisible();
+    await expect(equipment).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(equipment).toHaveCSS("border-top-width", "0px");
+    await equipment.click();
+    await expect(equipmentIcon).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(equipmentIcon).toHaveCSS("border-top-width", "0px");
+    await expect(equipmentLabel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(equipmentLabel).toHaveCSS("border-top-width", "0px");
     const originalLeft = await equipment.evaluate((element) => (element as HTMLElement).style.left);
     const originalTop = await equipment.evaluate((element) => (element as HTMLElement).style.top);
     const box = await equipment.boundingBox();
