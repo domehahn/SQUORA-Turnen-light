@@ -23,7 +23,7 @@ const NAV_GROUPS: {
   {
     label: "Basis",
     items: [
-      { to: "/", label: "Start", end: true },
+      { to: "/", label: "Dashboard", end: true },
       { to: "/gruppen", label: "Gruppen" },
       { to: "/kinder", label: "Kinder" },
       { to: "/anwesenheit", label: "Anwesenheit" },

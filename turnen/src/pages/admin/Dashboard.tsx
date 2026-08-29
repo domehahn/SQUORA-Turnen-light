@@ -474,9 +474,9 @@ export default function Dashboard() {
             </Link>
             <Link
               to="/vertretungen"
-              className="rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700"
+              className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-700"
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <p className="hyphens-auto text-xs font-medium uppercase leading-relaxed tracking-wide text-slate-500 [overflow-wrap:anywhere] dark:text-slate-400">
                 Offene Vertretungsanfragen
               </p>
               <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{openSubstitutes.length}</p>

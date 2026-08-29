@@ -2076,9 +2076,9 @@ app.get("/api/events", requireAuth, async (c) => {
 app.post("/api/events", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
-  const isLeadership = c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin"));
-  if (!isLeadership) {
-    return c.json({ error: "Nur die Jugendleitung oder Admins können Events erstellen" }, 403);
+  const canCreateEvent = c.get("clubRole") === "member" || c.get("clubRole") === "jugendleiter" || Boolean(c.get("isAdmin"));
+  if (!canCreateEvent) {
+    return c.json({ error: "Nur Turntrainer, Gruppenleitung, Jugendleitung oder Admins können Events erstellen" }, 403);
   }
 
   const body = await c.req.json().catch(() => ({}));
