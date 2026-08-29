@@ -10,8 +10,9 @@ function formatDateDisplay(isoDate: string): string {
 }
 
 export default function Events() {
-  const { clubRole, isAdmin } = useAuth();
+  const { userId, clubRole, isAdmin } = useAuth();
   const isLeadership = clubRole === "jugendleiter" || isAdmin;
+  const canCreateEvent = clubRole === "member" || isLeadership;
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [members, setMembers] = useState<ClubMember[]>([]);
@@ -181,7 +182,7 @@ export default function Events() {
             Aufgaben und Materialien ein und verwalte die Trainer-Zuteilungen.
           </p>
         </div>
-        {isLeadership && (
+        {canCreateEvent && (
           <button
             onClick={openCreateModal}
             className="rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 shadow-sm"
@@ -223,6 +224,7 @@ export default function Events() {
         <div className="grid gap-4 md:grid-cols-2">
           {filteredEvents.map((ev) => {
             const isFull = ev.helpers.length >= ev.requiredTrainers;
+            const canManageEvent = isLeadership || ev.createdBy === userId;
             return (
               <div
                 key={ev.id}
@@ -411,7 +413,7 @@ export default function Events() {
                     </button>
                   )}
 
-                  {isLeadership && (
+                  {canManageEvent && (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openEditModal(ev)}

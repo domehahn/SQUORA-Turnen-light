@@ -74,10 +74,19 @@ test.describe("Dashboard & App Navigation UI", () => {
 
     await page.goto("/");
 
+    await expect(page.getByRole("link", { name: "Dashboard", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Start", exact: true })).toHaveCount(0);
     const dropoutSection = page.getByRole("heading", { name: /Erhöhte Dropout-Wahrscheinlichkeit \(1\)/ }).locator("..").locator("..");
     await expect(dropoutSection).toContainText("letzten 90 Tagen");
     await expect(dropoutSection).toContainText("mindestens 4 erfassten Einheiten");
     await expect(dropoutSection).toContainText("Risiko Kind");
     await expect(dropoutSection).not.toContainText("ZuWenig Einheiten");
+
+    await page.setViewportSize({ width: 360, height: 800 });
+    const substitutesCard = page.getByRole("link", { name: /Offene Vertretungsanfragen/ });
+    await expect(substitutesCard).toBeVisible();
+    expect(
+      await substitutesCard.evaluate((element) => element.scrollWidth <= element.clientWidth)
+    ).toBe(true);
   });
 });

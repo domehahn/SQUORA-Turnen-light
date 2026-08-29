@@ -60,7 +60,7 @@ describe("Events & Helfer-Zuteilung API", () => {
     expect(created.helpers).toEqual([]);
   });
 
-  it("normaler Trainer kann kein Event erstellen (403)", async () => {
+  it("Turntrainer oder Gruppenleiter kann ein Event erstellen und selbst verwalten", async () => {
     const club = await seedClub("Events Club 3");
     await seedUser({
       email: "trainer-member@events.test",
@@ -74,12 +74,28 @@ describe("Events & Helfer-Zuteilung API", () => {
       method: "POST",
       headers: authHeaders(token),
       body: JSON.stringify({
-        title: "Nicht erlaubt",
+        title: "Trainingstag",
         eventDate: "2026-07-15",
       }),
     });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as any;
+    expect(created.title).toBe("Trainingstag");
+
+    const updateRes = await SELF.fetch(`https://example.test/api/events/${created.id}`, {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify({ title: "Aktualisierter Trainingstag" }),
+    });
+    expect(updateRes.status).toBe(200);
+    expect(((await updateRes.json()) as any).title).toBe("Aktualisierter Trainingstag");
+
+    const deleteRes = await SELF.fetch(`https://example.test/api/events/${created.id}`, {
+      method: "DELETE",
+      headers: authHeaders(token),
+    });
+    expect(deleteRes.status).toBe(204);
   });
 
   it("Trainer kann sich als Helfer melden und Meldung zurückziehen", async () => {

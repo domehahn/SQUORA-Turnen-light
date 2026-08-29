@@ -174,11 +174,31 @@ export async function applyEmailWebhook(
 }
 
 export async function operationsSummary(db: D1Database) {
-  const [deliveries, events, cron] = await Promise.all([
+  const [deliveries, failedEmails, events, cron] = await Promise.all([
     db.prepare(
       `SELECT status, COUNT(*) as count FROM email_deliveries
        WHERE created_at >= datetime('now', '-7 days') GROUP BY status`
     ).all<{ status: string; count: number }>(),
+    db.prepare(
+      `SELECT id, category, status, attempt_count as attemptCount, retryable,
+              last_error_code as lastErrorCode, next_retry_at as nextRetryAt,
+              created_at as createdAt, updated_at as updatedAt
+       FROM email_deliveries
+       WHERE status IN ('failed', 'bounced', 'complained', 'suppressed')
+         AND created_at >= datetime('now', '-7 days')
+       ORDER BY updated_at DESC
+       LIMIT 100`
+    ).all<{
+      id: string;
+      category: string;
+      status: string;
+      attemptCount: number;
+      retryable: number;
+      lastErrorCode: string | null;
+      nextRetryAt: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>(),
     db.prepare(
       `SELECT event_type as eventType, severity, detail_code as detailCode, occurred_at as occurredAt
        FROM operational_events WHERE occurred_at >= datetime('now', '-7 days') ORDER BY occurred_at DESC LIMIT 100`
@@ -187,7 +207,12 @@ export async function operationsSummary(db: D1Database) {
       "SELECT job_name as jobName, status, started_at as startedAt, finished_at as finishedAt, detail_code as detailCode FROM cron_runs ORDER BY job_name"
     ).all(),
   ]);
-  return { emailByStatus: deliveries.results, events: events.results, cronRuns: cron.results };
+  return {
+    emailByStatus: deliveries.results,
+    failedEmails: failedEmails.results.map((delivery) => ({ ...delivery, retryable: Boolean(delivery.retryable) })),
+    events: events.results,
+    cronRuns: cron.results,
+  };
 }
 
 export async function startCron(db: D1Database, jobName: string): Promise<void> {

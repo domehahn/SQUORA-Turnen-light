@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { applyEmailWebhook, cleanupExpiredNotifications } from "../src/operations";
+import { applyEmailWebhook, cleanupExpiredNotifications, operationsSummary } from "../src/operations";
 import { authHeaders, ensureMigrated, login, seedChild, seedClub, seedGroup, seedUser } from "./helpers";
 
 beforeAll(ensureMigrated);
@@ -77,6 +77,30 @@ describe("Saisonwechsel und Zustellstatus", () => {
     expect(await applyEmailWebhook(env.DB, { eventId: "event-sent-late", providerId: "provider-test", type: "email.sent", createdAt: new Date().toISOString() })).toBe(false);
     const row = await env.DB.prepare("SELECT status FROM email_deliveries WHERE id = ?").bind(deliveryId).first<{ status: string }>();
     expect(row?.status).toBe("delivered");
+  });
+
+  it("liefert fehlgeschlagene E-Mails mit Diagnosemetadaten, aber ohne Empfänger oder Inhalt", async () => {
+    const deliveryId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO email_deliveries
+         (id, category, recipient_hash, status, attempt_count, retryable, last_error_code, next_retry_at)
+       VALUES (?, 'substitutes', 'recipient-secret-hash', 'failed', 2, 1, 'provider_unavailable', datetime('now', '+15 minutes'))`
+    ).bind(deliveryId).run();
+
+    const summary = await operationsSummary(env.DB);
+    const failed = summary.failedEmails.find((delivery) => delivery.id === deliveryId);
+
+    expect(failed).toMatchObject({
+      category: "substitutes",
+      status: "failed",
+      attemptCount: 2,
+      retryable: true,
+      lastErrorCode: "provider_unavailable",
+    });
+    expect(failed?.nextRetryAt).not.toBeNull();
+    expect(failed).not.toHaveProperty("recipient_hash");
+    expect(failed).not.toHaveProperty("payload_encrypted");
+    expect(failed).not.toHaveProperty("provider_id");
   });
 });
 
