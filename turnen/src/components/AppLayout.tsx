@@ -92,9 +92,8 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function AppLayout() {
-  const { clubRole, isKassenwart, isAdmin, mfaSetupRequired, passwordChangeRequired } = useAuth();
+  const { clubRole, isSpringer, isKassenwart, isAdmin, mfaSetupRequired, passwordChangeRequired } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
-  const isSpringer = clubRole === "springer";
   const [navOpen, setNavOpen] = useState(false);
 
   const sidebarContent = (

@@ -129,11 +129,11 @@ export interface TrainingPlan {
   updatedAt: string;
 }
 
-// "springer": kann Vertretungen übernehmen, leitet aber (zunächst) keine
-// eigene Gruppe - siehe Migration 0052.
-// Kassenwart:in ist KEIN club_role, sondern das additive Flag
-// users.is_kassenwart (Migration 0053) - kombinierbar mit jeder Rolle.
-export type ClubRole = "member" | "jugendleiter" | "springer";
+// Springer:in und Kassenwart:in sind KEINE club_role-Werte, sondern additive
+// Flags users.is_springer / users.is_kassenwart (Migrationen 0052/0053) -
+// beliebig mit der Rolle kombinierbar. So bleibt club_role bei zwei Werten und
+// braucht keinen (auf D1 gefährlichen) Tabellen-Rebuild.
+export type ClubRole = "member" | "jugendleiter";
 
 export type HoursSubmissionStatus = "submitted" | "settled";
 
@@ -181,6 +181,7 @@ export interface User {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isSpringer: boolean;
   isKassenwart: boolean;
   isAdmin: boolean;
   createdAt: string;
@@ -199,6 +200,7 @@ export interface UserRow {
   password_iterations: number;
   club_id: string | null;
   club_role: ClubRole;
+  is_springer: number;
   is_kassenwart: number;
   is_admin: number;
   created_at: string;

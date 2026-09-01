@@ -65,6 +65,7 @@ type Variables = {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isSpringer: boolean;
   isKassenwart: boolean;
   isAdmin: boolean;
   sessionId: string;
@@ -319,6 +320,7 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("name", user.name);
     c.set("clubId", user.club_id);
     c.set("clubRole", user.club_role);
+    c.set("isSpringer", Boolean(user.is_springer));
     c.set("isKassenwart", Boolean(user.is_kassenwart));
     c.set("isAdmin", Boolean(user.is_admin));
     c.set("sessionId", session.id);
@@ -1116,6 +1118,7 @@ app.get("/api/me", requireAuth, async (c) => {
     clubId,
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
+    isSpringer: c.get("isSpringer"),
     isKassenwart: c.get("isKassenwart"),
     isAdmin: c.get("isAdmin"),
     // MFA ist für normale Rollen (member/jugendleiter) weiterhin reines
@@ -1362,7 +1365,7 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   }
   let clubRole: ClubRole = "member";
   if ("clubRole" in (body ?? {})) {
-    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter" && body.clubRole !== "springer")
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter")
       return c.json({ error: "Ungültige Rolle" }, 400);
     clubRole = body.clubRole;
   }
@@ -1405,7 +1408,7 @@ app.put("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
     input.clubId = clubId;
   }
   if ("clubRole" in (body ?? {})) {
-    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter" && body.clubRole !== "springer")
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter")
       return c.json({ error: "Ungültige Rolle" }, 400);
     input.clubRole = body.clubRole;
   }
@@ -2511,11 +2514,15 @@ app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
-// Ein Vereinsmitglied zur/zum Springer:in machen - kann Vertretungen
-// übernehmen, leitet aber keine eigene Gruppe. Nur möglich, solange die
-// Person aktuell keine Gruppe leitet (weder als Besitzer:in noch als
-// Mit-Trainer:in) und keine Jugendleitung ist.
-app.post("/api/clubs/mine/members/:userId/make-springer", requireAuth, async (c) => {
+// Additive Vereins-Flags (Springer:in / Kassenwart:in) setzen/entfernen -
+// beliebig mit der club_role kombinierbar, nur die Jugendleitung vergibt sie.
+// Springer:in zusätzlich nur, solange die Person keine eigene Gruppe leitet.
+app.post("/api/clubs/mine/members/:userId/make-springer", requireAuth, (c) => setMemberFlag(c, "is_springer", true));
+app.post("/api/clubs/mine/members/:userId/unset-springer", requireAuth, (c) => setMemberFlag(c, "is_springer", false));
+app.post("/api/clubs/mine/members/:userId/make-kassenwart", requireAuth, (c) => setMemberFlag(c, "is_kassenwart", true));
+app.post("/api/clubs/mine/members/:userId/unset-kassenwart", requireAuth, (c) => setMemberFlag(c, "is_kassenwart", false));
+
+async function setMemberFlag(c: Context<AppEnv>, column: "is_springer" | "is_kassenwart", value: boolean) {
   const clubId = c.get("clubId");
   if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
   if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
@@ -2525,77 +2532,18 @@ app.post("/api/clubs/mine/members/:userId/make-springer", requireAuth, async (c)
 
   const target = await db.getUserById(c.env.DB, targetUserId);
   if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
-  if (target.clubRole === "jugendleiter")
-    return c.json({ error: "Bitte die Jugendleitung zuerst zurückstufen" }, 409);
-  if (await db.userLeadsAnyGroup(c.env.DB, targetUserId))
+  if (column === "is_springer" && value && (await db.userLeadsAnyGroup(c.env.DB, targetUserId))) {
     return c.json({ error: "Person leitet noch eine Gruppe – bitte zuerst die Gruppenleitung übergeben" }, 409);
+  }
 
-  const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "springer");
+  const ok = await db.setUserFlag(c.env.DB, column, targetUserId, clubId, value);
   if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  const actionBase = column === "is_springer" ? "springer" : "kassenwart";
   await db.logAudit(c.env.DB, {
     clubId,
     actorId: c.get("userId"),
     actorName: c.get("name"),
-    action: "member.made_springer",
-    targetLabel: target.name ?? target.email ?? targetUserId,
-  });
-  return c.json({ ok: true });
-});
-
-// Springer:in-Rolle wieder aufheben (zurück auf "member", damit die Person
-// eine eigene Gruppe übernehmen kann).
-app.post("/api/clubs/mine/members/:userId/unset-springer", requireAuth, async (c) => {
-  const clubId = c.get("clubId");
-  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
-  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
-
-  const targetUserId = validId(c.req.param("userId"));
-  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
-
-  const target = await db.getUserById(c.env.DB, targetUserId);
-  if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
-  if (target.clubRole !== "springer") return c.json({ error: "Mitglied ist kein:e Springer:in" }, 409);
-
-  const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "member");
-  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
-  await db.logAudit(c.env.DB, {
-    clubId,
-    actorId: c.get("userId"),
-    actorName: c.get("name"),
-    action: "member.unset_springer",
-    targetLabel: target.name ?? target.email ?? targetUserId,
-  });
-  return c.json({ ok: true });
-});
-
-// Kassenwart:in-Flag setzen/entfernen - additiv, kombinierbar mit jeder Rolle
-// (Turnleiter:in mit Gruppen, Springer:in, Jugendleitung). Nur die
-// Jugendleitung darf das vergeben.
-app.post("/api/clubs/mine/members/:userId/make-kassenwart", requireAuth, async (c) => {
-  return setKassenwartFlag(c, true);
-});
-app.post("/api/clubs/mine/members/:userId/unset-kassenwart", requireAuth, async (c) => {
-  return setKassenwartFlag(c, false);
-});
-
-async function setKassenwartFlag(c: Context<AppEnv>, value: boolean) {
-  const clubId = c.get("clubId");
-  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
-  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
-
-  const targetUserId = validId(c.req.param("userId"));
-  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
-
-  const target = await db.getUserById(c.env.DB, targetUserId);
-  if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
-
-  const ok = await db.setKassenwart(c.env.DB, targetUserId, clubId, value);
-  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
-  await db.logAudit(c.env.DB, {
-    clubId,
-    actorId: c.get("userId"),
-    actorName: c.get("name"),
-    action: value ? "member.made_kassenwart" : "member.unset_kassenwart",
+    action: value ? `member.made_${actionBase}` : `member.unset_${actionBase}`,
     targetLabel: target.name ?? target.email ?? targetUserId,
   });
   return c.json({ ok: true });
@@ -2651,7 +2599,7 @@ app.get("/api/season-transition/proposals", requireAuth, async (c) => {
 });
 
 app.post("/api/groups", requireAuth, async (c) => {
-  if (c.get("clubRole") === "springer")
+  if (c.get("isSpringer"))
     return c.json({ error: "Springer:innen können keine eigene Gruppe anlegen" }, 403);
   const body = await c.req.json().catch(() => null);
   const name = requiredText(body?.name, 100);
@@ -2845,8 +2793,8 @@ app.post("/api/groups/:id/co-leaders", requireAuth, async (c) => {
   if (!target || !group.club_id || target.clubId !== group.club_id) {
     return c.json({ error: "Nur Mitglieder desselben Vereins können Mit-Trainer*in werden" }, 400);
   }
-  if (target.clubRole === "springer") {
-    return c.json({ error: "Springer:innen können nicht als Mit-Trainer*in eingetragen werden – bitte zuerst die Rolle ändern" }, 400);
+  if (target.isSpringer) {
+    return c.json({ error: "Springer:innen können nicht als Mit-Trainer*in eingetragen werden – bitte zuerst die Springer-Rolle aufheben" }, 400);
   }
 
   await db.addGroupCoLeader(c.env.DB, id, targetUserId, c.get("userId"));

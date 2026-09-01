@@ -183,32 +183,6 @@ export default function ClubPage() {
     }
   }
 
-  async function handleMakeSpringer(userId: string) {
-    setError(null);
-    setBusy(true);
-    try {
-      await api.post(`/api/clubs/mine/members/${userId}/make-springer`, {});
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Ändern der Rolle");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleUnsetSpringer(userId: string) {
-    setError(null);
-    setBusy(true);
-    try {
-      await api.post(`/api/clubs/mine/members/${userId}/unset-springer`, {});
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Fehler beim Ändern der Rolle");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleRoleAction(userId: string, action: string) {
     setError(null);
     setBusy(true);
@@ -440,17 +414,18 @@ export default function ClubPage() {
                           <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                             Admin
                           </span>
-                        ) : m.role === "jugendleiter" ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                            Jugendleitung
-                          </span>
                         ) : (
-                          m.role === "springer" && (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-                              Springer
+                          m.role === "jugendleiter" && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                              Jugendleitung
                             </span>
                           )
                         )}
+                        {m.isSpringer ? (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                            Springer
+                          </span>
+                        ) : null}
                         {m.isKassenwart ? (
                           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
                             Kassenwart
@@ -470,33 +445,23 @@ export default function ClubPage() {
                           >
                             Zurückstufen
                           </button>
-                        ) : m.role === "springer" ? (
-                          <button
-                            onClick={() => handleUnsetSpringer(m.id)}
-                            disabled={busy}
-                            className="text-xs text-slate-500 hover:underline disabled:opacity-50 dark:text-slate-400"
-                          >
-                            Springer-Rolle aufheben
-                          </button>
                         ) : (
-                          <>
-                            <button
-                              onClick={() => handlePromote(m.id)}
-                              disabled={busy}
-                              className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
-                            >
-                              Zur Jugendleitung ernennen
-                            </button>
-                            <button
-                              onClick={() => handleMakeSpringer(m.id)}
-                              disabled={busy}
-                              className="text-xs text-amber-700 hover:underline disabled:opacity-50 dark:text-amber-400"
-                            >
-                              Als Springer markieren
-                            </button>
-                          </>
+                          <button
+                            onClick={() => handlePromote(m.id)}
+                            disabled={busy}
+                            className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
+                          >
+                            Zur Jugendleitung ernennen
+                          </button>
                         )}
-                        {/* Kassenwart:in ist additiv - unabhängig von der Rolle */}
+                        {/* Springer:in / Kassenwart:in sind additive Flags - unabhängig von der Rolle */}
+                        <button
+                          onClick={() => handleRoleAction(m.id, m.isSpringer ? "unset-springer" : "make-springer")}
+                          disabled={busy}
+                          className="text-xs text-amber-700 hover:underline disabled:opacity-50 dark:text-amber-400"
+                        >
+                          {m.isSpringer ? "Springer-Rolle aufheben" : "Als Springer markieren"}
+                        </button>
                         <button
                           onClick={() => handleRoleAction(m.id, m.isKassenwart ? "unset-kassenwart" : "make-kassenwart")}
                           disabled={busy}
@@ -518,16 +483,16 @@ export default function ClubPage() {
           {isJugendleiter && (
             <div>
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Verfügbare Springer ({members.filter((m) => m.role === "springer").length})
+                Verfügbare Springer ({members.filter((m) => m.isSpringer).length})
               </p>
               <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
                 Können Vertretungen übernehmen, leiten aber keine eigene Gruppe. Rolle über „Als Springer markieren“ in
                 der Mitgliederliste vergeben.
               </p>
-              {members.some((m) => m.role === "springer") ? (
+              {members.some((m) => m.isSpringer) ? (
                 <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
                   {members
-                    .filter((m) => m.role === "springer")
+                    .filter((m) => m.isSpringer)
                     .map((m) => (
                       <li key={m.id} className="flex flex-wrap items-center gap-2">
                         <span>{m.name ?? m.email}</span>

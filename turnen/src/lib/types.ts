@@ -70,9 +70,9 @@ export interface Club {
   createdAt: string;
 }
 
-// "springer": kann Vertretungen übernehmen, leitet aber keine eigene Gruppe.
-// Kassenwart:in ist kein ClubRole, sondern das additive Flag `isKassenwart`.
-export type ClubRole = "member" | "jugendleiter" | "springer";
+// Springer:in und Kassenwart:in sind keine ClubRole-Werte, sondern additive
+// Flags (isSpringer / isKassenwart), beliebig mit der Rolle kombinierbar.
+export type ClubRole = "member" | "jugendleiter";
 
 export type HoursSubmissionStatus = "submitted" | "settled";
 
@@ -100,6 +100,7 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  isSpringer: number;
   isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;

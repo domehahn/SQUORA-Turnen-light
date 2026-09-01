@@ -25,15 +25,16 @@ export async function seedUser(input: {
   password: string;
   name?: string | null;
   clubId?: string | null;
-  clubRole?: "member" | "jugendleiter" | "springer";
+  clubRole?: "member" | "jugendleiter";
+  isSpringer?: boolean;
   isKassenwart?: boolean;
   isAdmin?: boolean;
 }): Promise<{ id: string }> {
   const id = crypto.randomUUID();
   const { hash, salt, iterations } = await hashPassword(input.password);
   await env.DB.prepare(
-    `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, club_id, club_role, is_kassenwart, is_admin)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO users (id, email, name, password_hash, password_salt, password_iterations, club_id, club_role, is_springer, is_kassenwart, is_admin)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -44,6 +45,7 @@ export async function seedUser(input: {
       iterations,
       input.clubId ?? null,
       input.clubRole ?? "member",
+      input.isSpringer ? 1 : 0,
       input.isKassenwart ? 1 : 0,
       input.isAdmin ? 1 : 0
     )

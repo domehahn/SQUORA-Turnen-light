@@ -199,6 +199,7 @@ function rowToUser(row: UserRow): User {
     name: row.name,
     clubId: row.club_id,
     clubRole: row.club_role,
+    isSpringer: Boolean(row.is_springer),
     isKassenwart: Boolean(row.is_kassenwart),
     isAdmin: Boolean(row.is_admin),
     createdAt: row.created_at,
@@ -411,6 +412,7 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  isSpringer: number;
   isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
@@ -419,7 +421,8 @@ export interface ClubMember {
 export async function listClubMembers(db: D1Database, clubId: string): Promise<ClubMember[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, name, email, club_role as role, is_kassenwart as isKassenwart, is_admin as isAdmin, last_login_at as lastLoginAt FROM users WHERE club_id = ?
+      `SELECT id, name, email, club_role as role, is_springer as isSpringer, is_kassenwart as isKassenwart,
+              is_admin as isAdmin, last_login_at as lastLoginAt FROM users WHERE club_id = ?
        ORDER BY CASE club_role WHEN 'jugendleiter' THEN 0 ELSE 1 END, name ASC, email ASC`
     )
     .bind(clubId)
@@ -427,15 +430,17 @@ export async function listClubMembers(db: D1Database, clubId: string): Promise<C
   return results;
 }
 
-// Kassenwart:in-Flag setzen/entfernen (additiv, unabhängig von club_role).
-export async function setKassenwart(
+// Additive Flags (is_springer / is_kassenwart) setzen/entfernen - unabhängig
+// von club_role, beliebig kombinierbar.
+export async function setUserFlag(
   db: D1Database,
+  column: "is_springer" | "is_kassenwart",
   userId: string,
   clubId: string,
   value: boolean
 ): Promise<boolean> {
   const result = await db
-    .prepare("UPDATE users SET is_kassenwart = ? WHERE id = ? AND club_id = ?")
+    .prepare(`UPDATE users SET ${column} = ? WHERE id = ? AND club_id = ?`)
     .bind(value ? 1 : 0, userId, clubId)
     .run();
   return (result.meta.changes ?? 0) > 0;
@@ -2273,6 +2278,7 @@ export interface AdminUserRow {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole;
+  isSpringer: number;
   isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
@@ -2282,7 +2288,7 @@ export async function listAllUsersForAdmin(db: D1Database): Promise<AdminUserRow
   const { results } = await db
     .prepare(
       `SELECT u.id, u.email, u.name, u.club_id as clubId, c.name as clubName, u.club_role as clubRole,
-              u.is_kassenwart as isKassenwart, u.is_admin as isAdmin, u.last_login_at as lastLoginAt
+              u.is_springer as isSpringer, u.is_kassenwart as isKassenwart, u.is_admin as isAdmin, u.last_login_at as lastLoginAt
        FROM users u
        LEFT JOIN clubs c ON c.id = u.club_id
        ORDER BY c.name ASC, u.name ASC, u.email ASC`

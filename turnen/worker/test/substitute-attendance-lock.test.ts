@@ -14,7 +14,7 @@ describe("Vertretung sperrt die Anwesenheit für die ursprüngliche Leitung", ()
   it("übergibt Erfassung + Stunde an die Vertretung, sperrt die Original-Leitung", async () => {
     const club = await seedClub("Vertretungs-Lock Club");
     const owner = await seedUser({ email: "owner-vl@test.local", password: "password-123", clubId: club.id });
-    await seedUser({ email: "spr-vl@test.local", password: "password-123", clubId: club.id, clubRole: "springer" });
+    await seedUser({ email: "spr-vl@test.local", password: "password-123", clubId: club.id, isSpringer: true });
     const group = await seedGroup({ name: "Gruppe VL", ownerId: owner.id, clubId: club.id });
     await env.DB.prepare("UPDATE groups SET weekday = ?, start_time = '17:00', end_time = '18:30' WHERE id = ?")
       .bind(WEEKDAY, group.id)

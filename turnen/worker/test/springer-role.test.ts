@@ -23,9 +23,11 @@ describe("Springer-Rolle", () => {
     expect(make.status).toBe(200);
 
     const members = await (await SELF.fetch(`${BASE}/api/clubs/mine/members`, { headers: authHeaders(jl) })).json<
-      { id: string; role: string }[]
+      { id: string; role: string; isSpringer: number }[]
     >();
-    expect(members.find((m) => m.id === member.id)?.role).toBe("springer");
+    const row = members.find((m) => m.id === member.id);
+    expect(row?.isSpringer).toBe(1);
+    expect(row?.role).toBe("member");
 
     const unset = await SELF.fetch(`${BASE}/api/clubs/mine/members/${member.id}/unset-springer`, {
       method: "POST",
@@ -52,7 +54,7 @@ describe("Springer-Rolle", () => {
 
   it("Springer:innen können keine eigene Gruppe anlegen", async () => {
     const club = await seedClub("Springer Club C");
-    await seedUser({ email: "springer-c@test.local", password: "password-123", clubId: club.id, clubRole: "springer" });
+    await seedUser({ email: "springer-c@test.local", password: "password-123", clubId: club.id, isSpringer: true });
     const cookie = await login(SELF, "springer-c@test.local", "password-123");
 
     const res = await SELF.fetch(`${BASE}/api/groups`, {
@@ -80,7 +82,7 @@ describe("Springer-Rolle", () => {
       email: "springer-d@test.local",
       password: "password-123",
       clubId: club.id,
-      clubRole: "springer",
+      isSpringer: true,
     });
     const group = await seedGroup({ name: "Gruppe D", ownerId: owner.id, clubId: club.id });
     const ownerCookie = await login(SELF, "owner-d@test.local", "password-123");
