@@ -15,19 +15,68 @@ function quarterLabel(quarter: number, year: number): string {
   return quarter === 0 ? `Jahr ${year}` : `${quarter}. Quartal ${year}`;
 }
 
+// Lädt das SQUORA-Logo aus /public und liefert Data-URL + Originalmaße.
+// Schlägt der Ladevorgang fehl (offline o.ä.), wird das PDF ohne Logo erzeugt.
+async function loadBrandLogo(): Promise<{ dataUrl: string; width: number; height: number } | null> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}squora-logo.png`);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    const dims = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+      img.onerror = () => reject(new Error("logo decode failed"));
+      img.src = dataUrl;
+    });
+    return { dataUrl, ...dims };
+  } catch {
+    return null;
+  }
+}
+
 // Erzeugt das PDF des Stundennachweises (inkl. digitaler Unterschrift) für den
 // Upload nach R2. Bewusst mit jsPDF-Primitiven statt DOM-Rasterung – dadurch
 // unabhängig von Tailwind-v4-Farben (oklch), klein und mit echtem Text.
-export function buildHoursReportPdf(
+export async function buildHoursReportPdf(
   report: HoursReport,
   meta: HoursReportPdfMeta,
   signatureDataUrl: string | null
-): Blob {
+): Promise<Blob> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 15;
-  let y = 18;
+  let y = 14;
 
+  // --- Kopf mit Logo ----------------------------------------------------
+  const logo = await loadBrandLogo();
+  if (logo) {
+    const logoH = 15;
+    const logoW = (logo.width / logo.height) * logoH;
+    try {
+      doc.addImage(logo.dataUrl, "PNG", marginX, y, logoW, logoH);
+    } catch {
+      /* Logo überspringen */
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.setTextColor(30, 64, 128);
+    doc.text("SQUORA", marginX + logoW + 4, y + 7);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text("Turnen", marginX + logoW + 4, y + 12);
+    y += logoH + 6;
+  } else {
+    y = 18;
+  }
+
+  doc.setTextColor(20);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
   doc.text("Stundennachweis", marginX, y);
@@ -122,26 +171,30 @@ export function buildHoursReportPdf(
     marginX,
     y
   );
-  y += 10;
+  // Eintrag jeweils ÜBER dem Strich, Label darunter (wie auf einem Papierformular).
+  const lineW = 70;
+  const rightLineX = pageWidth - marginX - lineW;
+  const lineY = y + 24;
 
   if (signatureDataUrl) {
     try {
-      doc.addImage(signatureDataUrl, "PNG", marginX, y, 60, 20);
+      doc.addImage(signatureDataUrl, "PNG", marginX, lineY - 20, 55, 18);
     } catch {
       /* ungültiges Bild ignorieren */
     }
   }
-  y += 22;
+  doc.setTextColor(20);
+  doc.setFontSize(9);
+  doc.text(`${meta.ort}, ${meta.dateLabel}`, rightLineX, lineY - 2);
+
   doc.setDrawColor(120);
-  doc.line(marginX, y, marginX + 70, y);
-  doc.line(pageWidth - marginX - 70, y, pageWidth - marginX, y);
-  y += 4;
+  doc.line(marginX, lineY, marginX + lineW, lineY);
+  doc.line(rightLineX, lineY, rightLineX + lineW, lineY);
+
   doc.setTextColor(90);
   doc.setFontSize(8);
-  doc.text(`${report.userName ?? ""}`, marginX, y);
-  doc.text("Unterschrift Übungsleiter", marginX, y + 4);
-  doc.text(`${meta.ort}, ${meta.dateLabel}`, pageWidth - marginX - 70, y);
-  doc.text("Ort / Datum", pageWidth - marginX - 70, y + 4);
+  doc.text("Unterschrift Übungsleiter", marginX, lineY + 4);
+  doc.text("Ort / Datum", rightLineX, lineY + 4);
 
   return doc.output("blob");
 }

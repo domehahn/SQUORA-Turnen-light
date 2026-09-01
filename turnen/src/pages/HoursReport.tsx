@@ -131,7 +131,7 @@ export default function HoursReportPage() {
     setError(null);
     setSubmitMsg(null);
     try {
-      const blob = buildHoursReportPdf(
+      const blob = await buildHoursReportPdf(
         report,
         { sport, licenseNumber, validUntil, ort, dateLabel: todayLabel },
         signatureDataUrl
