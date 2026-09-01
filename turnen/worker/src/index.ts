@@ -267,6 +267,23 @@ function isIdleExempt(c: { req: { method: string; path: string } }): boolean {
 // X"), damit neue Routen standardmäßig gesperrt sind, bis sie hier bewusst
 // freigegeben werden - alles, was zum Herausfinden des eigenen Status,
 // Abmelden und zur MFA-Einrichtung selbst nötig ist.
+const ADMIN_WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// Schreib-Pfade, die einem reinen Plattform-Admin (is_admin ohne Jugendleitung)
+// trotz Nur-Lese-Regel erlaubt bleiben: das eigene Konto und die
+// Plattform-Verwaltung.
+const ADMIN_SELF_SERVICE_WRITE_PREFIXES = [
+  "/api/admin/",
+  "/api/logout",
+  "/api/me/password",
+  "/api/me/mfa",
+  "/api/me/sessions",
+  "/api/me/notification-preferences",
+];
+function isAdminSelfServiceWrite(pathname: string): boolean {
+  if (pathname === "/api/me") return true;
+  return ADMIN_SELF_SERVICE_WRITE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p));
+}
+
 const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
   "/api/me",
   "/api/logout",
@@ -349,6 +366,20 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
         { error: "Zwei-Faktor-Authentifizierung ist für Admin-Accounts erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
         403
       );
+    }
+
+    // Plattform-Admin (is_admin) ohne zusätzliche Jugendleitungs-Rolle hat auf
+    // Vereinsdaten bewusst NUR Lesezugriff (Nutzerentscheidung 2026-09-01):
+    // alles sehen wie die Jugendleitung, aber nichts bearbeiten. Erlaubt
+    // bleiben Plattform-Verwaltung (/api/admin/*), die eigene Konto-/MFA-/
+    // Session-Pflege und An-/Abmeldung. Positivliste, fail-closed.
+    if (
+      user.is_admin &&
+      user.club_role !== "jugendleiter" &&
+      ADMIN_WRITE_METHODS.has(c.req.method) &&
+      !isAdminSelfServiceWrite(pathname)
+    ) {
+      return c.json({ error: "Als Plattform-Admin hast du auf Vereinsdaten nur Lesezugriff." }, 403);
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -1901,7 +1932,7 @@ app.get("/api/clubs/mine/members", requireAuth, async (c) => {
 // Jugendleitung, die sie freigeben oder ablehnen muss.
 app.get("/api/club-join-requests/incoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin"))) return c.json([]);
   return c.json(await db.listPendingClubJoinRequestsForClub(c.env.DB, clubId));
 });
 
@@ -2863,11 +2894,12 @@ app.delete("/api/groups/:id/co-leaders/:userId", requireAuth, async (c) => {
 app.get("/api/children", requireAuth, async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
   const children = await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived);
-  const isJugendleiter = c.get("clubRole") === "jugendleiter";
+  // Volle Sicht (inkl. Notfallkontakte) für Jugendleitung UND Plattform-Admin.
+  const fullView = c.get("clubRole") === "jugendleiter" || c.get("isAdmin");
   const decrypted = await Promise.all(
     children.map(async (child) => {
       const full = await decryptChild(child, c.env.ENCRYPTION_KEY);
-      if (full.canEdit || isJugendleiter) return full;
+      if (full.canEdit || fullView) return full;
       return { ...full, emergencyContactName: null, emergencyContactPhone: null };
     })
   );
@@ -3543,7 +3575,8 @@ app.get("/api/substitute-requests/mine", requireAuth, async (c) => {
 // die Jugendleitung, alle anderen sehen weiterhin nur /mine.
 app.get("/api/substitute-requests/club", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json({ error: "Keine Berechtigung" }, 403);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin")))
+    return c.json({ error: "Keine Berechtigung" }, 403);
   return c.json(await db.listSubstituteRequestsForClub(c.env.DB, clubId));
 });
 
@@ -3996,7 +4029,7 @@ app.delete("/api/move-requests/:id", requireAuth, async (c) => {
 
 app.get("/api/capacity-requests/incoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin"))) return c.json([]);
   return c.json(await db.listIncomingCapacityRequests(c.env.DB, clubId));
 });
 
@@ -4229,7 +4262,7 @@ app.get("/api/club-waitlist", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   const entries = await db.listClubWaitlist(c.env.DB, clubId);
-  if (c.get("clubRole") === "jugendleiter") return c.json(entries);
+  if (c.get("clubRole") === "jugendleiter" || c.get("isAdmin")) return c.json(entries);
 
   // Turnleiter*innen sehen nur Kinder, die altersmäßig zu einer eigenen
   // Gruppe passen würden (damit sich eine Übernahme-Anfrage überhaupt lohnt),
@@ -4660,7 +4693,7 @@ app.get("/api/export/hours", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   const allGroups = await db.listGroupsForUser(c.env.DB, c.get("userId"), clubId);
   const groupIds =
-    scope === "club" && clubId && c.get("clubRole") === "jugendleiter"
+    scope === "club" && clubId && (c.get("clubRole") === "jugendleiter" || c.get("isAdmin"))
       ? allGroups.filter((g) => g.clubId === clubId).map((g) => g.id)
       : allGroups.filter((g) => g.ownerId === c.get("userId")).map((g) => g.id);
 
@@ -4997,10 +5030,10 @@ app.post("/api/hours-report/submissions/:id/settle", requireAuth, async (c) => {
 async function canReadAttendance(
   dbEnv: D1Database,
   group: { id: string; owner_id: string | null; club_id: string | null },
-  requester: { userId: string; clubId: string | null; clubRole: ClubRole }
+  requester: { userId: string; clubId: string | null; clubRole: ClubRole; isAdmin?: boolean }
 ): Promise<boolean> {
   const isLeadership = Boolean(
-    group.club_id && group.club_id === requester.clubId && requester.clubRole === "jugendleiter"
+    group.club_id && group.club_id === requester.clubId && (requester.clubRole === "jugendleiter" || requester.isAdmin)
   );
   return isLeadership || (await db.canWriteGroupAsync(dbEnv, group, requester.userId));
 }
@@ -5032,7 +5065,7 @@ app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getAttendanceRange(c.env.DB, groupId, from, to));
@@ -5046,7 +5079,7 @@ app.get("/api/attendance-leaders/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getSessionLeaders(c.env.DB, groupId, from, to));
@@ -5060,7 +5093,7 @@ app.get("/api/attendance-cancellations/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getCancelledSessions(c.env.DB, groupId, from, to));
@@ -5078,7 +5111,7 @@ app.get("/api/attendance-substitutes/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.listClaimedSubstitutesForGroup(c.env.DB, groupId, from, to));
@@ -5092,7 +5125,17 @@ app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
   const access = await attendanceAccess(c.env.DB, group, c.get("userId"), date);
-  if (!access.allowed) return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
+  // Jugendleitung / Plattform-Admin dürfen jeden Termin ihres Vereins lesen -
+  // auch einen an eine Vertretung übergebenen. Für die ursprüngliche
+  // Gruppenleitung bleibt so ein Termin dagegen gesperrt (wie eine Absage).
+  const isClubLeadershipRead = Boolean(
+    group.club_id &&
+      group.club_id === c.get("clubId") &&
+      (c.get("clubRole") === "jugendleiter" || c.get("isAdmin"))
+  );
+  if (!access.allowed && !isClubLeadershipRead) {
+    return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
+  }
 
   return c.json(await db.getAttendance(c.env.DB, groupId, date));
 });
@@ -5266,7 +5309,7 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
 
 app.get("/api/session-override-requests/incoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin"))) return c.json([]);
   return c.json(await db.listPendingSessionOverrideRequestsForClub(c.env.DB, clubId));
 });
 

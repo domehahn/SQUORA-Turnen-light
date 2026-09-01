@@ -31,8 +31,12 @@ function isPendingJoin(value: unknown): value is PendingJoin {
 }
 
 export default function ClubPage() {
-  const { userId, clubId, clubName, clubRole, refreshClub } = useAuth();
+  const { userId, clubId, clubName, clubRole, isAdmin, refreshClub } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
+  // Plattform-Admin sieht die Vereinsseite wie die Jugendleitung, aber nur
+  // lesend - alle Aktionsschaltflächen bleiben an isJugendleiter gebunden,
+  // der Server erzwingt den Nur-Lese-Zugriff zusätzlich.
+  const canViewClubAdmin = isJugendleiter || isAdmin;
   const [clubs, setClubs] = useState<Club[]>([]);
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [myJoinRequest, setMyJoinRequest] = useState<ClubJoinRequest | null>(null);
@@ -57,9 +61,9 @@ export default function ClubPage() {
     try {
       const [clubList, memberList, mine, incoming, holidayList] = await Promise.all([
         api.get<Club[]>("/api/clubs"),
-        clubId && isJugendleiter ? api.get<ClubMember[]>("/api/clubs/mine/members") : Promise.resolve([]),
+        clubId && canViewClubAdmin ? api.get<ClubMember[]>("/api/clubs/mine/members") : Promise.resolve([]),
         api.get<ClubJoinRequest | null>("/api/club-join-requests/mine"),
-        isJugendleiter ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]),
+        canViewClubAdmin ? api.get<ClubJoinRequest[]>("/api/club-join-requests/incoming") : Promise.resolve([]),
         clubId ? api.get<Holiday[]>("/api/holidays") : Promise.resolve([]),
       ]);
       setClubs(clubList);
@@ -286,7 +290,7 @@ export default function ClubPage() {
   // Vereinsnummer, Ferien) nur noch für die Jugendleitung sichtbar - "Verein
   // beitreten" bleibt für alle sichtbar, solange noch keiner zugeordnet ist,
   // sonst könnten neue Mitglieder nie beitreten.
-  if (clubId && clubRole && !isJugendleiter) {
+  if (clubId && clubRole && !canViewClubAdmin) {
     return (
       <div className="space-y-6">
         <div>
@@ -313,7 +317,7 @@ export default function ClubPage() {
       {error && <p className="text-sm text-red-600 dark:text-red-400">Fehler: {error}</p>}
       {info && <p className="text-sm text-emerald-700 dark:text-emerald-400">{info}</p>}
 
-      {isJugendleiter && incomingJoinRequests.length > 0 && (
+      {canViewClubAdmin && incomingJoinRequests.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
           <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
             Offene Beitrittsanfragen ({incomingJoinRequests.length})
@@ -325,6 +329,7 @@ export default function ClubPage() {
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-white p-3 text-sm dark:border-amber-800 dark:bg-slate-900"
               >
                 <span className="text-slate-800 dark:text-slate-100">{r.userName ?? "Unbekannt"}</span>
+                {isJugendleiter ? (
                 <span className="flex gap-2">
                   <button
                     onClick={() => handleApproveJoinRequest(r.id)}
@@ -341,6 +346,9 @@ export default function ClubPage() {
                     Ablehnen
                   </button>
                 </span>
+                ) : (
+                  <span className="text-xs text-amber-700 dark:text-amber-400">wartet auf Freigabe</span>
+                )}
               </li>
             ))}
           </ul>
@@ -399,7 +407,7 @@ export default function ClubPage() {
               </p>
             )}
           </div>
-          {isJugendleiter ? (
+          {canViewClubAdmin ? (
             <div>
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Mitglieder ({members.length})
@@ -435,7 +443,7 @@ export default function ClubPage() {
                       <span className="text-xs text-slate-400 dark:text-slate-500">{m.email}</span>
                       <span className="text-xs text-slate-400 dark:text-slate-500">{formatLastLogin(m.lastLoginAt)}</span>
                     </span>
-                    {m.id !== userId && !m.isAdmin && (
+                    {isJugendleiter && m.id !== userId && !m.isAdmin && (
                       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         {m.role === "jugendleiter" ? (
                           <button
@@ -480,7 +488,7 @@ export default function ClubPage() {
               Die Mitgliederliste sieht nur die Jugendleitung.
             </p>
           )}
-          {isJugendleiter && (
+          {canViewClubAdmin && (
             <div>
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Verfügbare Springer ({members.filter((m) => m.isSpringer).length})
@@ -505,7 +513,7 @@ export default function ClubPage() {
               )}
             </div>
           )}
-          {isJugendleiter && (
+          {canViewClubAdmin && (
           <div>
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Zusätzliche Ferien/Trainingsausfälle ({holidays.length})

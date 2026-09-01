@@ -101,7 +101,9 @@ export function AppLayout() {
       {NAV_GROUPS.map((group) => {
         const items = group.items.filter(
           (item) =>
-            (!item.jugendleiterOnly || isJugendleiter) &&
+            // Plattform-Admin sieht alles wie die Jugendleitung (nur lesend) -
+            // kein Navigationspunkt wird vor ihm verborgen.
+            (!item.jugendleiterOnly || isJugendleiter || isAdmin) &&
             (!item.adminOnly || isAdmin) &&
             (!item.kassenwartOrLeader || isJugendleiter || isKassenwart || isAdmin) &&
             // Springer:innen sehen nur die ausdrücklich freigegebenen Punkte
@@ -174,6 +176,11 @@ export function AppLayout() {
           </nav>
 
           <main className="min-w-0 flex-1 pb-6">
+            {isAdmin && !isJugendleiter && (
+              <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                Plattform-Admin: Nur-Lese-Zugriff auf Vereinsdaten. Bearbeiten läuft über „Admin: Nutzer*innen“ bzw. direkt in Cloudflare.
+              </p>
+            )}
             <Outlet />
           </main>
         </div>
