@@ -5099,10 +5099,10 @@ app.get("/api/attendance-cancellations/:groupId", requireAuth, async (c) => {
   return c.json(await db.getCancelledSessions(c.env.DB, groupId, from, to));
 });
 
-// An eine Vertretung übergebene Termine der Gruppe im Zeitraum - für die
-// Sperre auf der Anwesenheit-/Übersichtsseite (die ursprüngliche Leitung
-// kann die Anwesenheit für diese Termine nicht erfassen; die Stunde wird der
-// vertretenden Person angerechnet).
+// Vertretungs-Anfragen der Gruppe im Zeitraum (Status "open" = angefragt,
+// "claimed" = übernommen) - für den Hinweis bzw. die Sperre auf der
+// Anwesenheit-Seite. Bei "claimed" kann die ursprüngliche Leitung die
+// Anwesenheit nicht erfassen, die Stunde wird der Vertretung angerechnet.
 app.get("/api/attendance-substitutes/:groupId", requireAuth, async (c) => {
   const groupId = validId(c.req.param("groupId"));
   const from = validDate(c.req.query("from"));
@@ -5114,7 +5114,7 @@ app.get("/api/attendance-substitutes/:groupId", requireAuth, async (c) => {
   const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
-  return c.json(await db.listClaimedSubstitutesForGroup(c.env.DB, groupId, from, to));
+  return c.json(await db.listSubstituteRequestsForGroupRange(c.env.DB, groupId, from, to));
 });
 
 app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {

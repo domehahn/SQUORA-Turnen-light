@@ -79,6 +79,9 @@ export default function Attendance() {
   // gesperrt (wie bei einer Absage) und die Stunde wird der Vertretung
   // angerechnet.
   const [handedToSubstitute, setHandedToSubstitute] = useState<{ name: string | null } | null>(null);
+  // Gesetzt, wenn für diesen Termin eine Vertretung angefragt wurde, die noch
+  // niemand übernommen hat - reiner Hinweis, blockiert die Erfassung nicht.
+  const [substituteRequested, setSubstituteRequested] = useState(false);
   const blocked = cancelled || handedToSubstitute !== null;
 
   async function loadOverrideRequests() {
@@ -156,18 +159,20 @@ export default function Attendance() {
       setError(null);
       setSavedMessage(null);
       setHandedToSubstitute(null);
+      setSubstituteRequested(false);
       try {
-        // Zuerst prüfen, ob der Termin an eine Vertretung übergeben wurde -
-        // dann ist die Anwesenheit für die ursprüngliche Leitung gesperrt und
-        // ein GET /api/attendance/... würde ohnehin mit 403 antworten.
-        const subs = await api.get<Record<string, { claimedBy: string | null; claimedByName: string | null }>>(
-          `/api/attendance-substitutes/${groupId}?from=${date}&to=${date}`
-        );
-        const claim = subs[date];
-        if (claim && claim.claimedBy !== userId) {
-          setHandedToSubstitute({ name: claim.claimedByName });
+        // Vertretungs-Status prüfen: "claimed" (nicht von mir) sperrt die
+        // Erfassung, "open" ist nur ein Hinweis. Bei "claimed" würde ein
+        // GET /api/attendance/... ohnehin mit 403 antworten.
+        const subs = await api.get<
+          Record<string, { status: "open" | "claimed"; claimedBy: string | null; claimedByName: string | null }>
+        >(`/api/attendance-substitutes/${groupId}?from=${date}&to=${date}`);
+        const sub = subs[date];
+        if (sub?.status === "claimed" && sub.claimedBy !== userId) {
+          setHandedToSubstitute({ name: sub.claimedByName });
           return;
         }
+        if (sub?.status === "open") setSubstituteRequested(true);
       } catch {
         // Sperr-Info ist Zusatz - ein Ladefehler soll die Seite nicht blockieren.
       }
@@ -349,6 +354,16 @@ export default function Attendance() {
               : "Eine Vertretung übernimmt diesen Termin."}{" "}
             Die Anwesenheit für diesen Termin kannst du nicht erfassen – die Stunde wird der Vertretung
             angerechnet. Über die Vertretungsbörse lässt sich der Termin zurückholen.
+          </p>
+        </div>
+      )}
+
+      {dateValid && groupId && !handedToSubstitute && substituteRequested && !cancelled && (
+        <div className="rounded-lg border border-blue-300 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
+          <p className="text-sm text-blue-800 dark:text-blue-300">
+            <span className="font-medium">Für diesen Termin wurde eine Vertretung angefragt.</span> Noch hat sie
+            niemand übernommen – bis dahin kannst du die Anwesenheit normal erfassen. Sobald jemand übernimmt, wird
+            die Erfassung gesperrt und die Stunde der Vertretung angerechnet.
           </p>
         </div>
       )}

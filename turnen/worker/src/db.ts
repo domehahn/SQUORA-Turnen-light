@@ -2538,24 +2538,40 @@ export async function getActiveClaimedSubstitute(
 // Zeitraum -> { "YYYY-MM-DD": { claimedBy, claimedByName } }. Basis für die
 // Sperre auf der Anwesenheit-/Übersichtsseite (die ursprüngliche Leitung sieht
 // den Termin dann gesperrt, ähnlich wie eine Absage).
-export async function listClaimedSubstitutesForGroup(
+// Offene und übernommene Vertretungs-Anfragen einer Gruppe im Zeitraum ->
+// { "YYYY-MM-DD": { status, claimedBy, claimedByName } }.
+// status "open"    = angefragt, noch niemand übernommen (nur Hinweis)
+// status "claimed" = übernommen -> Sperre für die ursprüngliche Leitung
+export async function listSubstituteRequestsForGroupRange(
   db: D1Database,
   groupId: string,
   from: string,
   to: string
-): Promise<Record<string, { claimedBy: string | null; claimedByName: string | null }>> {
+): Promise<Record<string, { status: "open" | "claimed"; claimedBy: string | null; claimedByName: string | null }>> {
   const { results } = await db
     .prepare(
-      `SELECT sr.session_date, sr.claimed_by, u.name AS claimed_by_name, u.email AS claimed_by_email
+      `SELECT sr.session_date, sr.status, sr.claimed_by, u.name AS claimed_by_name, u.email AS claimed_by_email
        FROM substitute_requests sr
        LEFT JOIN users u ON u.id = sr.claimed_by
-       WHERE sr.group_id = ? AND sr.status = 'claimed' AND sr.session_date BETWEEN ? AND ?`
+       WHERE sr.group_id = ? AND sr.status IN ('open', 'claimed') AND sr.session_date BETWEEN ? AND ?`
     )
     .bind(groupId, from, to)
-    .all<{ session_date: string; claimed_by: string | null; claimed_by_name: string | null; claimed_by_email: string | null }>();
-  const map: Record<string, { claimedBy: string | null; claimedByName: string | null }> = {};
+    .all<{
+      session_date: string;
+      status: "open" | "claimed";
+      claimed_by: string | null;
+      claimed_by_name: string | null;
+      claimed_by_email: string | null;
+    }>();
+  const map: Record<string, { status: "open" | "claimed"; claimedBy: string | null; claimedByName: string | null }> = {};
   for (const r of results) {
-    map[r.session_date] = { claimedBy: r.claimed_by, claimedByName: r.claimed_by_name ?? r.claimed_by_email ?? null };
+    // "claimed" hat Vorrang, falls (theoretisch) mehrere Zeilen pro Datum.
+    if (map[r.session_date]?.status === "claimed") continue;
+    map[r.session_date] = {
+      status: r.status,
+      claimedBy: r.claimed_by,
+      claimedByName: r.claimed_by_name ?? r.claimed_by_email ?? null,
+    };
   }
   return map;
 }

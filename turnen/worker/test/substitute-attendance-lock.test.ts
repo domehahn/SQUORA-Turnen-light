@@ -41,6 +41,17 @@ describe("Vertretung sperrt die Anwesenheit für die ursprüngliche Leitung", ()
     expect(reqRes.status).toBe(201);
     const reqId = (await reqRes.json<{ id: string }>()).id;
 
+    // Vor der Übernahme: Status "open" - Hinweis, aber keine Sperre
+    const openInfo = await (await SELF.fetch(
+      `${BASE}/api/attendance-substitutes/${group.id}?from=${DATE}&to=${DATE}`,
+      { headers: { Cookie: ownerC, "Sec-Fetch-Site": "same-origin" } }
+    )).json<Record<string, { status: string }>>();
+    expect(openInfo[DATE]?.status).toBe("open");
+    const stillEditable = await SELF.fetch(`${BASE}/api/attendance/${group.id}/${DATE}`, {
+      headers: { Cookie: ownerC, "Sec-Fetch-Site": "same-origin" },
+    });
+    expect(stillEditable.status).toBe(200);
+
     const claim = await SELF.fetch(`${BASE}/api/substitute-requests/${reqId}/claim`, {
       method: "POST",
       headers: authHeaders(sprC),
@@ -64,8 +75,8 @@ describe("Vertretung sperrt die Anwesenheit für die ursprüngliche Leitung", ()
     const subInfo = await (await SELF.fetch(
       `${BASE}/api/attendance-substitutes/${group.id}?from=${DATE}&to=${DATE}`,
       { headers: { Cookie: ownerC, "Sec-Fetch-Site": "same-origin" } }
-    )).json<Record<string, { claimedByName: string | null }>>();
-    expect(subInfo[DATE]).toBeTruthy();
+    )).json<Record<string, { status: string; claimedByName: string | null }>>();
+    expect(subInfo[DATE]?.status).toBe("claimed");
 
     // Die Vertretung darf erfassen
     const sprPut = await SELF.fetch(`${BASE}/api/attendance/${group.id}/${DATE}`, {
