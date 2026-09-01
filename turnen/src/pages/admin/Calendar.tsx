@@ -137,7 +137,7 @@ export default function Calendar() {
               Anstehende Vertretungen
             </h3>
             <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-              Bereits übernommene Vertretungstermine im Verein – wer springt wann für wen ein.
+              Anstehende Vertretungstermine im Verein – übernommene und noch offene.
             </p>
             {upcomingSubstitutes.length === 0 ? (
               <p className="text-sm text-slate-400 dark:text-slate-500">Aktuell keine anstehenden Vertretungen.</p>
@@ -146,14 +146,31 @@ export default function Calendar() {
                 {upcomingSubstitutes.map((r) => (
                   <li
                     key={r.id}
-                    className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm dark:border-purple-900 dark:bg-purple-950/40"
+                    className={`flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm ${
+                      r.status === "open"
+                        ? "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40"
+                        : "border-purple-200 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/40"
+                    }`}
                   >
-                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        r.status === "open"
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                          : "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
+                      }`}
+                    >
                       {formatShortDate(r.sessionDate)}
                     </span>
-                    <span className="text-purple-900 dark:text-purple-200">
-                      {r.groupName} · {r.claimedByName ?? "jemand"} vertritt {r.requestedByName ?? "jemanden"}
-                    </span>
+                    {r.status === "open" ? (
+                      <span className="text-amber-900 dark:text-amber-200">
+                        {r.groupName} · <span className="font-medium">noch unbesetzt</span> · gesucht von{" "}
+                        {r.requestedByName ?? "jemandem"}
+                      </span>
+                    ) : (
+                      <span className="text-purple-900 dark:text-purple-200">
+                        {r.groupName} · {r.claimedByName ?? "jemand"} vertritt {r.requestedByName ?? "jemanden"}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

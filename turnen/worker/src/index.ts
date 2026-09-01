@@ -3557,14 +3557,14 @@ app.get("/api/substitute-requests/open", requireAuth, async (c) => {
   return c.json(await db.listOpenSubstituteRequestsForClub(c.env.DB, clubId));
 });
 
-// Anstehende, bereits übernommene Vertretungen im Verein - für den
-// Vertretungs-Kalender (wer springt an welchem Tag für wen ein).
+// Anstehende Vertretungen im Verein (ab heute) - übernommene UND noch offene,
+// für Dashboard und Vertretungs-Kalender. status unterscheidet die beiden.
 app.get("/api/substitute-requests/upcoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   const now = new Date();
   const todayIso = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
-  return c.json(await db.listUpcomingClaimedSubstituteRequestsForClub(c.env.DB, clubId, todayIso));
+  return c.json(await db.listUpcomingSubstituteRequestsForClub(c.env.DB, clubId, todayIso));
 });
 
 app.get("/api/substitute-requests/mine", requireAuth, async (c) => {

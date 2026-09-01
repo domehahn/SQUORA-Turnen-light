@@ -2683,14 +2683,16 @@ export async function listOpenSubstituteRequestsForClub(db: D1Database, clubId: 
 // Anstehende, bereits übernommene Vertretungen im ganzen Verein (heute oder
 // später) - für den Vertretungs-Kalender, damit alle sehen, wer an welchem
 // Tag für wen einspringt, nicht nur die beiden Beteiligten selbst.
-export async function listUpcomingClaimedSubstituteRequestsForClub(
+// Anstehende Vertretungen im Verein ab heute: bereits übernommene ("claimed")
+// UND noch offene, unbesetzte ("open") - das Frontend unterscheidet per status.
+export async function listUpcomingSubstituteRequestsForClub(
   db: D1Database,
   clubId: string,
   fromDate: string
 ): Promise<SubstituteRequestDetail[]> {
   const { results } = await db
     .prepare(
-      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status = 'claimed' AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
+      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status IN ('open', 'claimed') AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
     )
     .bind(clubId, fromDate)
     .all<SubstituteRequestJoinRow>();
