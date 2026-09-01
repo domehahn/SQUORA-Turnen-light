@@ -11,6 +11,7 @@ import type {
 } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
+import { buildCancellationParentMessage, shareViaWhatsApp } from "../../lib/cancellationMessage";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -83,6 +84,9 @@ export default function Attendance() {
   // niemand übernommen hat - reiner Hinweis, blockiert die Erfassung nicht.
   const [substituteRequested, setSubstituteRequested] = useState(false);
   const blocked = cancelled || handedToSubstitute !== null;
+  // Vorgefertigte Elternnachricht für die Absage (editierbar vor dem Versenden).
+  const [parentMsg, setParentMsg] = useState("");
+  const [msgCopied, setMsgCopied] = useState(false);
 
   async function loadOverrideRequests() {
     try {
@@ -199,6 +203,29 @@ export default function Attendance() {
     loadAttendance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, date, userId, dateValid]);
+
+  // Elternnachricht neu erzeugen, sobald der Termin abgesagt ist bzw. sich
+  // Gruppe/Datum/Grund ändern. Überschreibt eine evtl. manuelle Bearbeitung -
+  // beabsichtigt, da sich dann die Kernaussage geändert hat.
+  useEffect(() => {
+    if (!cancelled || !currentGroup) {
+      setParentMsg("");
+      return;
+    }
+    setParentMsg(
+      buildCancellationParentMessage({
+        groupName: currentGroup.name,
+        dateIso: date,
+        startTime: overrideStartTime || currentGroup.startTime,
+        endTime: overrideEndTime || currentGroup.endTime,
+        location: overrideLocation || currentGroup.location,
+        reason: cancelReason,
+        weekday: currentGroup.weekday,
+      })
+    );
+    setMsgCopied(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancelled, groupId, date, cancelReason]);
 
   const groupChildren = children.filter((c) => c.groupId === groupId);
 
@@ -377,18 +404,64 @@ export default function Attendance() {
           }`}
         >
           {cancelled ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-red-800 dark:text-red-300">
-                <span className="font-medium">Training fällt aus.</span>
-                {cancelReason ? ` Grund: ${cancelReason}` : ""}
-              </p>
-              <button
-                onClick={handleUncancelSession}
-                disabled={cancelling}
-                className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-800 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/50"
-              >
-                Absage aufheben
-              </button>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-red-800 dark:text-red-300">
+                  <span className="font-medium">Training fällt aus.</span>
+                  {cancelReason ? ` Grund: ${cancelReason}` : ""}
+                </p>
+                <button
+                  onClick={handleUncancelSession}
+                  disabled={cancelling}
+                  className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-800 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/50"
+                >
+                  Absage aufheben
+                </button>
+              </div>
+
+              <div className="rounded-md border border-red-200 bg-white p-3 dark:border-red-900 dark:bg-slate-900">
+                <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Elternnachricht (anpassbar, dann per WhatsApp in die Elterngruppe schicken)
+                </p>
+                <textarea
+                  value={parentMsg}
+                  onChange={(e) => {
+                    setParentMsg(e.target.value);
+                    setMsgCopied(false);
+                  }}
+                  rows={6}
+                  className="w-full resize-y rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => shareViaWhatsApp(parentMsg)}
+                    disabled={!parentMsg.trim()}
+                    className="rounded-md bg-[#25D366] px-3 py-1.5 text-xs font-medium text-white hover:brightness-95 disabled:opacity-50"
+                  >
+                    Per WhatsApp senden
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(parentMsg);
+                        setMsgCopied(true);
+                      } catch {
+                        setMsgCopied(false);
+                      }
+                    }}
+                    disabled={!parentMsg.trim()}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    {msgCopied ? "Kopiert ✓" : "Text kopieren"}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  WhatsApp öffnet sich mit dem Text – die Elterngruppe wählst du dort selbst aus (in eine Gruppe posten
+                  kann keine Schnittstelle automatisch).
+                </p>
+              </div>
             </div>
           ) : showCancelForm ? (
             <div className="flex flex-wrap items-end gap-3">
