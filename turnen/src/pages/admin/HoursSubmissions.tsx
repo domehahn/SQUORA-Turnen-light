@@ -14,7 +14,7 @@ function periodLabel(s: Pick<HoursReportSubmission, "quarter" | "year">): string
 }
 
 export default function HoursSubmissionsPage() {
-  const { clubRole, isKassenwart, userId } = useAuth();
+  const { clubRole, isKassenwart, isAdmin, userId } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
 
   const [rows, setRows] = useState<HoursReportSubmission[]>([]);
@@ -80,8 +80,10 @@ export default function HoursSubmissionsPage() {
       <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
         {isKassenwart
           ? "Alle eingereichten Nachweise des Vereins – ansehen und abrechnen."
-          : "Alle eingereichten Nachweise des Vereins – nur lesend. Deine eigenen bearbeitest du über die Nachweis-Seite."}
-        {openSettleCount > 0 && ` · ${openSettleCount} offen`}
+          : isAdmin && !isJugendleiter
+            ? "Alle eingereichten Nachweise des Vereins – nur lesend."
+            : "Alle eingereichten Nachweise des Vereins – nur lesend. Deine eigenen bearbeitest du über die Nachweis-Seite."}
+        {isKassenwart && openSettleCount > 0 && ` · ${openSettleCount} offen`}
       </p>
 
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}

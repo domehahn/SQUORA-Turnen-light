@@ -1194,7 +1194,11 @@ app.post("/api/admin/switch-club", requireAuth, requireAdmin, async (c) => {
   const club = await db.getClubById(c.env.DB, clubId);
   if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
 
-  await db.setUserClub(c.env.DB, c.get("userId"), clubId, "jugendleiter");
+  // Plattform-Admin bekommt beim Vereinswechsel bewusst NUR die Rolle
+  // "member" - die Aufsicht/Sichtbarkeit läuft über is_admin (requireAdmin,
+  // Lese-Freigaben unten). Ein Admin soll nicht zusätzlich als Jugendleitung
+  // im Verein geführt werden (Nutzerentscheidung 2026-09-01).
+  await db.setUserClub(c.env.DB, c.get("userId"), clubId, "member");
   await db.logAudit(c.env.DB, {
     clubId,
     actorId: c.get("userId"),
@@ -4905,7 +4909,9 @@ app.get("/api/hours-report/submissions/mine", requireAuth, async (c) => {
 // Kassenwart:in (lesend + abrechnen).
 app.get("/api/hours-report/submissions", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isKassenwart"))) {
+  // Lesen: Jugendleitung, Kassenwart:in, Plattform-Admin. Abrechnen bleibt der
+  // Kassenwart:in vorbehalten (siehe /settle).
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isKassenwart") && !c.get("isAdmin"))) {
     return c.json({ error: "Keine Berechtigung" }, 403);
   }
   return c.json(await db.listHoursSubmissionsForClub(c.env.DB, clubId));
@@ -4925,6 +4931,7 @@ app.get("/api/hours-report/submissions/:id/pdf", requireAuth, async (c) => {
   const sameClub = row.club_id === c.get("clubId");
   const allowed =
     row.user_id === c.get("userId") ||
+    c.get("isAdmin") ||
     (sameClub && (c.get("clubRole") === "jugendleiter" || c.get("isKassenwart")));
   if (!allowed) return c.json({ error: "Keine Berechtigung" }, 403);
 

@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ensureMigrated, login, seedClub, seedUser } from "./helpers";
+import { enableMfaForTest, ensureMigrated, login, seedClub, seedUser } from "./helpers";
 
 beforeAll(async () => {
   await ensureMigrated();
@@ -24,11 +24,15 @@ describe("Eingereichte Stundennachweise", () => {
     await seedUser({ email: "kw-hn@test.local", password: "password-123", clubId: club.id, isKassenwart: true });
     await seedUser({ email: "ul-hn@test.local", password: "password-123", clubId: club.id });
     await seedUser({ email: "member-hn@test.local", password: "password-123", clubId: club.id });
+    await seedUser({ email: "admin-hn@test.local", password: "password-123", clubId: club.id, isAdmin: true });
 
     const ul = await login(SELF, "ul-hn@test.local", "password-123");
     const kw = await login(SELF, "kw-hn@test.local", "password-123");
     const jl = await login(SELF, "jl-hn@test.local", "password-123");
     const member = await login(SELF, "member-hn@test.local", "password-123");
+    const admin = await login(SELF, "admin-hn@test.local", "password-123");
+    // Platform-Admin ohne MFA wird serverseitig geblockt - für den Test aktivieren.
+    await enableMfaForTest(admin, "password-123");
 
     // Einreichen
     const submit = await SELF.fetch(`${BASE}/api/hours-report/submissions?year=2026&quarter=1`, {
@@ -57,14 +61,22 @@ describe("Eingereichte Stundennachweise", () => {
     const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
     expect(pdfBytes.length).toBe(FAKE_PDF.length);
 
-    // Vereinsliste: Jugendleitung + Kassenwart ja, normales Mitglied nein
-    for (const cookie of [jl, kw]) {
+    // Vereinsliste: Jugendleitung + Kassenwart + Plattform-Admin ja (lesend),
+    // normales Mitglied nein
+    for (const cookie of [jl, kw, admin]) {
       const res = await SELF.fetch(`${BASE}/api/hours-report/submissions`, {
         headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin" },
       });
       expect(res.status).toBe(200);
       expect((await res.json<unknown[]>()).length).toBe(1);
     }
+    // Admin darf lesen, aber nicht abrechnen
+    const adminSettle = await SELF.fetch(`${BASE}/api/hours-report/submissions/${id}/settle`, {
+      method: "POST",
+      headers: jsonHeaders(admin),
+      body: JSON.stringify({ amountEuro: "10", rateEuro: "10", note: "" }),
+    });
+    expect(adminSettle.status).toBe(403);
     const memberList = await SELF.fetch(`${BASE}/api/hours-report/submissions`, {
       headers: { Cookie: member, "Sec-Fetch-Site": "same-origin" },
     });
