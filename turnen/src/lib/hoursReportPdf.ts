@@ -15,6 +15,15 @@ function quarterLabel(quarter: number, year: number): string {
   return quarter === 0 ? `Jahr ${year}` : `${quarter}. Quartal ${year}`;
 }
 
+function imageDims(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+    img.onerror = () => reject(new Error("image decode failed"));
+    img.src = dataUrl;
+  });
+}
+
 // Lädt das SQUORA-Logo aus /public und liefert Data-URL + Originalmaße.
 // Schlägt der Ladevorgang fehl (offline o.ä.), wird das PDF ohne Logo erzeugt.
 async function loadBrandLogo(): Promise<{ dataUrl: string; width: number; height: number } | null> {
@@ -178,7 +187,21 @@ export async function buildHoursReportPdf(
 
   if (signatureDataUrl) {
     try {
-      doc.addImage(signatureDataUrl, "PNG", marginX, lineY - 20, 55, 18);
+      // Seitenverhältnis erhalten - eine hochgeladene Unterschrift kann jedes
+      // Format haben, das gezeichnete Feld ist 3:1.
+      const maxW = 55;
+      const maxH = 20;
+      let drawW = maxW;
+      let drawH = maxH;
+      try {
+        const dims = await imageDims(signatureDataUrl);
+        const s = Math.min(maxW / dims.width, maxH / dims.height);
+        drawW = dims.width * s;
+        drawH = dims.height * s;
+      } catch {
+        /* Maße nicht ermittelbar -> Standardbox */
+      }
+      doc.addImage(signatureDataUrl, "PNG", marginX, lineY - 2 - drawH, drawW, drawH);
     } catch {
       /* ungültiges Bild ignorieren */
     }

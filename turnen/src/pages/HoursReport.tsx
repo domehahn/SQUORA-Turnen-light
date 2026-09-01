@@ -5,6 +5,7 @@ import type { HoursReport, HoursReportSubmission, HoursSummary } from "../lib/ty
 import SquoraBrand from "../components/SquoraBrand";
 import { FloatingInput, FloatingSelect } from "../components/FloatingField";
 import { SignaturePad, type SignaturePadHandle } from "../components/SignaturePad";
+import { fileToSignatureDataUrl } from "../lib/signatureImage";
 import { buildHoursReportPdf } from "../lib/hoursReportPdf";
 
 function formatEuroCents(cents: number | null): string {
@@ -54,6 +55,10 @@ export default function HoursReportPage() {
   const [mySubmissions, setMySubmissions] = useState<HoursReportSubmission[]>([]);
   const signatureRef = useRef<SignaturePadHandle>(null);
   const [signatureEmpty, setSignatureEmpty] = useState(true);
+  // Unterschrift entweder zeichnen oder ein vorhandenes Bild hochladen.
+  const [signMode, setSignMode] = useState<"draw" | "upload">("draw");
+  const [uploadedSignature, setUploadedSignature] = useState<string | null>(null);
+  const hasSignature = signMode === "upload" ? uploadedSignature !== null : !signatureEmpty;
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
 
@@ -119,12 +124,23 @@ export default function HoursReportPage() {
     if (canSubmit) loadMySubmissions();
   }, [canSubmit]);
 
+  async function handleSignatureFile(file: File) {
+    setError(null);
+    try {
+      setUploadedSignature(await fileToSignatureDataUrl(file));
+    } catch {
+      setUploadedSignature(null);
+      setError("Das Bild konnte nicht verarbeitet werden. Bitte PNG oder JPG wählen.");
+    }
+  }
+
   async function handleSubmit() {
     if (!report) return;
-    const signatureDataUrl = signatureRef.current?.getDataUrl() ?? null;
+    const signatureDataUrl =
+      signMode === "upload" ? uploadedSignature : (signatureRef.current?.getDataUrl() ?? null);
     if (!signatureDataUrl) {
       setSubmitMsg(null);
-      setError("Bitte zuerst unterschreiben.");
+      setError(signMode === "upload" ? "Bitte zuerst ein Unterschriftsbild hochladen." : "Bitte zuerst unterschreiben.");
       return;
     }
     setSubmitting(true);
@@ -142,6 +158,7 @@ export default function HoursReportPage() {
         "application/pdf"
       );
       signatureRef.current?.clear();
+      setUploadedSignature(null);
       setSubmitMsg(submission ? "Nachweis erneut eingereicht." : "Nachweis eingereicht.");
       await loadMySubmissions();
     } catch (err) {
@@ -252,11 +269,68 @@ export default function HoursReportPage() {
               </p>
             ) : (
               <div className="flex flex-wrap items-start gap-4">
-                <SignaturePad ref={signatureRef} onChange={setSignatureEmpty} />
+                <div>
+                  <div className="mb-2 inline-flex overflow-hidden rounded-md border border-slate-300 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSignMode("draw")}
+                      className={`px-3 py-1.5 ${signMode === "draw" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                    >
+                      Zeichnen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignMode("upload")}
+                      className={`border-l border-slate-300 px-3 py-1.5 ${signMode === "upload" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                    >
+                      Bild hochladen
+                    </button>
+                  </div>
+
+                  <div className={signMode === "draw" ? "" : "hidden"}>
+                    <SignaturePad ref={signatureRef} onChange={setSignatureEmpty} />
+                  </div>
+
+                  {signMode === "upload" && (
+                    <div>
+                      {uploadedSignature ? (
+                        <div className="rounded-md border border-slate-400 bg-white p-2" style={{ width: 480 }}>
+                          <img src={uploadedSignature} alt="Unterschrift" className="mx-auto max-h-[140px] object-contain" />
+                          <button
+                            type="button"
+                            onClick={() => setUploadedSignature(null)}
+                            className="mt-1 text-xs text-slate-500 hover:underline"
+                          >
+                            Entfernen
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          className="flex h-[160px] w-[480px] cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-slate-400 bg-white text-xs text-slate-500 hover:bg-slate-50"
+                        >
+                          Unterschriftsbild wählen (PNG/JPG)
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (file) handleSignatureFile(file);
+                            }}
+                          />
+                        </label>
+                      )}
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Am besten ein freigestelltes Bild (transparenter/weißer Hintergrund).
+                      </p>
+                    </div>
+                  )}
+                </div>
                 <div className="flex flex-col gap-2">
                   <button
                     onClick={handleSubmit}
-                    disabled={submitting || signatureEmpty || !report}
+                    disabled={submitting || !hasSignature || !report}
                     className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
                     {submitting ? "Wird eingereicht…" : submission ? "Erneut einreichen" : "Unterschreiben & einreichen"}
