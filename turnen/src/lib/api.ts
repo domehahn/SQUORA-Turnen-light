@@ -47,6 +47,21 @@ export function apiPath(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+// Rohen Binär-Body hochladen (z.B. das eingereichte Stundennachweis-PDF) -
+// api.put schickt immer JSON, hier brauchen wir application/pdf.
+export async function apiPutBinary(path: string, body: BlobPart, contentType: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": contentType },
+    body: body as BodyInit,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError((data as { error?: string } | null)?.error ?? `Fehler ${res.status}`, res.status, data);
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body: unknown) => request<T>("POST", path, body),

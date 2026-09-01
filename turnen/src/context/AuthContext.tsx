@@ -11,6 +11,7 @@ interface MeResponse {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole;
+  isKassenwart: boolean;
   isAdmin: boolean;
   mfaSetupRequired: boolean;
   passwordChangeRequired: boolean;
@@ -33,6 +34,7 @@ const EMPTY_STATE: AuthState = {
   clubId: null,
   clubName: null,
   clubRole: null,
+  isKassenwart: false,
   isAdmin: false,
   mfaSetupRequired: false,
   passwordChangeRequired: false,
@@ -48,6 +50,7 @@ function stateFromMe(me: MeResponse): AuthState {
     clubId: me.clubId,
     clubName: me.clubName,
     clubRole: me.clubRole,
+    isKassenwart: me.isKassenwart,
     isAdmin: me.isAdmin,
     mfaSetupRequired: me.mfaSetupRequired,
     passwordChangeRequired: me.passwordChangeRequired,

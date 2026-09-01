@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { Webhook } from "svix";
 import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import * as db from "./db";
 import {
   ABSOLUTE_SESSION_SECONDS,
@@ -65,6 +65,7 @@ type Variables = {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isKassenwart: boolean;
   isAdmin: boolean;
   sessionId: string;
 };
@@ -318,6 +319,7 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("name", user.name);
     c.set("clubId", user.club_id);
     c.set("clubRole", user.club_role);
+    c.set("isKassenwart", Boolean(user.is_kassenwart));
     c.set("isAdmin", Boolean(user.is_admin));
     c.set("sessionId", session.id);
 
@@ -1114,6 +1116,7 @@ app.get("/api/me", requireAuth, async (c) => {
     clubId,
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
+    isKassenwart: c.get("isKassenwart"),
     isAdmin: c.get("isAdmin"),
     // MFA ist für normale Rollen (member/jugendleiter) weiterhin reines
     // Opt-in. Für Platform-Admin (is_admin) erneut verpflichtend
@@ -1359,7 +1362,8 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   }
   let clubRole: ClubRole = "member";
   if ("clubRole" in (body ?? {})) {
-    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter") return c.json({ error: "Ungültige Rolle" }, 400);
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter" && body.clubRole !== "springer")
+      return c.json({ error: "Ungültige Rolle" }, 400);
     clubRole = body.clubRole;
   }
   const isAdmin = "isAdmin" in (body ?? {}) ? Boolean(validBool(body.isAdmin)) : false;
@@ -1401,7 +1405,8 @@ app.put("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
     input.clubId = clubId;
   }
   if ("clubRole" in (body ?? {})) {
-    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter") return c.json({ error: "Ungültige Rolle" }, 400);
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter" && body.clubRole !== "springer")
+      return c.json({ error: "Ungültige Rolle" }, 400);
     input.clubRole = body.clubRole;
   }
   if ("isAdmin" in (body ?? {})) {
@@ -2506,6 +2511,96 @@ app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// Ein Vereinsmitglied zur/zum Springer:in machen - kann Vertretungen
+// übernehmen, leitet aber keine eigene Gruppe. Nur möglich, solange die
+// Person aktuell keine Gruppe leitet (weder als Besitzer:in noch als
+// Mit-Trainer:in) und keine Jugendleitung ist.
+app.post("/api/clubs/mine/members/:userId/make-springer", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const targetUserId = validId(c.req.param("userId"));
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+
+  const target = await db.getUserById(c.env.DB, targetUserId);
+  if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  if (target.clubRole === "jugendleiter")
+    return c.json({ error: "Bitte die Jugendleitung zuerst zurückstufen" }, 409);
+  if (await db.userLeadsAnyGroup(c.env.DB, targetUserId))
+    return c.json({ error: "Person leitet noch eine Gruppe – bitte zuerst die Gruppenleitung übergeben" }, 409);
+
+  const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "springer");
+  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "member.made_springer",
+    targetLabel: target.name ?? target.email ?? targetUserId,
+  });
+  return c.json({ ok: true });
+});
+
+// Springer:in-Rolle wieder aufheben (zurück auf "member", damit die Person
+// eine eigene Gruppe übernehmen kann).
+app.post("/api/clubs/mine/members/:userId/unset-springer", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const targetUserId = validId(c.req.param("userId"));
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+
+  const target = await db.getUserById(c.env.DB, targetUserId);
+  if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  if (target.clubRole !== "springer") return c.json({ error: "Mitglied ist kein:e Springer:in" }, 409);
+
+  const ok = await db.setClubRole(c.env.DB, targetUserId, clubId, "member");
+  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "member.unset_springer",
+    targetLabel: target.name ?? target.email ?? targetUserId,
+  });
+  return c.json({ ok: true });
+});
+
+// Kassenwart:in-Flag setzen/entfernen - additiv, kombinierbar mit jeder Rolle
+// (Turnleiter:in mit Gruppen, Springer:in, Jugendleitung). Nur die
+// Jugendleitung darf das vergeben.
+app.post("/api/clubs/mine/members/:userId/make-kassenwart", requireAuth, async (c) => {
+  return setKassenwartFlag(c, true);
+});
+app.post("/api/clubs/mine/members/:userId/unset-kassenwart", requireAuth, async (c) => {
+  return setKassenwartFlag(c, false);
+});
+
+async function setKassenwartFlag(c: Context<AppEnv>, value: boolean) {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const targetUserId = validId(c.req.param("userId"));
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+
+  const target = await db.getUserById(c.env.DB, targetUserId);
+  if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+
+  const ok = await db.setKassenwart(c.env.DB, targetUserId, clubId, value);
+  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: value ? "member.made_kassenwart" : "member.unset_kassenwart",
+    targetLabel: target.name ?? target.email ?? targetUserId,
+  });
+  return c.json({ ok: true });
+}
+
 // --- Gruppen -----------------------------------------------------------
 
 app.get("/api/groups", requireAuth, async (c) => {
@@ -2556,6 +2651,8 @@ app.get("/api/season-transition/proposals", requireAuth, async (c) => {
 });
 
 app.post("/api/groups", requireAuth, async (c) => {
+  if (c.get("clubRole") === "springer")
+    return c.json({ error: "Springer:innen können keine eigene Gruppe anlegen" }, 403);
   const body = await c.req.json().catch(() => null);
   const name = requiredText(body?.name, 100);
   const ageRange = validAgeRange(body?.minAge, body?.maxAge);
@@ -2747,6 +2844,9 @@ app.post("/api/groups/:id/co-leaders", requireAuth, async (c) => {
   const target = await db.getUserById(c.env.DB, targetUserId);
   if (!target || !group.club_id || target.clubId !== group.club_id) {
     return c.json({ error: "Nur Mitglieder desselben Vereins können Mit-Trainer*in werden" }, 400);
+  }
+  if (target.clubRole === "springer") {
+    return c.json({ error: "Springer:innen können nicht als Mit-Trainer*in eingetragen werden – bitte zuerst die Rolle ändern" }, 400);
   }
 
   await db.addGroupCoLeader(c.env.DB, id, targetUserId, c.get("userId"));
@@ -4756,6 +4856,182 @@ app.get("/api/hours-summary", requireAuth, async (c) => {
   });
 });
 
+// --- Eingereichte Stundennachweise (digital unterschrieben, PDF in R2) -----
+
+function hoursReportPeriodBounds(year: number, quarter: number): { from: string; to: string } {
+  const startMonth = quarter === 0 ? 1 : (quarter - 1) * 3 + 1;
+  const endMonth = quarter === 0 ? 12 : startMonth + 2;
+  const from = `${year}-${String(startMonth).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, endMonth, 0).getDate();
+  const to = `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { from, to };
+}
+
+// Gesamtstunden serverseitig neu berechnen - identisch zu GET /api/hours-report,
+// damit die Abrechnung nicht der vom Client hochgeladenen Zahl vertrauen muss.
+async function computeSubmittedHoursTotal(
+  dbEnv: D1Database,
+  userId: string,
+  clubId: string | null,
+  year: number,
+  quarter: number
+): Promise<number> {
+  const { from, to } = hoursReportPeriodBounds(year, quarter);
+  const allGroups = await db.listGroupsForUser(dbEnv, userId, clubId);
+  const rows = await db.listSessionsForExport(dbEnv, allGroups.map((g) => g.id), from, to, userId);
+  let total = 0;
+  for (const r of rows) {
+    const h = hoursBetween(effectiveStartTime(r.startTime), r.endTime);
+    if (h !== null) total += h;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+function hoursReportStorageKey(clubId: string, userId: string, year: number, quarter: number): string {
+  const period = quarter === 0 ? `${year}-ganzes-jahr` : `${year}-Q${quarter}`;
+  return `${clubId}/${userId}/${period}.pdf`;
+}
+
+// Euro-Eingabe (Zahl oder "12,50") -> Cent. null = leer, undefined = ungültig.
+function parseOptionalEuroCents(value: unknown): number | null | undefined {
+  if (value === undefined || value === null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  if (!Number.isFinite(n) || n < 0 || n > 1_000_000) return undefined;
+  return Math.round(n * 100);
+}
+
+// Nachweis einreichen bzw. erneut einreichen. Body = PDF-Bytes.
+app.put("/api/hours-report/submissions", requireAuth, async (c) => {
+  const bucket = c.env.HOURS_REPORTS;
+  if (!bucket) return c.json({ error: "Dokumentenspeicher ist nicht konfiguriert" }, 503);
+
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const year = Number(c.req.query("year"));
+  const quarter = Number(c.req.query("quarter"));
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return c.json({ error: "Ungültiges Jahr" }, 400);
+  if (!Number.isInteger(quarter) || quarter < 0 || quarter > 4) return c.json({ error: "Ungültiges Quartal" }, 400);
+
+  const existing = await db.getHoursSubmissionForPeriod(c.env.DB, clubId, c.get("userId"), year, quarter);
+  if (existing && existing.status === "settled") {
+    return c.json({ error: "Dieser Nachweis wurde bereits abgerechnet und ist gesperrt" }, 409);
+  }
+
+  if (!(c.req.header("content-type") ?? "").includes("application/pdf")) {
+    return c.json({ error: "Es wird ein PDF erwartet" }, 415);
+  }
+  const body = await c.req.arrayBuffer();
+  if (body.byteLength === 0) return c.json({ error: "Leeres Dokument" }, 400);
+  if (body.byteLength > 10 * 1024 * 1024) return c.json({ error: "Dokument ist zu groß (max. 10 MB)" }, 413);
+
+  const totalHours = await computeSubmittedHoursTotal(c.env.DB, c.get("userId"), clubId, year, quarter);
+  const storageKey = hoursReportStorageKey(clubId, c.get("userId"), year, quarter);
+  await bucket.put(storageKey, body, { httpMetadata: { contentType: "application/pdf" } });
+
+  await db.upsertHoursSubmission(c.env.DB, {
+    clubId,
+    userId: c.get("userId"),
+    year,
+    quarter,
+    totalHours,
+    storageKey,
+    signedByName: c.get("name") ?? null,
+  });
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: existing ? "hours_report.resubmitted" : "hours_report.submitted",
+    targetLabel: `${year}${quarter === 0 ? " (ganzes Jahr)" : ` Q${quarter}`}`,
+  });
+  return c.json({ ok: true });
+});
+
+// Eigene eingereichte Nachweise (alle Zeiträume).
+app.get("/api/hours-report/submissions/mine", requireAuth, async (c) => {
+  return c.json(await db.listHoursSubmissionsForUser(c.env.DB, c.get("userId")));
+});
+
+// Alle eingereichten Nachweise des Vereins - nur Jugendleitung (lesend) und
+// Kassenwart:in (lesend + abrechnen).
+app.get("/api/hours-report/submissions", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isKassenwart"))) {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+  return c.json(await db.listHoursSubmissionsForClub(c.env.DB, clubId));
+});
+
+// Das eingereichte PDF ausliefern. Zugriff: Eigentümer:in, oder Jugendleitung /
+// Kassenwart:in desselben Vereins.
+app.get("/api/hours-report/submissions/:id/pdf", requireAuth, async (c) => {
+  const bucket = c.env.HOURS_REPORTS;
+  if (!bucket) return c.json({ error: "Dokumentenspeicher ist nicht konfiguriert" }, 503);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const row = await db.getHoursSubmissionRowById(c.env.DB, id);
+  if (!row) return c.json({ error: "Nicht gefunden" }, 404);
+
+  const sameClub = row.club_id === c.get("clubId");
+  const allowed =
+    row.user_id === c.get("userId") ||
+    (sameClub && (c.get("clubRole") === "jugendleiter" || c.get("isKassenwart")));
+  if (!allowed) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  const obj = await bucket.get(row.storage_key);
+  if (!obj) return c.json({ error: "Dokument nicht im Speicher gefunden" }, 404);
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="stundennachweis_${row.year}${row.quarter === 0 ? "" : `_Q${row.quarter}`}.pdf"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
+});
+
+// Einen eingereichten Nachweis abrechnen - ausschließlich Kassenwart:in.
+app.post("/api/hours-report/submissions/:id/settle", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (!c.get("isKassenwart")) {
+    return c.json({ error: "Nur die Kassenwart:in kann Stundennachweise abrechnen" }, 403);
+  }
+
+  const row = await db.getHoursSubmissionRowById(c.env.DB, id);
+  if (!row) return c.json({ error: "Nicht gefunden" }, 404);
+  if (row.club_id !== c.get("clubId")) return c.json({ error: "Keine Berechtigung" }, 403);
+  // Vier-Augen-Prinzip: den eigenen Nachweis nicht selbst abrechnen.
+  if (row.user_id === c.get("userId")) {
+    return c.json({ error: "Den eigenen Stundennachweis kannst du nicht selbst abrechnen" }, 403);
+  }
+  if (row.status === "settled") return c.json({ error: "Dieser Nachweis wurde bereits abgerechnet" }, 409);
+
+  const body = await c.req.json().catch(() => null);
+  const amountCents = parseOptionalEuroCents(body?.amountEuro);
+  const rateCents = parseOptionalEuroCents(body?.rateEuro);
+  if (amountCents === undefined) return c.json({ error: "Betrag ist ungültig" }, 400);
+  if (rateCents === undefined) return c.json({ error: "Stundensatz ist ungültig" }, 400);
+  const note = optionalText(body?.note, 500);
+  if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
+
+  await db.settleHoursSubmission(c.env.DB, id, {
+    settledBy: c.get("userId"),
+    amountCents,
+    rateCents,
+    note,
+  });
+  await db.logAudit(c.env.DB, {
+    clubId: row.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "hours_report.settled",
+    targetLabel: `${row.year}${row.quarter === 0 ? " (ganzes Jahr)" : ` Q${row.quarter}`}`,
+  });
+  return c.json({ ok: true });
+});
+
 // --- Anwesenheit -----------------------------------------------------------
 
 // Anwesenheit ist – anders als Gruppen/Kinder – nicht vereinsweit lesbar:
@@ -4833,6 +5109,24 @@ app.get("/api/attendance-cancellations/:groupId", requireAuth, async (c) => {
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getCancelledSessions(c.env.DB, groupId, from, to));
+});
+
+// An eine Vertretung übergebene Termine der Gruppe im Zeitraum - für die
+// Sperre auf der Anwesenheit-/Übersichtsseite (die ursprüngliche Leitung
+// kann die Anwesenheit für diese Termine nicht erfassen; die Stunde wird der
+// vertretenden Person angerechnet).
+app.get("/api/attendance-substitutes/:groupId", requireAuth, async (c) => {
+  const groupId = validId(c.req.param("groupId"));
+  const from = validDate(c.req.query("from"));
+  const to = validDate(c.req.query("to"));
+  if (!groupId || !from || !to) return c.json({ error: "Ungültige Gruppe oder Zeitraum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  return c.json(await db.listClaimedSubstitutesForGroup(c.env.DB, groupId, from, to));
 });
 
 app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {

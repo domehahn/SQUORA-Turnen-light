@@ -74,6 +74,12 @@ export default function Attendance() {
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [cancelReasonInput, setCancelReasonInput] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  // Gesetzt, wenn dieser Termin an eine Vertretung übergeben wurde und der/die
+  // aktuelle Nutzer:in NICHT die Vertretung ist - dann ist die Erfassung
+  // gesperrt (wie bei einer Absage) und die Stunde wird der Vertretung
+  // angerechnet.
+  const [handedToSubstitute, setHandedToSubstitute] = useState<{ name: string | null } | null>(null);
+  const blocked = cancelled || handedToSubstitute !== null;
 
   async function loadOverrideRequests() {
     try {
@@ -149,6 +155,22 @@ export default function Attendance() {
       if (!groupId || !date || !dateValid) return;
       setError(null);
       setSavedMessage(null);
+      setHandedToSubstitute(null);
+      try {
+        // Zuerst prüfen, ob der Termin an eine Vertretung übergeben wurde -
+        // dann ist die Anwesenheit für die ursprüngliche Leitung gesperrt und
+        // ein GET /api/attendance/... würde ohnehin mit 403 antworten.
+        const subs = await api.get<Record<string, { claimedBy: string | null; claimedByName: string | null }>>(
+          `/api/attendance-substitutes/${groupId}?from=${date}&to=${date}`
+        );
+        const claim = subs[date];
+        if (claim && claim.claimedBy !== userId) {
+          setHandedToSubstitute({ name: claim.claimedByName });
+          return;
+        }
+      } catch {
+        // Sperr-Info ist Zusatz - ein Ladefehler soll die Seite nicht blockieren.
+      }
       try {
         const session = await api.get<AttendanceSession>(`/api/attendance/${groupId}/${date}`);
         const map: Record<string, boolean> = {};
@@ -318,7 +340,20 @@ export default function Attendance() {
         </div>
       </div>
 
-      {dateValid && groupId && (
+      {dateValid && groupId && handedToSubstitute && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            <span className="font-medium">An Vertretung übergeben.</span>{" "}
+            {handedToSubstitute.name
+              ? `${handedToSubstitute.name} übernimmt diesen Termin.`
+              : "Eine Vertretung übernimmt diesen Termin."}{" "}
+            Die Anwesenheit für diesen Termin kannst du nicht erfassen – die Stunde wird der Vertretung
+            angerechnet. Über die Vertretungsbörse lässt sich der Termin zurückholen.
+          </p>
+        </div>
+      )}
+
+      {dateValid && groupId && !handedToSubstitute && (
         <div
           className={`rounded-lg border p-4 ${
             cancelled
@@ -375,6 +410,7 @@ export default function Attendance() {
         </div>
       )}
 
+      {!handedToSubstitute && (
       <div className={`rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 ${cancelled ? "opacity-50" : ""}`}>
         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
           <input
@@ -433,6 +469,7 @@ export default function Attendance() {
           </div>
         )}
       </div>
+      )}
 
       {incomingOverrideRequests.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
@@ -507,7 +544,7 @@ export default function Attendance() {
 
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
-      ) : !dateValid || cancelled ? null : (
+      ) : !dateValid || blocked ? null : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -549,7 +586,7 @@ export default function Attendance() {
         </div>
       )}
 
-      {!cancelled && (
+      {!blocked && (
         <button
           onClick={handleSave}
           disabled={saving || groupChildren.length === 0 || !dateValid}

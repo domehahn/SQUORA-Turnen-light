@@ -12,6 +12,7 @@ interface AdminUser {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole;
+  isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
 }
@@ -235,6 +236,7 @@ export default function AdminUsers() {
               onChange={(e) => setCreateClubRole(e.target.value as ClubRole)}
             >
               <option value="member">Turnleiter*in</option>
+              <option value="springer">Springer*in</option>
               <option value="jugendleiter">Jugendleitung</option>
             </FloatingSelect>
             <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-slate-700 dark:text-slate-300">
@@ -314,7 +316,12 @@ export default function AdminUsers() {
                             : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                         }`}
                       >
-                        {u.clubRole === "jugendleiter" ? "Jugendleitung" : "Turnleiter*in"}
+                        {u.clubRole === "jugendleiter"
+                          ? "Jugendleitung"
+                          : u.clubRole === "springer"
+                            ? "Springer*in"
+                            : "Turnleiter*in"}
+                        {u.isKassenwart ? " + Kassenwart" : ""}
                       </button>
                     )}
                   </td>
