@@ -106,6 +106,11 @@ export async function verifyPassword(password: string, hash: string, salt: strin
 // übersprungen würde.
 export const IDLE_TIMEOUT_SECONDS = 5 * 60; // 5 Minuten Inaktivität -> Logout
 export const ABSOLUTE_SESSION_SECONDS = 8 * 60 * 60; // 8 Stunden harte Obergrenze
+// Native App (Capacitor, Bearer-Token statt Cookie): Ein 5-Minuten-Idle-Timeout
+// wäre auf dem Smartphone unbrauchbar. Token liegt im geräteeigenen
+// Secure-Storage (Keychain/Keystore), nicht im Browser - anderes Risikoprofil.
+export const APP_IDLE_TIMEOUT_SECONDS = 60 * 60 * 24 * 30; // 30 Tage Inaktivität
+export const APP_ABSOLUTE_SESSION_SECONDS = 60 * 60 * 24 * 90; // 90 Tage harte Obergrenze
 // Throttle für last_activity_at-Updates - nicht bei jedem Request schreiben.
 export const ACTIVITY_UPDATE_THROTTLE_SECONDS = 30;
 

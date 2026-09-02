@@ -465,18 +465,25 @@ export interface SessionRow {
   revoked_at: string | null;
   user_agent: string | null;
   ip: string | null;
+  client: "web" | "app";
 }
 
 export async function createSession(
   db: D1Database,
-  input: { userId: string; absoluteExpiresAt: string; userAgent: string | null; ip: string | null }
+  input: {
+    userId: string;
+    absoluteExpiresAt: string;
+    userAgent: string | null;
+    ip: string | null;
+    client?: "web" | "app";
+  }
 ): Promise<string> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO sessions (id, user_id, absolute_expires_at, user_agent, ip) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO sessions (id, user_id, absolute_expires_at, user_agent, ip, client) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .bind(id, input.userId, input.absoluteExpiresAt, input.userAgent, input.ip)
+    .bind(id, input.userId, input.absoluteExpiresAt, input.userAgent, input.ip, input.client ?? "web")
     .run();
   return id;
 }

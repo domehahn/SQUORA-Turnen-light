@@ -7,6 +7,8 @@ import * as db from "./db";
 import {
   ABSOLUTE_SESSION_SECONDS,
   ACTIVITY_UPDATE_THROTTLE_SECONDS,
+  APP_ABSOLUTE_SESSION_SECONDS,
+  APP_IDLE_TIMEOUT_SECONDS,
   BACKUP_CODE_ITERATIONS,
   CURRENT_PBKDF2_ITERATIONS,
   IDLE_TIMEOUT_SECONDS,
@@ -97,13 +99,32 @@ function parseSqliteDatetime(value: string): number {
   return new Date(`${value.replace(" ", "T")}Z`).getTime();
 }
 
-async function issueSession(c: { req: { url: string; header: (name: string) => string | undefined }; env: Env }, userId: string) {
-  const absoluteExpiresAt = toSqliteDatetime(new Date(Date.now() + ABSOLUTE_SESSION_SECONDS * 1000));
+// "app" wird gesetzt, wenn der Login-Request vom nativen Client kommt
+// (Header X-Client: turnen-app) - dann längere Timeouts und Token im Body.
+const APP_CLIENT_HEADER = "turnen-app";
+function requestClient(c: { req: { header: (name: string) => string | undefined } }): "web" | "app" {
+  return c.req.header("X-Client") === APP_CLIENT_HEADER ? "app" : "web";
+}
+// Session-Token aus Authorization: Bearer (native App) ODER Cookie (Browser).
+function readSessionToken(c: Context<AppEnv>): { token: string | null; via: "bearer" | "cookie" } {
+  const auth = c.req.header("Authorization");
+  if (auth && /^Bearer\s+/i.test(auth)) return { token: auth.replace(/^Bearer\s+/i, "").trim(), via: "bearer" };
+  return { token: getCookie(c, SESSION_COOKIE_NAME) ?? null, via: "cookie" };
+}
+
+async function issueSession(
+  c: { req: { url: string; header: (name: string) => string | undefined }; env: Env },
+  userId: string,
+  client: "web" | "app" = "web"
+) {
+  const absoluteSeconds = client === "app" ? APP_ABSOLUTE_SESSION_SECONDS : ABSOLUTE_SESSION_SECONDS;
+  const absoluteExpiresAt = toSqliteDatetime(new Date(Date.now() + absoluteSeconds * 1000));
   const sessionId = await db.createSession(c.env.DB, {
     userId,
     absoluteExpiresAt,
     userAgent: c.req.header("User-Agent") ?? null,
     ip: c.req.header("CF-Connecting-IP") ?? null,
+    client,
   });
   const jwt = await signSessionJwt(userId, sessionId, c.env.JWT_SECRET);
   return { sessionId, jwt };
@@ -123,18 +144,24 @@ function clearSessionCookie(c: Parameters<typeof deleteCookie>[0]): void {
   deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
 }
 
+// Origins der nativen Capacitor-App (iOS: capacitor://localhost, Android:
+// https://localhost). Der native Client authentisiert sich per Bearer-Token,
+// nicht per Cookie - CSRF-Vektor entfällt (s. /api/*-Middleware).
+const NATIVE_APP_ORIGINS = new Set(["capacitor://localhost", "https://localhost", "http://localhost"]);
+
 app.use("*", async (c, next) =>
   cors({
     origin: (origin, context) => {
       if (!origin) return null;
       if (origin === new URL(context.env.FRONTEND_URL).origin) return origin;
+      if (NATIVE_APP_ORIGINS.has(origin)) return origin;
       const apiHostname = new URL(context.req.url).hostname;
       const isLocalApi = apiHostname === "localhost" || apiHostname === "127.0.0.1";
       const isLocalFrontend = /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(origin);
       return isLocalApi && isLocalFrontend ? origin : null;
     },
     credentials: true,
-    allowHeaders: ["Content-Type"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Client"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     maxAge: 86400,
   })(c, next)
@@ -188,7 +215,15 @@ function isSameOriginRequest(c: { req: { url: string; header: (name: string) => 
 
 app.use("/api/*", async (c, next) => {
   const isVerifiedExternalWebhook = c.req.path === "/api/webhooks/resend";
-  if (CSRF_UNSAFE_METHODS.has(c.req.method) && !isVerifiedExternalWebhook && !isSameOriginRequest(c, c.env)) {
+  // Bearer-Token (native App): kann durch einen Browser nicht cross-site
+  // automatisch mitgeschickt werden -> kein CSRF-Vektor, Origin-Prüfung entfällt.
+  const hasBearer = /^Bearer\s+/i.test(c.req.header("Authorization") ?? "");
+  if (
+    CSRF_UNSAFE_METHODS.has(c.req.method) &&
+    !isVerifiedExternalWebhook &&
+    !hasBearer &&
+    !isSameOriginRequest(c, c.env)
+  ) {
     return c.json({ error: "Anfrage von fremder Herkunft abgelehnt" }, 403);
   }
   await next();
@@ -304,32 +339,37 @@ const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
 const PASSWORD_CHANGE_EXEMPT_PATHS = new Set(["/api/me", "/api/logout", "/api/me/password"]);
 
 const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const token = getCookie(c, SESSION_COOKIE_NAME);
+  const { token, via } = readSessionToken(c);
+  // clearSessionCookie nur sinnvoll, wenn die Sitzung per Cookie kam.
+  const dropCookie = () => {
+    if (via === "cookie") clearSessionCookie(c);
+  };
   if (!token) return c.json({ error: "Nicht angemeldet" }, 401);
   try {
     const payload = await verifySessionJwt(token, c.env.JWT_SECRET);
     const session = await db.getSessionById(c.env.DB, payload.sid);
     if (!session || session.revoked_at || session.user_id !== payload.sub) {
-      clearSessionCookie(c);
+      dropCookie();
       return c.json({ error: "Nicht angemeldet" }, 401);
     }
     const now = Date.now();
     if (parseSqliteDatetime(session.absolute_expires_at) < now) {
       await db.revokeSession(c.env.DB, session.id);
-      clearSessionCookie(c);
+      dropCookie();
       return c.json({ error: "Sitzung abgelaufen, bitte erneut anmelden" }, 401);
     }
+    const idleTimeout = session.client === "app" ? APP_IDLE_TIMEOUT_SECONDS : IDLE_TIMEOUT_SECONDS;
     const lastActivityMs = parseSqliteDatetime(session.last_activity_at);
-    if (now - lastActivityMs > IDLE_TIMEOUT_SECONDS * 1000) {
+    if (now - lastActivityMs > idleTimeout * 1000) {
       await db.revokeSession(c.env.DB, session.id);
-      clearSessionCookie(c);
+      dropCookie();
       return c.json({ error: "Sitzung wegen Inaktivität beendet, bitte erneut anmelden" }, 401);
     }
     // getUserRowById statt getUserById: liefert totp_enabled direkt mit,
     // ohne eine zweite Query nur für die MFA-Durchsetzung unten zu brauchen.
     const user = await db.getUserRowById(c.env.DB, session.user_id);
     if (!user) {
-      clearSessionCookie(c);
+      dropCookie();
       return c.json({ error: "Nicht angemeldet" }, 401);
     }
     c.set("userId", user.id);
@@ -855,11 +895,17 @@ app.post("/api/login", async (c) => {
     return c.json({ mfaRequired: true, mfaToken });
   }
 
-  const { jwt } = await issueSession(c, userRow.id);
+  const client = requestClient(c);
+  const { jwt } = await issueSession(c, userRow.id, client);
   setSessionCookie(c, jwt);
   await db.recordLoginAttempt(c.env.DB, email, true, ip);
   await db.touchLastLogin(c.env.DB, userRow.id);
-  return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+  return c.json({
+    user: { id: userRow.id, email: userRow.email, name: userRow.name },
+    // Nur der native Client bekommt das Token zusätzlich im Body (kein Cookie-
+    // Zugriff über die WebView-Origin). Der Browser ignoriert dieses Feld.
+    ...(client === "app" ? { token: jwt } : {}),
+  });
 });
 
 app.post("/api/login/mfa", async (c) => {
@@ -929,15 +975,19 @@ app.post("/api/login/mfa", async (c) => {
     return c.json({ error: "Code ungültig" }, 401);
   }
 
-  const { jwt } = await issueSession(c, userRow.id);
+  const client = requestClient(c);
+  const { jwt } = await issueSession(c, userRow.id, client);
   setSessionCookie(c, jwt);
   await db.recordLoginAttempt(c.env.DB, userRow.email, true, ip);
   await db.touchLastLogin(c.env.DB, userRow.id);
-  return c.json({ user: { id: userRow.id, email: userRow.email, name: userRow.name } });
+  return c.json({
+    user: { id: userRow.id, email: userRow.email, name: userRow.name },
+    ...(client === "app" ? { token: jwt } : {}),
+  });
 });
 
 app.post("/api/logout", async (c) => {
-  const token = getCookie(c, SESSION_COOKIE_NAME);
+  const { token } = readSessionToken(c);
   if (token) {
     try {
       const payload = await verifySessionJwt(token, c.env.JWT_SECRET);

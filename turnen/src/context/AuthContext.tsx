@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
+import { api, loginRequest, loadAuthToken, setAuthToken } from "../lib/api";
 import { AuthContext, type AuthState } from "./auth-context";
 import type { ClubRole } from "../lib/types";
 import { loadCustomHolidays } from "../lib/holidays";
@@ -78,7 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    refresh();
+    // In der nativen App zuerst das gespeicherte Bearer-Token laden, dann die
+    // erste /api/me-Prüfung. Im Browser ist loadAuthToken() ein No-op.
+    loadAuthToken().finally(refresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -87,7 +89,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...state,
       async signIn(email: string, password: string) {
         try {
-          const res = await api.post<{ mfaRequired?: boolean; mfaToken?: string }>("/api/login", { email, password });
+          // loginRequest zieht im nativen Fall das Token aus der Antwort und
+          // legt es im Secure-Storage ab; im Browser identisch zu api.post.
+          const res = await loginRequest<{ mfaRequired?: boolean; mfaToken?: string }>("/api/login", {
+            email,
+            password,
+          });
           if (res.mfaRequired && res.mfaToken) return { mfaToken: res.mfaToken };
           await refresh();
           return {};
@@ -97,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async verifyMfa(mfaToken: string, code: string) {
         try {
-          await api.post("/api/login/mfa", { mfaToken, code });
+          await loginRequest("/api/login/mfa", { mfaToken, code });
           await refresh();
           return {};
         } catch (err) {
@@ -117,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (typeof caches !== "undefined") {
           caches.delete("api-cache").catch(() => {});
         }
+        await setAuthToken(null); // natives Bearer-Token verwerfen (No-op im Browser)
         setState({ ...EMPTY_STATE, authChecked: true });
       },
       refreshClub: refresh,
