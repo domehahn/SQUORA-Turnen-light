@@ -51,10 +51,36 @@ server: { url: "http://<deine-LAN-IP>:5173", cleartext: true }
 `npm run dev` starten – Änderungen erscheinen sofort in der App. **Vor dem
 Release wieder entfernen.**
 
+## Push-Benachrichtigungen
+
+Bereits verdrahtet (Code): Geräte-Token-Registrierung (`POST`/`DELETE
+/api/me/device-tokens`, Tabelle `device_tokens`, Migration `0056`), Versand
+über **FCM HTTP v1** in `worker/src/push.ts`, eingehängt in `notifyUser`.
+Respektiert die bestehenden Benachrichtigungs-Kategorien. **Stiller No-op,
+solange `FCM_SERVICE_ACCOUNT_JSON` nicht gesetzt ist** – wie E-Mail ohne
+`RESEND_API_KEY`.
+
+Zum Aktivieren:
+
+1. Firebase-Projekt anlegen, im Projekt eine **iOS-** und eine **Android-App**
+   registrieren (`de.squora.turnen`). Für iOS in Firebase den **APNs-Auth-Key**
+   (`.p8`, Key-ID, Team-ID) hinterlegen – dann bridged FCM automatisch an APNs.
+2. Service-Account-Schlüssel erzeugen (Firebase → Projekteinstellungen →
+   Dienstkonten → *Neuen privaten Schlüssel generieren*) → JSON.
+3. Als Worker-Secret setzen:
+   ```bash
+   cd turnen/worker
+   npx wrangler secret put FCM_SERVICE_ACCOUNT_JSON   # kompletten JSON-Inhalt einfügen
+   ```
+4. Native Konfig: `android/app/google-services.json` bzw.
+   `ios/App/App/GoogleService-Info.plist` aus Firebase herunterladen und ins
+   jeweilige Projekt legen. Für Android das `com.google.gms.google-services`-
+   Plugin ergänzen (Capacitor-Doku „Push Notifications").
+5. In der App wird nach dem Login automatisch die Berechtigung angefragt und
+   das Token registriert (`src/lib/push.ts`).
+
 ## Noch offen (bewusst nicht in diesem PR)
 
-- **Push-Benachrichtigungen** (APNs/FCM): `@capacitor/push-notifications`,
-  Device-Token-Tabelle + Versand im Worker. Größtes verbleibendes Backend-Stück.
 - **QR-Scanner** für den Anwesenheits-Check-in (`@capacitor-mlkit/barcode-scanning`).
 - **OTA-Updates** der Web-Assets (z. B. Capgo), damit JS/CSS-Änderungen ohne
   Store-Review ausgerollt werden können.

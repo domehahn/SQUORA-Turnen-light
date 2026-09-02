@@ -313,6 +313,7 @@ const ADMIN_SELF_SERVICE_WRITE_PREFIXES = [
   "/api/me/mfa",
   "/api/me/sessions",
   "/api/me/notification-preferences",
+  "/api/me/device-tokens",
 ];
 function isAdminSelfServiceWrite(pathname: string): boolean {
   if (pathname === "/api/me") return true;
@@ -1230,6 +1231,24 @@ app.put("/api/me/notification-preferences", requireAuth, async (c) => {
   }
   await setNotificationPreferences(c.env.DB, c.get("userId"), preferences);
   return c.json(await getNotificationPreferences(c.env.DB, c.get("userId")));
+});
+
+// Push-Geräte-Token der nativen App registrieren / entfernen.
+app.post("/api/me/device-tokens", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const platform = body?.platform === "ios" || body?.platform === "android" ? body.platform : null;
+  if (!token || token.length > 4096 || !platform) return c.json({ error: "Ungültiger Token" }, 400);
+  await db.registerDeviceToken(c.env.DB, c.get("userId"), token, platform);
+  return c.json({ ok: true });
+});
+
+app.delete("/api/me/device-tokens", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  if (!token) return c.json({ error: "Token fehlt" }, 400);
+  await db.removeDeviceToken(c.env.DB, c.get("userId"), token);
+  return c.json({ ok: true });
 });
 
 app.get("/api/me/calendar", requireAuth, async (c) => {

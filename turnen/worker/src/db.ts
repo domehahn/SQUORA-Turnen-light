@@ -527,6 +527,28 @@ export async function listActiveSessions(db: D1Database, userId: string): Promis
   return results;
 }
 
+// --- Push-Geräte-Tokens (native App) -----------------------------------
+
+export async function registerDeviceToken(
+  db: D1Database,
+  userId: string,
+  token: string,
+  platform: "ios" | "android"
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO device_tokens (token, user_id, platform, last_seen_at)
+       VALUES (?, ?, ?, datetime('now'))
+       ON CONFLICT (token) DO UPDATE SET user_id = excluded.user_id, platform = excluded.platform, last_seen_at = datetime('now')`
+    )
+    .bind(token, userId, platform)
+    .run();
+}
+
+export async function removeDeviceToken(db: D1Database, userId: string, token: string): Promise<void> {
+  await db.prepare("DELETE FROM device_tokens WHERE token = ? AND user_id = ?").bind(token, userId).run();
+}
+
 // Einmaligkeit des Passwort-Reset-Tokens (s. auth.ts) - PRIMARY KEY auf jti
 // sorgt dafür, dass ein zweiter Einlöseversuch mit demselben Token
 // fehlschlägt. Gibt false zurück, wenn die jti bereits verwendet wurde.
