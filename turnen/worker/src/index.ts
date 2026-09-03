@@ -2982,6 +2982,21 @@ app.get("/api/children", requireAuth, async (c) => {
   return c.json(decrypted);
 });
 
+// Vereinsweite Gesamtübersicht aller Kinder als flache, filterbare Liste -
+// ausschließlich für Jugendleitung, Kassenwart:in und Plattform-Admin. Rein
+// lesend (canEdit stets false); Notfallkontakte sind für diese drei Rollen
+// ohnehin sichtbar (fullView), daher hier unmaskiert.
+app.get("/api/children/overview", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isKassenwart") && !c.get("isAdmin"))) {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+  const includeArchived = c.req.query("includeArchived") === "true";
+  const children = await db.listChildrenForClub(c.env.DB, clubId, includeArchived);
+  const decrypted = await Promise.all(children.map((child) => decryptChild(child, c.env.ENCRYPTION_KEY)));
+  return c.json(decrypted);
+});
+
 // Entschlüsselt die verschlüsselt gespeicherten Felder eines Child-Objekts
 // für die API-Antwort - siehe worker/src/crypto.ts, Finding PRIV-02. Das
 // Frontend bekommt weiterhin ganz normalen Klartext, die Verschlüsselung

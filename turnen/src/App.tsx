@@ -32,6 +32,7 @@ import Equipment from "./pages/admin/Equipment";
 import BulletinBoard from "./pages/admin/BulletinBoard";
 import Turnplaner from "./pages/admin/Turnplaner";
 import HoursSubmissions from "./pages/admin/HoursSubmissions";
+import ChildrenOverview from "./pages/admin/ChildrenOverview";
 
 // "/" lokal, "/turnen-light" im Produktions-Build (BASE_URL endet auf "/",
 // React Router mag kein trailing slash im basename) - siehe .env.production
@@ -56,6 +57,7 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="gruppen" element={<Groups />} />
               <Route path="kinder" element={<Children />} />
+              <Route path="kinderuebersicht" element={<ChildrenOverview />} />
               <Route path="anwesenheit" element={<Attendance />} />
               <Route path="uebersicht" element={<Overview />} />
               <Route path="auslastung" element={<Utilization />} />

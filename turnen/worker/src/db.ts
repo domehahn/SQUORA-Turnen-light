@@ -907,6 +907,30 @@ export async function listChildrenForUser(
   });
 }
 
+// Vereinsweite Gesamtliste aller Kinder (für die Kassenwart/Jugendleitung/
+// Admin-Gesamtübersicht). Anders als `listChildrenForUser` wird hier NICHT
+// auf eigene Gruppen gefiltert - die aufrufende Route muss die Berechtigung
+// (jugendleiter / isKassenwart / isAdmin) selbst prüfen. `canEdit` ist hier
+// immer false: die Übersicht ist rein lesend, Änderungen laufen über die
+// Kinder-Seite.
+export async function listChildrenForClub(
+  db: D1Database,
+  clubId: string,
+  includeArchived = false
+): Promise<(Child & { groupName: string | null })[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT c.*, g.name as group_name
+       FROM children c
+       LEFT JOIN groups g ON g.id = c.group_id
+       WHERE c.club_id = ?1 AND (?2 OR c.status = 'active')
+       ORDER BY c.last_name ASC, c.first_name ASC`
+    )
+    .bind(clubId, includeArchived ? 1 : 0)
+    .all<ChildRow & { group_name: string | null }>();
+  return results.map((row) => ({ ...rowToChild(row, false), groupName: row.group_name }));
+}
+
 export async function getChildRowById(db: D1Database, id: string): Promise<ChildRow | null> {
   return db.prepare("SELECT * FROM children WHERE id = ?").bind(id).first<ChildRow>();
 }
