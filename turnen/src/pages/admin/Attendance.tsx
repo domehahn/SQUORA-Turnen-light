@@ -11,6 +11,7 @@ import type {
 } from "../../lib/types";
 import { FloatingInput, FloatingSelect } from "../../components/FloatingField";
 import { useAuth } from "../../context/useAuth";
+import { buildCancellationParentMessage, shareViaWhatsApp } from "../../lib/cancellationMessage";
 
 const WEEKDAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
@@ -74,6 +75,18 @@ export default function Attendance() {
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [cancelReasonInput, setCancelReasonInput] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  // Gesetzt, wenn dieser Termin an eine Vertretung übergeben wurde und der/die
+  // aktuelle Nutzer:in NICHT die Vertretung ist - dann ist die Erfassung
+  // gesperrt (wie bei einer Absage) und die Stunde wird der Vertretung
+  // angerechnet.
+  const [handedToSubstitute, setHandedToSubstitute] = useState<{ name: string | null } | null>(null);
+  // Gesetzt, wenn für diesen Termin eine Vertretung angefragt wurde, die noch
+  // niemand übernommen hat - reiner Hinweis, blockiert die Erfassung nicht.
+  const [substituteRequested, setSubstituteRequested] = useState(false);
+  const blocked = cancelled || handedToSubstitute !== null;
+  // Vorgefertigte Elternnachricht für die Absage (editierbar vor dem Versenden).
+  const [parentMsg, setParentMsg] = useState("");
+  const [msgCopied, setMsgCopied] = useState(false);
 
   async function loadOverrideRequests() {
     try {
@@ -149,6 +162,24 @@ export default function Attendance() {
       if (!groupId || !date || !dateValid) return;
       setError(null);
       setSavedMessage(null);
+      setHandedToSubstitute(null);
+      setSubstituteRequested(false);
+      try {
+        // Vertretungs-Status prüfen: "claimed" (nicht von mir) sperrt die
+        // Erfassung, "open" ist nur ein Hinweis. Bei "claimed" würde ein
+        // GET /api/attendance/... ohnehin mit 403 antworten.
+        const subs = await api.get<
+          Record<string, { status: "open" | "claimed"; claimedBy: string | null; claimedByName: string | null }>
+        >(`/api/attendance-substitutes/${groupId}?from=${date}&to=${date}`);
+        const sub = subs[date];
+        if (sub?.status === "claimed" && sub.claimedBy !== userId) {
+          setHandedToSubstitute({ name: sub.claimedByName });
+          return;
+        }
+        if (sub?.status === "open") setSubstituteRequested(true);
+      } catch {
+        // Sperr-Info ist Zusatz - ein Ladefehler soll die Seite nicht blockieren.
+      }
       try {
         const session = await api.get<AttendanceSession>(`/api/attendance/${groupId}/${date}`);
         const map: Record<string, boolean> = {};
@@ -172,6 +203,29 @@ export default function Attendance() {
     loadAttendance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, date, userId, dateValid]);
+
+  // Elternnachricht neu erzeugen, sobald der Termin abgesagt ist bzw. sich
+  // Gruppe/Datum/Grund ändern. Überschreibt eine evtl. manuelle Bearbeitung -
+  // beabsichtigt, da sich dann die Kernaussage geändert hat.
+  useEffect(() => {
+    if (!cancelled || !currentGroup) {
+      setParentMsg("");
+      return;
+    }
+    setParentMsg(
+      buildCancellationParentMessage({
+        groupName: currentGroup.name,
+        dateIso: date,
+        startTime: overrideStartTime || currentGroup.startTime,
+        endTime: overrideEndTime || currentGroup.endTime,
+        location: overrideLocation || currentGroup.location,
+        reason: cancelReason,
+        weekday: currentGroup.weekday,
+      })
+    );
+    setMsgCopied(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancelled, groupId, date, cancelReason]);
 
   const groupChildren = children.filter((c) => c.groupId === groupId);
 
@@ -318,7 +372,30 @@ export default function Attendance() {
         </div>
       </div>
 
-      {dateValid && groupId && (
+      {dateValid && groupId && handedToSubstitute && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            <span className="font-medium">An Vertretung übergeben.</span>{" "}
+            {handedToSubstitute.name
+              ? `${handedToSubstitute.name} übernimmt diesen Termin.`
+              : "Eine Vertretung übernimmt diesen Termin."}{" "}
+            Die Anwesenheit für diesen Termin kannst du nicht erfassen – die Stunde wird der Vertretung
+            angerechnet. Über die Vertretungsbörse lässt sich der Termin zurückholen.
+          </p>
+        </div>
+      )}
+
+      {dateValid && groupId && !handedToSubstitute && substituteRequested && !cancelled && (
+        <div className="rounded-lg border border-blue-300 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
+          <p className="text-sm text-blue-800 dark:text-blue-300">
+            <span className="font-medium">Für diesen Termin wurde eine Vertretung angefragt.</span> Noch hat sie
+            niemand übernommen – bis dahin kannst du die Anwesenheit normal erfassen. Sobald jemand übernimmt, wird
+            die Erfassung gesperrt und die Stunde der Vertretung angerechnet.
+          </p>
+        </div>
+      )}
+
+      {dateValid && groupId && !handedToSubstitute && (
         <div
           className={`rounded-lg border p-4 ${
             cancelled
@@ -327,18 +404,64 @@ export default function Attendance() {
           }`}
         >
           {cancelled ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-red-800 dark:text-red-300">
-                <span className="font-medium">Training fällt aus.</span>
-                {cancelReason ? ` Grund: ${cancelReason}` : ""}
-              </p>
-              <button
-                onClick={handleUncancelSession}
-                disabled={cancelling}
-                className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-800 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/50"
-              >
-                Absage aufheben
-              </button>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-red-800 dark:text-red-300">
+                  <span className="font-medium">Training fällt aus.</span>
+                  {cancelReason ? ` Grund: ${cancelReason}` : ""}
+                </p>
+                <button
+                  onClick={handleUncancelSession}
+                  disabled={cancelling}
+                  className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-800 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/50"
+                >
+                  Absage aufheben
+                </button>
+              </div>
+
+              <div className="rounded-md border border-red-200 bg-white p-3 dark:border-red-900 dark:bg-slate-900">
+                <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Elternnachricht (anpassbar, dann per WhatsApp in die Elterngruppe schicken)
+                </p>
+                <textarea
+                  value={parentMsg}
+                  onChange={(e) => {
+                    setParentMsg(e.target.value);
+                    setMsgCopied(false);
+                  }}
+                  rows={6}
+                  className="w-full resize-y rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => shareViaWhatsApp(parentMsg)}
+                    disabled={!parentMsg.trim()}
+                    className="rounded-md bg-[#25D366] px-3 py-1.5 text-xs font-medium text-white hover:brightness-95 disabled:opacity-50"
+                  >
+                    Per WhatsApp senden
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(parentMsg);
+                        setMsgCopied(true);
+                      } catch {
+                        setMsgCopied(false);
+                      }
+                    }}
+                    disabled={!parentMsg.trim()}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    {msgCopied ? "Kopiert ✓" : "Text kopieren"}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  WhatsApp öffnet sich mit dem Text – die Elterngruppe wählst du dort selbst aus (in eine Gruppe posten
+                  kann keine Schnittstelle automatisch).
+                </p>
+              </div>
             </div>
           ) : showCancelForm ? (
             <div className="flex flex-wrap items-end gap-3">
@@ -375,6 +498,7 @@ export default function Attendance() {
         </div>
       )}
 
+      {!handedToSubstitute && (
       <div className={`rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 ${cancelled ? "opacity-50" : ""}`}>
         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
           <input
@@ -433,6 +557,7 @@ export default function Attendance() {
           </div>
         )}
       </div>
+      )}
 
       {incomingOverrideRequests.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
@@ -507,7 +632,7 @@ export default function Attendance() {
 
       {loading ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
-      ) : !dateValid || cancelled ? null : (
+      ) : !dateValid || blocked ? null : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -549,7 +674,7 @@ export default function Attendance() {
         </div>
       )}
 
-      {!cancelled && (
+      {!blocked && (
         <button
           onClick={handleSave}
           disabled={saving || groupChildren.length === 0 || !dateValid}

@@ -12,6 +12,8 @@ interface AdminUser {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole;
+  isSpringer: number;
+  isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
 }
@@ -315,6 +317,8 @@ export default function AdminUsers() {
                         }`}
                       >
                         {u.clubRole === "jugendleiter" ? "Jugendleitung" : "Turnleiter*in"}
+                        {u.isSpringer ? " + Springer" : ""}
+                        {u.isKassenwart ? " + Kassenwart" : ""}
                       </button>
                     )}
                   </td>

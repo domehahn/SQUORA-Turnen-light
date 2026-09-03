@@ -16,21 +16,33 @@ import SquoraBrand from "./SquoraBrand";
 // Statt einer einzigen, mit 13 Punkten überladenen Zeile: gruppiert nach
 // Basis (Tagesgeschäft jeder Turnleitung), Assistent (Planung/Überblick)
 // und Verein (vereinsweite Verwaltung/Reporting).
+// `springerOk`: für die Rolle "springer" sichtbar. Springer:innen leiten keine
+// eigene Gruppe und haben eine bewusst reduzierte Navigation.
+// `kassenwartOrLeader`: sichtbar für Jugendleitung ODER Kassenwart:in (das
+// additive Flag) - unabhängig von der eigentlichen Rolle.
 const NAV_GROUPS: {
   label: string;
-  items: { to: string; label: string; end?: boolean; jugendleiterOnly?: boolean; adminOnly?: boolean }[];
+  items: {
+    to: string;
+    label: string;
+    end?: boolean;
+    jugendleiterOnly?: boolean;
+    adminOnly?: boolean;
+    springerOk?: boolean;
+    kassenwartOrLeader?: boolean;
+  }[];
 }[] = [
   {
     label: "Basis",
     items: [
-      { to: "/", label: "Dashboard", end: true },
+      { to: "/", label: "Dashboard", end: true, springerOk: true },
       { to: "/gruppen", label: "Gruppen" },
       { to: "/kinder", label: "Kinder" },
-      { to: "/anwesenheit", label: "Anwesenheit" },
-      { to: "/kalender", label: "Kalender" },
-      { to: "/events", label: "Events" },
-      { to: "/geraete", label: "Gerätemelder" },
-      { to: "/pinnwand", label: "Schwarzes Brett" },
+      { to: "/anwesenheit", label: "Anwesenheit", springerOk: true },
+      { to: "/kalender", label: "Kalender", springerOk: true },
+      { to: "/events", label: "Events", springerOk: true },
+      { to: "/geraete", label: "Gerätemelder", springerOk: true },
+      { to: "/pinnwand", label: "Schwarzes Brett", springerOk: true },
     ],
   },
   {
@@ -38,7 +50,7 @@ const NAV_GROUPS: {
     items: [
       { to: "/uebersicht", label: "Übersicht" },
       { to: "/auslastung", label: "Auslastung" },
-      { to: "/vertretungen", label: "Vertretungen" },
+      { to: "/vertretungen", label: "Vertretungen", springerOk: true },
       { to: "/warteliste", label: "Warteliste" },
       { to: "/turnplaner", label: "Turnplaner" },
       { to: "/saisonwechsel", label: "Saisonwechsel", jugendleiterOnly: true },
@@ -47,6 +59,7 @@ const NAV_GROUPS: {
   {
     label: "Verein",
     items: [
+      { to: "/stundennachweise", label: "Stundennachweise", kassenwartOrLeader: true },
       { to: "/mitgliederstatistik", label: "Statistik" },
       { to: "/export", label: "Export" },
       // Bewusst nur für die Admin-Rolle sichtbar (nicht mehr für alle bzw.
@@ -79,7 +92,7 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function AppLayout() {
-  const { clubRole, isAdmin, mfaSetupRequired, passwordChangeRequired } = useAuth();
+  const { clubRole, isSpringer, isKassenwart, isAdmin, mfaSetupRequired, passwordChangeRequired } = useAuth();
   const isJugendleiter = clubRole === "jugendleiter";
   const [navOpen, setNavOpen] = useState(false);
 
@@ -87,7 +100,15 @@ export function AppLayout() {
     <>
       {NAV_GROUPS.map((group) => {
         const items = group.items.filter(
-          (item) => (!item.jugendleiterOnly || isJugendleiter) && (!item.adminOnly || isAdmin)
+          (item) =>
+            // Plattform-Admin sieht alles wie die Jugendleitung (nur lesend) -
+            // kein Navigationspunkt wird vor ihm verborgen.
+            (!item.jugendleiterOnly || isJugendleiter || isAdmin) &&
+            (!item.adminOnly || isAdmin) &&
+            (!item.kassenwartOrLeader || isJugendleiter || isKassenwart || isAdmin) &&
+            // Springer:innen sehen nur die ausdrücklich freigegebenen Punkte
+            // (Admin-Punkte bleiben über adminOnly sichtbar).
+            (!isSpringer || item.springerOk || item.adminOnly)
         );
         if (items.length === 0) return null;
         return (
@@ -155,6 +176,11 @@ export function AppLayout() {
           </nav>
 
           <main className="min-w-0 flex-1 pb-6">
+            {isAdmin && !isJugendleiter && (
+              <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                Plattform-Admin: Nur-Lese-Zugriff auf Vereinsdaten. Bearbeiten läuft über „Admin: Nutzer*innen“ bzw. direkt in Cloudflare.
+              </p>
+            )}
             <Outlet />
           </main>
         </div>

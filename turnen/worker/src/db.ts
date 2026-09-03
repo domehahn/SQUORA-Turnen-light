@@ -21,6 +21,8 @@ import type {
   GroupRow,
   Holiday,
   HolidayRow,
+  HoursReportSubmission,
+  HoursReportSubmissionRow,
   MoveRequestDetail,
   MoveRequestRow,
   MoveRequestStatus,
@@ -197,6 +199,8 @@ function rowToUser(row: UserRow): User {
     name: row.name,
     clubId: row.club_id,
     clubRole: row.club_role,
+    isSpringer: Boolean(row.is_springer),
+    isKassenwart: Boolean(row.is_kassenwart),
     isAdmin: Boolean(row.is_admin),
     createdAt: row.created_at,
   };
@@ -408,6 +412,8 @@ export interface ClubMember {
   name: string | null;
   email: string;
   role: ClubRole;
+  isSpringer: number;
+  isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
 }
@@ -415,12 +421,29 @@ export interface ClubMember {
 export async function listClubMembers(db: D1Database, clubId: string): Promise<ClubMember[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, name, email, club_role as role, is_admin as isAdmin, last_login_at as lastLoginAt FROM users WHERE club_id = ?
+      `SELECT id, name, email, club_role as role, is_springer as isSpringer, is_kassenwart as isKassenwart,
+              is_admin as isAdmin, last_login_at as lastLoginAt FROM users WHERE club_id = ?
        ORDER BY CASE club_role WHEN 'jugendleiter' THEN 0 ELSE 1 END, name ASC, email ASC`
     )
     .bind(clubId)
     .all<ClubMember>();
   return results;
+}
+
+// Additive Flags (is_springer / is_kassenwart) setzen/entfernen - unabhängig
+// von club_role, beliebig kombinierbar.
+export async function setUserFlag(
+  db: D1Database,
+  column: "is_springer" | "is_kassenwart",
+  userId: string,
+  clubId: string,
+  value: boolean
+): Promise<boolean> {
+  const result = await db
+    .prepare(`UPDATE users SET ${column} = ? WHERE id = ? AND club_id = ?`)
+    .bind(value ? 1 : 0, userId, clubId)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 // Zeitstempel der letzten erfolgreichen Anmeldung setzen - für die
@@ -637,6 +660,21 @@ export async function setClubRole(
     .bind(role, userId, clubId)
     .run();
   return (result.meta.changes ?? 0) > 0;
+}
+
+// Leitet die Person aktuell irgendeine Gruppe (als Besitzer:in oder
+// Mit-Trainer:in)? Basis für die Springer-Invariante "keine eigene Gruppe".
+export async function userLeadsAnyGroup(db: D1Database, userId: string): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS hit FROM groups WHERE owner_id = ?1
+       UNION ALL
+       SELECT 1 AS hit FROM group_co_leaders WHERE user_id = ?1
+       LIMIT 1`
+    )
+    .bind(userId)
+    .first<{ hit: number }>();
+  return row !== null;
 }
 
 // --- Gruppen -----------------------------------------------------------
@@ -1366,7 +1404,8 @@ export interface HourExportRow {
 // `ledByUserId` filtert optional auf eine bestimmte Person (für den
 // persönlichen Stundennachweis); Termine ohne eingetragene Leitung werden
 // dabei der/dem Gruppenbesitzer:in zugerechnet (Bestandsschutz für Termine
-// aus der Zeit vor der Leitungs-Erfassung).
+// aus der Zeit vor der Leitungs-Erfassung). Abgesagte Termine ("Turnen faellt
+// aus") zaehlen nicht - sie wurden nicht geleitet.
 export async function listSessionsForExport(
   db: D1Database,
   groupIds: string[],
@@ -1393,7 +1432,8 @@ export async function listSessionsForExport(
        FROM attendance_sessions s
        JOIN groups g ON g.id = s.group_id
        LEFT JOIN users u ON u.id = s.led_by
-       WHERE s.group_id IN (${placeholders}) AND s.session_date BETWEEN ?${fromIdx} AND ?${toIdx} ${ledByFilter}
+       WHERE s.group_id IN (${placeholders}) AND s.session_date BETWEEN ?${fromIdx} AND ?${toIdx}
+             AND (s.cancelled IS NULL OR s.cancelled = 0) ${ledByFilter}
        ORDER BY s.session_date ASC, g.name ASC`
     )
     .bind(...groupIds, from, to, ...(ledByUserId ? [ledByUserId] : []))
@@ -1435,7 +1475,8 @@ export interface LedSessionRow {
 // und ohne Zeitraum-Begrenzung. Basis für die Gesamtübersicht "wie viele
 // Stunden habe ich insgesamt schon geleitet" (inkl. als Vertretung).
 // Termine ohne eingetragene Leitung zählen für die/den Gruppenbesitzer:in
-// (Bestandsschutz, wie bei listSessionsForExport).
+// (Bestandsschutz, wie bei listSessionsForExport). Abgesagte Termine zählen
+// nicht mit.
 export async function listAllLedSessionsForUser(db: D1Database, userId: string): Promise<LedSessionRow[]> {
   const { results } = await db
     .prepare(
@@ -1445,7 +1486,8 @@ export async function listAllLedSessionsForUser(db: D1Database, userId: string):
               g.owner_id as owner_id, s.led_by as led_by
        FROM attendance_sessions s
        JOIN groups g ON g.id = s.group_id
-       WHERE s.led_by = ?1 OR (s.led_by IS NULL AND g.owner_id = ?1)
+       WHERE (s.cancelled IS NULL OR s.cancelled = 0)
+             AND (s.led_by = ?1 OR (s.led_by IS NULL AND g.owner_id = ?1))
        ORDER BY s.session_date ASC`
     )
     .bind(userId)
@@ -1457,6 +1499,153 @@ export async function listAllLedSessionsForUser(db: D1Database, userId: string):
     endTime: row.end_time,
     isSubstitute: row.led_by !== null && row.led_by !== row.owner_id,
   }));
+}
+
+// --- Eingereichte Stundennachweise ---------------------------------------
+
+type HoursSubmissionJoinRow = HoursReportSubmissionRow & {
+  user_name: string | null;
+  user_email: string | null;
+  settled_by_name: string | null;
+};
+
+function rowToHoursSubmission(row: HoursSubmissionJoinRow): HoursReportSubmission {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    userEmail: row.user_email,
+    year: row.year,
+    quarter: row.quarter,
+    status: row.status,
+    totalHours: row.total_hours,
+    signedByName: row.signed_by_name,
+    submittedAt: row.submitted_at,
+    updatedAt: row.updated_at,
+    settledAt: row.settled_at,
+    settledByName: row.settled_by_name,
+    settledAmountCents: row.settled_amount_cents,
+    settledRateCents: row.settled_rate_cents,
+    settledNote: row.settled_note,
+  };
+}
+
+const HOURS_SUBMISSION_SELECT = `
+  SELECT s.*, u.name AS user_name, u.email AS user_email, su.name AS settled_by_name
+  FROM hours_report_submissions s
+  JOIN users u ON u.id = s.user_id
+  LEFT JOIN users su ON su.id = s.settled_by`;
+
+export async function getHoursSubmissionRowById(
+  db: D1Database,
+  id: string
+): Promise<HoursReportSubmissionRow | null> {
+  return db.prepare("SELECT * FROM hours_report_submissions WHERE id = ?").bind(id).first<HoursReportSubmissionRow>();
+}
+
+export async function getHoursSubmissionById(db: D1Database, id: string): Promise<HoursReportSubmission | null> {
+  const row = await db.prepare(`${HOURS_SUBMISSION_SELECT} WHERE s.id = ?`).bind(id).first<HoursSubmissionJoinRow>();
+  return row ? rowToHoursSubmission(row) : null;
+}
+
+export async function getHoursSubmissionForPeriod(
+  db: D1Database,
+  clubId: string,
+  userId: string,
+  year: number,
+  quarter: number
+): Promise<HoursReportSubmission | null> {
+  const row = await db
+    .prepare(`${HOURS_SUBMISSION_SELECT} WHERE s.club_id = ? AND s.user_id = ? AND s.year = ? AND s.quarter = ?`)
+    .bind(clubId, userId, year, quarter)
+    .first<HoursSubmissionJoinRow>();
+  return row ? rowToHoursSubmission(row) : null;
+}
+
+export async function listHoursSubmissionsForClub(
+  db: D1Database,
+  clubId: string
+): Promise<HoursReportSubmission[]> {
+  const { results } = await db
+    .prepare(`${HOURS_SUBMISSION_SELECT} WHERE s.club_id = ? ORDER BY s.year DESC, s.quarter DESC, u.name ASC, u.email ASC`)
+    .bind(clubId)
+    .all<HoursSubmissionJoinRow>();
+  return results.map(rowToHoursSubmission);
+}
+
+export async function listHoursSubmissionsForUser(
+  db: D1Database,
+  userId: string
+): Promise<HoursReportSubmission[]> {
+  const { results } = await db
+    .prepare(`${HOURS_SUBMISSION_SELECT} WHERE s.user_id = ? ORDER BY s.year DESC, s.quarter DESC`)
+    .bind(userId)
+    .all<HoursSubmissionJoinRow>();
+  return results.map(rowToHoursSubmission);
+}
+
+// Einreichen bzw. erneutes Einreichen (solange nicht abgerechnet). Setzt die
+// Abrechnungs-Felder bewusst zurück, falls ein alter Datensatz existierte.
+export async function upsertHoursSubmission(
+  db: D1Database,
+  input: {
+    clubId: string;
+    userId: string;
+    year: number;
+    quarter: number;
+    totalHours: number;
+    storageKey: string;
+    signedByName: string | null;
+  }
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO hours_report_submissions
+         (id, club_id, user_id, year, quarter, status, total_hours, storage_key, signed_by_name, submitted_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'submitted', ?, ?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT (club_id, user_id, year, quarter) DO UPDATE SET
+         status = 'submitted',
+         total_hours = excluded.total_hours,
+         storage_key = excluded.storage_key,
+         signed_by_name = excluded.signed_by_name,
+         updated_at = datetime('now'),
+         settled_at = NULL,
+         settled_by = NULL,
+         settled_amount_cents = NULL,
+         settled_rate_cents = NULL,
+         settled_note = NULL`
+    )
+    .bind(
+      crypto.randomUUID(),
+      input.clubId,
+      input.userId,
+      input.year,
+      input.quarter,
+      input.totalHours,
+      input.storageKey,
+      input.signedByName
+    )
+    .run();
+}
+
+export async function settleHoursSubmission(
+  db: D1Database,
+  id: string,
+  input: { settledBy: string; amountCents: number | null; rateCents: number | null; note: string | null }
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE hours_report_submissions SET
+         status = 'settled',
+         settled_at = datetime('now'),
+         settled_by = ?,
+         settled_amount_cents = ?,
+         settled_rate_cents = ?,
+         settled_note = ?
+       WHERE id = ?`
+    )
+    .bind(input.settledBy, input.amountCents, input.rateCents, input.note, id)
+    .run();
 }
 
 // --- Gruppenwechsel / Verschiebe-Anfragen ---------------------------------
@@ -2089,6 +2278,8 @@ export interface AdminUserRow {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole;
+  isSpringer: number;
+  isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
 }
@@ -2097,7 +2288,7 @@ export async function listAllUsersForAdmin(db: D1Database): Promise<AdminUserRow
   const { results } = await db
     .prepare(
       `SELECT u.id, u.email, u.name, u.club_id as clubId, c.name as clubName, u.club_role as clubRole,
-              u.is_admin as isAdmin, u.last_login_at as lastLoginAt
+              u.is_springer as isSpringer, u.is_kassenwart as isKassenwart, u.is_admin as isAdmin, u.last_login_at as lastLoginAt
        FROM users u
        LEFT JOIN clubs c ON c.id = u.club_id
        ORDER BY c.name ASC, u.name ASC, u.email ASC`
@@ -2343,6 +2534,48 @@ export async function getActiveClaimedSubstitute(
     .first<SubstituteRequestRow>();
 }
 
+// Alle aktuell an eine Vertretung übergebenen Termine einer Gruppe im
+// Zeitraum -> { "YYYY-MM-DD": { claimedBy, claimedByName } }. Basis für die
+// Sperre auf der Anwesenheit-/Übersichtsseite (die ursprüngliche Leitung sieht
+// den Termin dann gesperrt, ähnlich wie eine Absage).
+// Offene und übernommene Vertretungs-Anfragen einer Gruppe im Zeitraum ->
+// { "YYYY-MM-DD": { status, claimedBy, claimedByName } }.
+// status "open"    = angefragt, noch niemand übernommen (nur Hinweis)
+// status "claimed" = übernommen -> Sperre für die ursprüngliche Leitung
+export async function listSubstituteRequestsForGroupRange(
+  db: D1Database,
+  groupId: string,
+  from: string,
+  to: string
+): Promise<Record<string, { status: "open" | "claimed"; claimedBy: string | null; claimedByName: string | null }>> {
+  const { results } = await db
+    .prepare(
+      `SELECT sr.session_date, sr.status, sr.claimed_by, u.name AS claimed_by_name, u.email AS claimed_by_email
+       FROM substitute_requests sr
+       LEFT JOIN users u ON u.id = sr.claimed_by
+       WHERE sr.group_id = ? AND sr.status IN ('open', 'claimed') AND sr.session_date BETWEEN ? AND ?`
+    )
+    .bind(groupId, from, to)
+    .all<{
+      session_date: string;
+      status: "open" | "claimed";
+      claimed_by: string | null;
+      claimed_by_name: string | null;
+      claimed_by_email: string | null;
+    }>();
+  const map: Record<string, { status: "open" | "claimed"; claimedBy: string | null; claimedByName: string | null }> = {};
+  for (const r of results) {
+    // "claimed" hat Vorrang, falls (theoretisch) mehrere Zeilen pro Datum.
+    if (map[r.session_date]?.status === "claimed") continue;
+    map[r.session_date] = {
+      status: r.status,
+      claimedBy: r.claimed_by,
+      claimedByName: r.claimed_by_name ?? r.claimed_by_email ?? null,
+    };
+  }
+  return map;
+}
+
 // Alle Termine, die eine Person aktuell als Vertretung übernommen hat - für
 // die Gruppen-Auswahl und die Datums-Einschränkung auf der Anwesenheit-Seite
 // (dort dürfen zusätzlich zum normalen Trainingstag genau diese Termine
@@ -2450,14 +2683,16 @@ export async function listOpenSubstituteRequestsForClub(db: D1Database, clubId: 
 // Anstehende, bereits übernommene Vertretungen im ganzen Verein (heute oder
 // später) - für den Vertretungs-Kalender, damit alle sehen, wer an welchem
 // Tag für wen einspringt, nicht nur die beiden Beteiligten selbst.
-export async function listUpcomingClaimedSubstituteRequestsForClub(
+// Anstehende Vertretungen im Verein ab heute: bereits übernommene ("claimed")
+// UND noch offene, unbesetzte ("open") - das Frontend unterscheidet per status.
+export async function listUpcomingSubstituteRequestsForClub(
   db: D1Database,
   clubId: string,
   fromDate: string
 ): Promise<SubstituteRequestDetail[]> {
   const { results } = await db
     .prepare(
-      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status = 'claimed' AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
+      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status IN ('open', 'claimed') AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
     )
     .bind(clubId, fromDate)
     .all<SubstituteRequestJoinRow>();

@@ -21,6 +21,12 @@ database_name = "turnen-eu"
 database_id = "da52e146-2dde-47d9-9747-9da8cda1cfdf"
 migrations_dir = "migrations"
 
+# Objekt-Storage für eingereichte Stundennachweise (PDF). Bucket muss einmalig
+# angelegt werden:  npx wrangler r2 bucket create turnen-hours-reports
+[[r2_buckets]]
+binding = "HOURS_REPORTS"
+bucket_name = "turnen-hours-reports"
+
 [vars]
 FRONTEND_URL = "https://squora.de/turnen-light"
 # Absenderadresse für Benachrichtigungs-E-Mails. squora.de ist bei Resend

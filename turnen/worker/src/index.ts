@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { Webhook } from "svix";
 import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import * as db from "./db";
 import {
   ABSOLUTE_SESSION_SECONDS,
@@ -65,6 +65,8 @@ type Variables = {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isSpringer: boolean;
+  isKassenwart: boolean;
   isAdmin: boolean;
   sessionId: string;
 };
@@ -265,6 +267,23 @@ function isIdleExempt(c: { req: { method: string; path: string } }): boolean {
 // X"), damit neue Routen standardmäßig gesperrt sind, bis sie hier bewusst
 // freigegeben werden - alles, was zum Herausfinden des eigenen Status,
 // Abmelden und zur MFA-Einrichtung selbst nötig ist.
+const ADMIN_WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// Schreib-Pfade, die einem reinen Plattform-Admin (is_admin ohne Jugendleitung)
+// trotz Nur-Lese-Regel erlaubt bleiben: das eigene Konto und die
+// Plattform-Verwaltung.
+const ADMIN_SELF_SERVICE_WRITE_PREFIXES = [
+  "/api/admin/",
+  "/api/logout",
+  "/api/me/password",
+  "/api/me/mfa",
+  "/api/me/sessions",
+  "/api/me/notification-preferences",
+];
+function isAdminSelfServiceWrite(pathname: string): boolean {
+  if (pathname === "/api/me") return true;
+  return ADMIN_SELF_SERVICE_WRITE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p));
+}
+
 const MFA_ENFORCEMENT_EXEMPT_PATHS = new Set([
   "/api/me",
   "/api/logout",
@@ -318,6 +337,8 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.set("name", user.name);
     c.set("clubId", user.club_id);
     c.set("clubRole", user.club_role);
+    c.set("isSpringer", Boolean(user.is_springer));
+    c.set("isKassenwart", Boolean(user.is_kassenwart));
     c.set("isAdmin", Boolean(user.is_admin));
     c.set("sessionId", session.id);
 
@@ -345,6 +366,20 @@ const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
         { error: "Zwei-Faktor-Authentifizierung ist für Admin-Accounts erforderlich. Bitte zuerst einrichten.", mfaSetupRequired: true },
         403
       );
+    }
+
+    // Plattform-Admin (is_admin) ohne zusätzliche Jugendleitungs-Rolle hat auf
+    // Vereinsdaten bewusst NUR Lesezugriff (Nutzerentscheidung 2026-09-01):
+    // alles sehen wie die Jugendleitung, aber nichts bearbeiten. Erlaubt
+    // bleiben Plattform-Verwaltung (/api/admin/*), die eigene Konto-/MFA-/
+    // Session-Pflege und An-/Abmeldung. Positivliste, fail-closed.
+    if (
+      user.is_admin &&
+      user.club_role !== "jugendleiter" &&
+      ADMIN_WRITE_METHODS.has(c.req.method) &&
+      !isAdminSelfServiceWrite(pathname)
+    ) {
+      return c.json({ error: "Als Plattform-Admin hast du auf Vereinsdaten nur Lesezugriff." }, 403);
     }
   } catch {
     return c.json({ error: "Nicht angemeldet" }, 401);
@@ -1114,6 +1149,8 @@ app.get("/api/me", requireAuth, async (c) => {
     clubId,
     clubName: club?.name ?? null,
     clubRole: c.get("clubRole"),
+    isSpringer: c.get("isSpringer"),
+    isKassenwart: c.get("isKassenwart"),
     isAdmin: c.get("isAdmin"),
     // MFA ist für normale Rollen (member/jugendleiter) weiterhin reines
     // Opt-in. Für Platform-Admin (is_admin) erneut verpflichtend
@@ -1188,7 +1225,11 @@ app.post("/api/admin/switch-club", requireAuth, requireAdmin, async (c) => {
   const club = await db.getClubById(c.env.DB, clubId);
   if (!club) return c.json({ error: "Verein nicht gefunden" }, 404);
 
-  await db.setUserClub(c.env.DB, c.get("userId"), clubId, "jugendleiter");
+  // Plattform-Admin bekommt beim Vereinswechsel bewusst NUR die Rolle
+  // "member" - die Aufsicht/Sichtbarkeit läuft über is_admin (requireAdmin,
+  // Lese-Freigaben unten). Ein Admin soll nicht zusätzlich als Jugendleitung
+  // im Verein geführt werden (Nutzerentscheidung 2026-09-01).
+  await db.setUserClub(c.env.DB, c.get("userId"), clubId, "member");
   await db.logAudit(c.env.DB, {
     clubId,
     actorId: c.get("userId"),
@@ -1359,7 +1400,8 @@ app.post("/api/admin/users", requireAuth, requireAdmin, async (c) => {
   }
   let clubRole: ClubRole = "member";
   if ("clubRole" in (body ?? {})) {
-    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter") return c.json({ error: "Ungültige Rolle" }, 400);
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter")
+      return c.json({ error: "Ungültige Rolle" }, 400);
     clubRole = body.clubRole;
   }
   const isAdmin = "isAdmin" in (body ?? {}) ? Boolean(validBool(body.isAdmin)) : false;
@@ -1401,7 +1443,8 @@ app.put("/api/admin/users/:id", requireAuth, requireAdmin, async (c) => {
     input.clubId = clubId;
   }
   if ("clubRole" in (body ?? {})) {
-    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter") return c.json({ error: "Ungültige Rolle" }, 400);
+    if (body.clubRole !== "member" && body.clubRole !== "jugendleiter")
+      return c.json({ error: "Ungültige Rolle" }, 400);
     input.clubRole = body.clubRole;
   }
   if ("isAdmin" in (body ?? {})) {
@@ -1889,7 +1932,7 @@ app.get("/api/clubs/mine/members", requireAuth, async (c) => {
 // Jugendleitung, die sie freigeben oder ablehnen muss.
 app.get("/api/club-join-requests/incoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin"))) return c.json([]);
   return c.json(await db.listPendingClubJoinRequestsForClub(c.env.DB, clubId));
 });
 
@@ -2506,6 +2549,41 @@ app.post("/api/clubs/mine/members/:userId/demote", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// Additive Vereins-Flags (Springer:in / Kassenwart:in) setzen/entfernen -
+// beliebig mit der club_role kombinierbar, nur die Jugendleitung vergibt sie.
+// Springer:in zusätzlich nur, solange die Person keine eigene Gruppe leitet.
+app.post("/api/clubs/mine/members/:userId/make-springer", requireAuth, (c) => setMemberFlag(c, "is_springer", true));
+app.post("/api/clubs/mine/members/:userId/unset-springer", requireAuth, (c) => setMemberFlag(c, "is_springer", false));
+app.post("/api/clubs/mine/members/:userId/make-kassenwart", requireAuth, (c) => setMemberFlag(c, "is_kassenwart", true));
+app.post("/api/clubs/mine/members/:userId/unset-kassenwart", requireAuth, (c) => setMemberFlag(c, "is_kassenwart", false));
+
+async function setMemberFlag(c: Context<AppEnv>, column: "is_springer" | "is_kassenwart", value: boolean) {
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Du bist aktuell keinem Verein zugeordnet" }, 400);
+  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+
+  const targetUserId = validId(c.req.param("userId"));
+  if (!targetUserId) return c.json({ error: "Ungültige Nutzer-ID" }, 400);
+
+  const target = await db.getUserById(c.env.DB, targetUserId);
+  if (!target || target.clubId !== clubId) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  if (column === "is_springer" && value && (await db.userLeadsAnyGroup(c.env.DB, targetUserId))) {
+    return c.json({ error: "Person leitet noch eine Gruppe – bitte zuerst die Gruppenleitung übergeben" }, 409);
+  }
+
+  const ok = await db.setUserFlag(c.env.DB, column, targetUserId, clubId, value);
+  if (!ok) return c.json({ error: "Mitglied nicht gefunden" }, 404);
+  const actionBase = column === "is_springer" ? "springer" : "kassenwart";
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: value ? `member.made_${actionBase}` : `member.unset_${actionBase}`,
+    targetLabel: target.name ?? target.email ?? targetUserId,
+  });
+  return c.json({ ok: true });
+}
+
 // --- Gruppen -----------------------------------------------------------
 
 app.get("/api/groups", requireAuth, async (c) => {
@@ -2556,6 +2634,8 @@ app.get("/api/season-transition/proposals", requireAuth, async (c) => {
 });
 
 app.post("/api/groups", requireAuth, async (c) => {
+  if (c.get("isSpringer"))
+    return c.json({ error: "Springer:innen können keine eigene Gruppe anlegen" }, 403);
   const body = await c.req.json().catch(() => null);
   const name = requiredText(body?.name, 100);
   const ageRange = validAgeRange(body?.minAge, body?.maxAge);
@@ -2748,6 +2828,9 @@ app.post("/api/groups/:id/co-leaders", requireAuth, async (c) => {
   if (!target || !group.club_id || target.clubId !== group.club_id) {
     return c.json({ error: "Nur Mitglieder desselben Vereins können Mit-Trainer*in werden" }, 400);
   }
+  if (target.isSpringer) {
+    return c.json({ error: "Springer:innen können nicht als Mit-Trainer*in eingetragen werden – bitte zuerst die Springer-Rolle aufheben" }, 400);
+  }
 
   await db.addGroupCoLeader(c.env.DB, id, targetUserId, c.get("userId"));
   await db.logAudit(c.env.DB, {
@@ -2811,11 +2894,12 @@ app.delete("/api/groups/:id/co-leaders/:userId", requireAuth, async (c) => {
 app.get("/api/children", requireAuth, async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
   const children = await db.listChildrenForUser(c.env.DB, c.get("userId"), c.get("clubId"), includeArchived);
-  const isJugendleiter = c.get("clubRole") === "jugendleiter";
+  // Volle Sicht (inkl. Notfallkontakte) für Jugendleitung UND Plattform-Admin.
+  const fullView = c.get("clubRole") === "jugendleiter" || c.get("isAdmin");
   const decrypted = await Promise.all(
     children.map(async (child) => {
       const full = await decryptChild(child, c.env.ENCRYPTION_KEY);
-      if (full.canEdit || isJugendleiter) return full;
+      if (full.canEdit || fullView) return full;
       return { ...full, emergencyContactName: null, emergencyContactPhone: null };
     })
   );
@@ -3473,14 +3557,14 @@ app.get("/api/substitute-requests/open", requireAuth, async (c) => {
   return c.json(await db.listOpenSubstituteRequestsForClub(c.env.DB, clubId));
 });
 
-// Anstehende, bereits übernommene Vertretungen im Verein - für den
-// Vertretungs-Kalender (wer springt an welchem Tag für wen ein).
+// Anstehende Vertretungen im Verein (ab heute) - übernommene UND noch offene,
+// für Dashboard und Vertretungs-Kalender. status unterscheidet die beiden.
 app.get("/api/substitute-requests/upcoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   const now = new Date();
   const todayIso = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
-  return c.json(await db.listUpcomingClaimedSubstituteRequestsForClub(c.env.DB, clubId, todayIso));
+  return c.json(await db.listUpcomingSubstituteRequestsForClub(c.env.DB, clubId, todayIso));
 });
 
 app.get("/api/substitute-requests/mine", requireAuth, async (c) => {
@@ -3491,7 +3575,8 @@ app.get("/api/substitute-requests/mine", requireAuth, async (c) => {
 // die Jugendleitung, alle anderen sehen weiterhin nur /mine.
 app.get("/api/substitute-requests/club", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json({ error: "Keine Berechtigung" }, 403);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin")))
+    return c.json({ error: "Keine Berechtigung" }, 403);
   return c.json(await db.listSubstituteRequestsForClub(c.env.DB, clubId));
 });
 
@@ -3944,7 +4029,7 @@ app.delete("/api/move-requests/:id", requireAuth, async (c) => {
 
 app.get("/api/capacity-requests/incoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin"))) return c.json([]);
   return c.json(await db.listIncomingCapacityRequests(c.env.DB, clubId));
 });
 
@@ -4177,7 +4262,7 @@ app.get("/api/club-waitlist", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   if (!clubId) return c.json([]);
   const entries = await db.listClubWaitlist(c.env.DB, clubId);
-  if (c.get("clubRole") === "jugendleiter") return c.json(entries);
+  if (c.get("clubRole") === "jugendleiter" || c.get("isAdmin")) return c.json(entries);
 
   // Turnleiter*innen sehen nur Kinder, die altersmäßig zu einer eigenen
   // Gruppe passen würden (damit sich eine Übernahme-Anfrage überhaupt lohnt),
@@ -4608,7 +4693,7 @@ app.get("/api/export/hours", requireAuth, async (c) => {
   const clubId = c.get("clubId");
   const allGroups = await db.listGroupsForUser(c.env.DB, c.get("userId"), clubId);
   const groupIds =
-    scope === "club" && clubId && c.get("clubRole") === "jugendleiter"
+    scope === "club" && clubId && (c.get("clubRole") === "jugendleiter" || c.get("isAdmin"))
       ? allGroups.filter((g) => g.clubId === clubId).map((g) => g.id)
       : allGroups.filter((g) => g.ownerId === c.get("userId")).map((g) => g.id);
 
@@ -4756,6 +4841,185 @@ app.get("/api/hours-summary", requireAuth, async (c) => {
   });
 });
 
+// --- Eingereichte Stundennachweise (digital unterschrieben, PDF in R2) -----
+
+function hoursReportPeriodBounds(year: number, quarter: number): { from: string; to: string } {
+  const startMonth = quarter === 0 ? 1 : (quarter - 1) * 3 + 1;
+  const endMonth = quarter === 0 ? 12 : startMonth + 2;
+  const from = `${year}-${String(startMonth).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, endMonth, 0).getDate();
+  const to = `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { from, to };
+}
+
+// Gesamtstunden serverseitig neu berechnen - identisch zu GET /api/hours-report,
+// damit die Abrechnung nicht der vom Client hochgeladenen Zahl vertrauen muss.
+async function computeSubmittedHoursTotal(
+  dbEnv: D1Database,
+  userId: string,
+  clubId: string | null,
+  year: number,
+  quarter: number
+): Promise<number> {
+  const { from, to } = hoursReportPeriodBounds(year, quarter);
+  const allGroups = await db.listGroupsForUser(dbEnv, userId, clubId);
+  const rows = await db.listSessionsForExport(dbEnv, allGroups.map((g) => g.id), from, to, userId);
+  let total = 0;
+  for (const r of rows) {
+    const h = hoursBetween(effectiveStartTime(r.startTime), r.endTime);
+    if (h !== null) total += h;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+function hoursReportStorageKey(clubId: string, userId: string, year: number, quarter: number): string {
+  const period = quarter === 0 ? `${year}-ganzes-jahr` : `${year}-Q${quarter}`;
+  return `${clubId}/${userId}/${period}.pdf`;
+}
+
+// Euro-Eingabe (Zahl oder "12,50") -> Cent. null = leer, undefined = ungültig.
+function parseOptionalEuroCents(value: unknown): number | null | undefined {
+  if (value === undefined || value === null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  if (!Number.isFinite(n) || n < 0 || n > 1_000_000) return undefined;
+  return Math.round(n * 100);
+}
+
+// Nachweis einreichen bzw. erneut einreichen. Body = PDF-Bytes.
+app.put("/api/hours-report/submissions", requireAuth, async (c) => {
+  const bucket = c.env.HOURS_REPORTS;
+  if (!bucket) return c.json({ error: "Dokumentenspeicher ist nicht konfiguriert" }, 503);
+
+  const clubId = c.get("clubId");
+  if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
+
+  const year = Number(c.req.query("year"));
+  const quarter = Number(c.req.query("quarter"));
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return c.json({ error: "Ungültiges Jahr" }, 400);
+  if (!Number.isInteger(quarter) || quarter < 0 || quarter > 4) return c.json({ error: "Ungültiges Quartal" }, 400);
+
+  const existing = await db.getHoursSubmissionForPeriod(c.env.DB, clubId, c.get("userId"), year, quarter);
+  if (existing && existing.status === "settled") {
+    return c.json({ error: "Dieser Nachweis wurde bereits abgerechnet und ist gesperrt" }, 409);
+  }
+
+  if (!(c.req.header("content-type") ?? "").includes("application/pdf")) {
+    return c.json({ error: "Es wird ein PDF erwartet" }, 415);
+  }
+  const body = await c.req.arrayBuffer();
+  if (body.byteLength === 0) return c.json({ error: "Leeres Dokument" }, 400);
+  if (body.byteLength > 10 * 1024 * 1024) return c.json({ error: "Dokument ist zu groß (max. 10 MB)" }, 413);
+
+  const totalHours = await computeSubmittedHoursTotal(c.env.DB, c.get("userId"), clubId, year, quarter);
+  const storageKey = hoursReportStorageKey(clubId, c.get("userId"), year, quarter);
+  await bucket.put(storageKey, body, { httpMetadata: { contentType: "application/pdf" } });
+
+  await db.upsertHoursSubmission(c.env.DB, {
+    clubId,
+    userId: c.get("userId"),
+    year,
+    quarter,
+    totalHours,
+    storageKey,
+    signedByName: c.get("name") ?? null,
+  });
+  await db.logAudit(c.env.DB, {
+    clubId,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: existing ? "hours_report.resubmitted" : "hours_report.submitted",
+    targetLabel: `${year}${quarter === 0 ? " (ganzes Jahr)" : ` Q${quarter}`}`,
+  });
+  return c.json({ ok: true });
+});
+
+// Eigene eingereichte Nachweise (alle Zeiträume).
+app.get("/api/hours-report/submissions/mine", requireAuth, async (c) => {
+  return c.json(await db.listHoursSubmissionsForUser(c.env.DB, c.get("userId")));
+});
+
+// Alle eingereichten Nachweise des Vereins - nur Jugendleitung (lesend) und
+// Kassenwart:in (lesend + abrechnen).
+app.get("/api/hours-report/submissions", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  // Lesen: Jugendleitung, Kassenwart:in, Plattform-Admin. Abrechnen bleibt der
+  // Kassenwart:in vorbehalten (siehe /settle).
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isKassenwart") && !c.get("isAdmin"))) {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+  return c.json(await db.listHoursSubmissionsForClub(c.env.DB, clubId));
+});
+
+// Das eingereichte PDF ausliefern. Zugriff: Eigentümer:in, oder Jugendleitung /
+// Kassenwart:in desselben Vereins.
+app.get("/api/hours-report/submissions/:id/pdf", requireAuth, async (c) => {
+  const bucket = c.env.HOURS_REPORTS;
+  if (!bucket) return c.json({ error: "Dokumentenspeicher ist nicht konfiguriert" }, 503);
+
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  const row = await db.getHoursSubmissionRowById(c.env.DB, id);
+  if (!row) return c.json({ error: "Nicht gefunden" }, 404);
+
+  const sameClub = row.club_id === c.get("clubId");
+  const allowed =
+    row.user_id === c.get("userId") ||
+    c.get("isAdmin") ||
+    (sameClub && (c.get("clubRole") === "jugendleiter" || c.get("isKassenwart")));
+  if (!allowed) return c.json({ error: "Keine Berechtigung" }, 403);
+
+  const obj = await bucket.get(row.storage_key);
+  if (!obj) return c.json({ error: "Dokument nicht im Speicher gefunden" }, 404);
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="stundennachweis_${row.year}${row.quarter === 0 ? "" : `_Q${row.quarter}`}.pdf"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
+});
+
+// Einen eingereichten Nachweis abrechnen - ausschließlich Kassenwart:in.
+app.post("/api/hours-report/submissions/:id/settle", requireAuth, async (c) => {
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Ungültige ID" }, 400);
+  if (!c.get("isKassenwart")) {
+    return c.json({ error: "Nur die Kassenwart:in kann Stundennachweise abrechnen" }, 403);
+  }
+
+  const row = await db.getHoursSubmissionRowById(c.env.DB, id);
+  if (!row) return c.json({ error: "Nicht gefunden" }, 404);
+  if (row.club_id !== c.get("clubId")) return c.json({ error: "Keine Berechtigung" }, 403);
+  // Vier-Augen-Prinzip: den eigenen Nachweis nicht selbst abrechnen.
+  if (row.user_id === c.get("userId")) {
+    return c.json({ error: "Den eigenen Stundennachweis kannst du nicht selbst abrechnen" }, 403);
+  }
+  if (row.status === "settled") return c.json({ error: "Dieser Nachweis wurde bereits abgerechnet" }, 409);
+
+  const body = await c.req.json().catch(() => null);
+  const amountCents = parseOptionalEuroCents(body?.amountEuro);
+  const rateCents = parseOptionalEuroCents(body?.rateEuro);
+  if (amountCents === undefined) return c.json({ error: "Betrag ist ungültig" }, 400);
+  if (rateCents === undefined) return c.json({ error: "Stundensatz ist ungültig" }, 400);
+  const note = optionalText(body?.note, 500);
+  if (note === undefined) return c.json({ error: "Notiz ist zu lang" }, 400);
+
+  await db.settleHoursSubmission(c.env.DB, id, {
+    settledBy: c.get("userId"),
+    amountCents,
+    rateCents,
+    note,
+  });
+  await db.logAudit(c.env.DB, {
+    clubId: row.club_id,
+    actorId: c.get("userId"),
+    actorName: c.get("name"),
+    action: "hours_report.settled",
+    targetLabel: `${row.year}${row.quarter === 0 ? " (ganzes Jahr)" : ` Q${row.quarter}`}`,
+  });
+  return c.json({ ok: true });
+});
+
 // --- Anwesenheit -----------------------------------------------------------
 
 // Anwesenheit ist – anders als Gruppen/Kinder – nicht vereinsweit lesbar:
@@ -4766,10 +5030,10 @@ app.get("/api/hours-summary", requireAuth, async (c) => {
 async function canReadAttendance(
   dbEnv: D1Database,
   group: { id: string; owner_id: string | null; club_id: string | null },
-  requester: { userId: string; clubId: string | null; clubRole: ClubRole }
+  requester: { userId: string; clubId: string | null; clubRole: ClubRole; isAdmin?: boolean }
 ): Promise<boolean> {
   const isLeadership = Boolean(
-    group.club_id && group.club_id === requester.clubId && requester.clubRole === "jugendleiter"
+    group.club_id && group.club_id === requester.clubId && (requester.clubRole === "jugendleiter" || requester.isAdmin)
   );
   return isLeadership || (await db.canWriteGroupAsync(dbEnv, group, requester.userId));
 }
@@ -4801,7 +5065,7 @@ app.get("/api/attendance-range/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getAttendanceRange(c.env.DB, groupId, from, to));
@@ -4815,7 +5079,7 @@ app.get("/api/attendance-leaders/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getSessionLeaders(c.env.DB, groupId, from, to));
@@ -4829,10 +5093,28 @@ app.get("/api/attendance-cancellations/:groupId", requireAuth, async (c) => {
 
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
-  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole") };
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
   if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
 
   return c.json(await db.getCancelledSessions(c.env.DB, groupId, from, to));
+});
+
+// Vertretungs-Anfragen der Gruppe im Zeitraum (Status "open" = angefragt,
+// "claimed" = übernommen) - für den Hinweis bzw. die Sperre auf der
+// Anwesenheit-Seite. Bei "claimed" kann die ursprüngliche Leitung die
+// Anwesenheit nicht erfassen, die Stunde wird der Vertretung angerechnet.
+app.get("/api/attendance-substitutes/:groupId", requireAuth, async (c) => {
+  const groupId = validId(c.req.param("groupId"));
+  const from = validDate(c.req.query("from"));
+  const to = validDate(c.req.query("to"));
+  if (!groupId || !from || !to) return c.json({ error: "Ungültige Gruppe oder Zeitraum" }, 400);
+
+  const group = await db.getGroupRowById(c.env.DB, groupId);
+  if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
+  const requester = { userId: c.get("userId"), clubId: c.get("clubId"), clubRole: c.get("clubRole"), isAdmin: c.get("isAdmin") };
+  if (!(await canReadAttendance(c.env.DB, group, requester))) return c.json({ error: "Keine Berechtigung für diese Gruppe" }, 403);
+
+  return c.json(await db.listSubstituteRequestsForGroupRange(c.env.DB, groupId, from, to));
 });
 
 app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
@@ -4843,7 +5125,17 @@ app.get("/api/attendance/:groupId/:date", requireAuth, async (c) => {
   const group = await db.getGroupRowById(c.env.DB, groupId);
   if (!group) return c.json({ error: "Gruppe nicht gefunden" }, 404);
   const access = await attendanceAccess(c.env.DB, group, c.get("userId"), date);
-  if (!access.allowed) return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
+  // Jugendleitung / Plattform-Admin dürfen jeden Termin ihres Vereins lesen -
+  // auch einen an eine Vertretung übergebenen. Für die ursprüngliche
+  // Gruppenleitung bleibt so ein Termin dagegen gesperrt (wie eine Absage).
+  const isClubLeadershipRead = Boolean(
+    group.club_id &&
+      group.club_id === c.get("clubId") &&
+      (c.get("clubRole") === "jugendleiter" || c.get("isAdmin"))
+  );
+  if (!access.allowed && !isClubLeadershipRead) {
+    return c.json({ error: "Keine Berechtigung für diesen Termin" }, 403);
+  }
 
   return c.json(await db.getAttendance(c.env.DB, groupId, date));
 });
@@ -5017,7 +5309,7 @@ app.put("/api/attendance/:groupId/:date", requireAuth, async (c) => {
 
 app.get("/api/session-override-requests/incoming", requireAuth, async (c) => {
   const clubId = c.get("clubId");
-  if (!clubId || c.get("clubRole") !== "jugendleiter") return c.json([]);
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin"))) return c.json([]);
   return c.json(await db.listPendingSessionOverrideRequestsForClub(c.env.DB, clubId));
 });
 

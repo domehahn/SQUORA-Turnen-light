@@ -14,6 +14,11 @@ export interface AuthState {
   clubId: string | null;
   clubName: string | null;
   clubRole: ClubRole | null;
+  // Additive Flags neben clubRole (kombinierbar mit jeder Rolle):
+  // - isSpringer: übernimmt Vertretungen, leitet keine eigene Gruppe
+  // - isKassenwart: sieht/abrechnet eingereichte Stundennachweise des Vereins
+  isSpringer: boolean;
+  isKassenwart: boolean;
   isAdmin: boolean;
   // true für Admin-Accounts (is_admin) ohne aktivierte Zwei-Faktor-
   // Authentifizierung (Nutzerentscheidung 2026-08-27, zweiter Durchgang:

@@ -488,7 +488,14 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Anstehende Vertretungen
               </p>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{upcomingSubstitutes.length}</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                {upcomingSubstitutes.length}
+                {upcomingSubstitutes.some((r) => r.status === "open") && (
+                  <span className="ml-1.5 text-sm font-normal text-amber-600 dark:text-amber-400">
+                    ({upcomingSubstitutes.filter((r) => r.status === "open").length} offen)
+                  </span>
+                )}
+              </p>
             </Link>
           </div>
 
@@ -646,8 +653,14 @@ export default function Dashboard() {
               <ul className="space-y-1 text-sm text-purple-900 dark:text-purple-200">
                 {upcomingSubstitutes.slice(0, 5).map((r) => (
                   <li key={r.id}>
-                    {formatShortDate(r.sessionDate)} · {r.groupName} · {r.claimedByName ?? "jemand"} vertritt{" "}
-                    {r.requestedByName ?? "jemanden"}
+                    {formatShortDate(r.sessionDate)} · {r.groupName} ·{" "}
+                    {r.status === "open" ? (
+                      <span className="font-medium text-amber-700 dark:text-amber-400">noch unbesetzt</span>
+                    ) : (
+                      <>
+                        {r.claimedByName ?? "jemand"} vertritt {r.requestedByName ?? "jemanden"}
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

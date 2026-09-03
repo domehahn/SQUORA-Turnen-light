@@ -32,6 +32,10 @@ export interface Env {
   // Benachrichtigungen. Ohne gültigen positiven Wert löscht der tägliche
   // Cron sicherheitshalber keine Meldungen.
   NOTIFICATION_RETENTION_DAYS?: string;
+  // Objekt-Storage (R2) für eingereichte Stundennachweis-PDFs. Optional, damit
+  // lokale Tests ohne Bucket laufen - die Einreichen-Endpunkte antworten dann
+  // mit 503.
+  HOURS_REPORTS?: R2Bucket;
 }
 
 // --- Vereinsveranstaltungen -------------------------------------------------
@@ -125,7 +129,51 @@ export interface TrainingPlan {
   updatedAt: string;
 }
 
+// Springer:in und Kassenwart:in sind KEINE club_role-Werte, sondern additive
+// Flags users.is_springer / users.is_kassenwart (Migrationen 0052/0053) -
+// beliebig mit der Rolle kombinierbar. So bleibt club_role bei zwei Werten und
+// braucht keinen (auf D1 gefährlichen) Tabellen-Rebuild.
 export type ClubRole = "member" | "jugendleiter";
+
+export type HoursSubmissionStatus = "submitted" | "settled";
+
+export interface HoursReportSubmissionRow {
+  id: string;
+  club_id: string;
+  user_id: string;
+  year: number;
+  quarter: number;
+  status: HoursSubmissionStatus;
+  total_hours: number;
+  storage_key: string;
+  signed_by_name: string | null;
+  submitted_at: string;
+  updated_at: string;
+  settled_at: string | null;
+  settled_by: string | null;
+  settled_amount_cents: number | null;
+  settled_rate_cents: number | null;
+  settled_note: string | null;
+}
+
+export interface HoursReportSubmission {
+  id: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  year: number;
+  quarter: number;
+  status: HoursSubmissionStatus;
+  totalHours: number;
+  signedByName: string | null;
+  submittedAt: string;
+  updatedAt: string;
+  settledAt: string | null;
+  settledByName: string | null;
+  settledAmountCents: number | null;
+  settledRateCents: number | null;
+  settledNote: string | null;
+}
 
 export interface User {
   id: string;
@@ -133,6 +181,8 @@ export interface User {
   name: string | null;
   clubId: string | null;
   clubRole: ClubRole;
+  isSpringer: boolean;
+  isKassenwart: boolean;
   isAdmin: boolean;
   createdAt: string;
 }
@@ -150,6 +200,8 @@ export interface UserRow {
   password_iterations: number;
   club_id: string | null;
   club_role: ClubRole;
+  is_springer: number;
+  is_kassenwart: number;
   is_admin: number;
   created_at: string;
   // TOTP-MFA (Finding SEC-02) - totp_secret AES-256-GCM-verschlüsselt

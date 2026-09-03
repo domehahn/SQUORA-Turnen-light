@@ -70,13 +70,38 @@ export interface Club {
   createdAt: string;
 }
 
+// Springer:in und Kassenwart:in sind keine ClubRole-Werte, sondern additive
+// Flags (isSpringer / isKassenwart), beliebig mit der Rolle kombinierbar.
 export type ClubRole = "member" | "jugendleiter";
+
+export type HoursSubmissionStatus = "submitted" | "settled";
+
+export interface HoursReportSubmission {
+  id: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  year: number;
+  quarter: number;
+  status: HoursSubmissionStatus;
+  totalHours: number;
+  signedByName: string | null;
+  submittedAt: string;
+  updatedAt: string;
+  settledAt: string | null;
+  settledByName: string | null;
+  settledAmountCents: number | null;
+  settledRateCents: number | null;
+  settledNote: string | null;
+}
 
 export interface ClubMember {
   id: string;
   name: string | null;
   email: string;
   role: ClubRole;
+  isSpringer: number;
+  isKassenwart: number;
   isAdmin: number;
   lastLoginAt: string | null;
 }

@@ -31,6 +31,7 @@ import Events from "./pages/admin/Events";
 import Equipment from "./pages/admin/Equipment";
 import BulletinBoard from "./pages/admin/BulletinBoard";
 import Turnplaner from "./pages/admin/Turnplaner";
+import HoursSubmissions from "./pages/admin/HoursSubmissions";
 
 // "/" lokal, "/turnen-light" im Produktions-Build (BASE_URL endet auf "/",
 // React Router mag kein trailing slash im basename) - siehe .env.production
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="export" element={<Export />} />
               <Route path="verlauf" element={<AuditLog />} />
               <Route path="vertretungen" element={<Substitutes />} />
+              <Route path="stundennachweise" element={<HoursSubmissions />} />
               <Route path="warteliste" element={<ClubWaitlist />} />
               <Route path="saisonwechsel" element={<SeasonTransition />} />
               <Route path="verein" element={<ClubPage />} />
