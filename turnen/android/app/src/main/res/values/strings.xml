@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SQUORA Turnen</string>
+    <string name="title_activity_main">SQUORA Turnen</string>
+    <string name="package_name">de.squora.turnen</string>
+    <string name="custom_url_scheme">de.squora.turnen</string>
+</resources>
