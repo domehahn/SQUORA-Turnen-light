@@ -30,6 +30,19 @@ Die erzeugten Ordner `ios/` und `android/` gehören ins Repo committet
 (Capacitor-Empfehlung) – App-Icons, Splashscreens und native Einstellungen
 liegen dort.
 
+### App-Icons / Splashscreens neu erzeugen
+
+Die Icons/Splashscreens sind bereits generiert und committet (Quelle:
+`assets/logo.png`, 1024×1024). Zum Neu-Erzeugen das Tool **einmalig ad hoc**
+laufen lassen – es wird bewusst *nicht* als Dependency geführt, weil es
+`sharp`/`tar` mit High/Critical-Advisories mitzieht (reines Build-Tool,
+landet nie im App-Bundle):
+
+```bash
+cd turnen
+npx --yes @capacitor/assets generate --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff'
+```
+
 ## Build & Run
 
 ```bash
