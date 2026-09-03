@@ -1,6 +1,7 @@
 import * as db from "./db";
 import type { Env } from "./types";
 import { redactError } from "./log-redaction";
+import { sendPushToUser } from "./push";
 import {
   createEmailDelivery,
   getNotificationPreferences,
@@ -152,6 +153,15 @@ export async function notifyUser(
   const category = notificationCategory(input.type);
   const preferences = await getNotificationPreferences(env.DB, input.userId);
   if (!preferences[category]) return;
+
+  // Push an die native App - best effort, blockiert den E-Mail-Versand nicht.
+  // Bewusst der In-App-`body` (nicht `emailBody`): der/die Empfänger:in ist
+  // zum Einsehen berechtigt, die Meldung landet nur auf dem eigenen Gerät.
+  try {
+    await sendPushToUser(env, input.userId, { title: input.title, body: input.body, link: input.link });
+  } catch (err) {
+    console.error("Push-Versand fehlgeschlagen:", redactError(err));
+  }
 
   let deliveryId: string | null = null;
   try {

@@ -465,18 +465,25 @@ export interface SessionRow {
   revoked_at: string | null;
   user_agent: string | null;
   ip: string | null;
+  client: "web" | "app";
 }
 
 export async function createSession(
   db: D1Database,
-  input: { userId: string; absoluteExpiresAt: string; userAgent: string | null; ip: string | null }
+  input: {
+    userId: string;
+    absoluteExpiresAt: string;
+    userAgent: string | null;
+    ip: string | null;
+    client?: "web" | "app";
+  }
 ): Promise<string> {
   const id = crypto.randomUUID();
   await db
     .prepare(
-      "INSERT INTO sessions (id, user_id, absolute_expires_at, user_agent, ip) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO sessions (id, user_id, absolute_expires_at, user_agent, ip, client) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .bind(id, input.userId, input.absoluteExpiresAt, input.userAgent, input.ip)
+    .bind(id, input.userId, input.absoluteExpiresAt, input.userAgent, input.ip, input.client ?? "web")
     .run();
   return id;
 }
@@ -518,6 +525,28 @@ export async function listActiveSessions(db: D1Database, userId: string): Promis
     .bind(userId)
     .all<SessionRow>();
   return results;
+}
+
+// --- Push-Geräte-Tokens (native App) -----------------------------------
+
+export async function registerDeviceToken(
+  db: D1Database,
+  userId: string,
+  token: string,
+  platform: "ios" | "android"
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO device_tokens (token, user_id, platform, last_seen_at)
+       VALUES (?, ?, ?, datetime('now'))
+       ON CONFLICT (token) DO UPDATE SET user_id = excluded.user_id, platform = excluded.platform, last_seen_at = datetime('now')`
+    )
+    .bind(token, userId, platform)
+    .run();
+}
+
+export async function removeDeviceToken(db: D1Database, userId: string, token: string): Promise<void> {
+  await db.prepare("DELETE FROM device_tokens WHERE token = ? AND user_id = ?").bind(token, userId).run();
 }
 
 // Einmaligkeit des Passwort-Reset-Tokens (s. auth.ts) - PRIMARY KEY auf jti

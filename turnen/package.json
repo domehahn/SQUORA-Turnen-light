@@ -11,9 +11,18 @@
     "test:e2e": "playwright test",
     "web:typecheck": "tsc -p cloudflare/tsconfig.json --noEmit",
     "web:dev": "wrangler dev",
-    "web:deploy": "wrangler deploy"
+    "web:deploy": "wrangler deploy",
+    "mobile:build": "vite build --mode mobile",
+    "mobile:sync": "npm run mobile:build && cap sync",
+    "mobile:ios": "npm run mobile:sync && cap open ios",
+    "mobile:android": "npm run mobile:sync && cap open android"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@tailwindcss/vite": "^4.3.3",
     "jose": "^6.2.3",
     "jspdf": "^4.2.1",
@@ -24,6 +33,7 @@
     "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@cloudflare/workers-types": "^5.20260718.1",
     "@cyclonedx/cyclonedx-npm": "6.0.1",
     "@playwright/test": "^1.62.1",

@@ -36,6 +36,10 @@ export interface Env {
   // lokale Tests ohne Bucket laufen - die Einreichen-Endpunkte antworten dann
   // mit 503.
   HOURS_REPORTS?: R2Bucket;
+  // Firebase-Service-Account als JSON-String (Worker Secret) für Push über
+  // FCM HTTP v1 (Android nativ + iOS via APNs-Bridge in Firebase). Ohne Wert
+  // ist Push ein stiller No-op - genau wie E-Mail ohne RESEND_API_KEY.
+  FCM_SERVICE_ACCOUNT_JSON?: string;
 }
 
 // --- Vereinsveranstaltungen -------------------------------------------------

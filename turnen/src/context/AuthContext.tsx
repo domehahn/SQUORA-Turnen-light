@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
+import { useNavigate } from "react-router-dom";
+import { api, loginRequest, loadAuthToken, setAuthToken } from "../lib/api";
 import { AuthContext, type AuthState } from "./auth-context";
 import type { ClubRole } from "../lib/types";
 import { loadCustomHolidays } from "../lib/holidays";
+import { startPush, stopPush } from "../lib/push";
 
 interface MeResponse {
   id: string;
@@ -62,6 +64,7 @@ function stateFromMe(me: MeResponse): AuthState {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(EMPTY_STATE);
+  const navigate = useNavigate();
 
   // Lädt den vollständigen Profil-/Vereinsstatus neu (Name, E-Mail, Verein,
   // Rolle, MFA-Status) - beim App-Start für die erste Auth-Prüfung, danach
@@ -78,16 +81,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    refresh();
+    // In der nativen App zuerst das gespeicherte Bearer-Token laden, dann die
+    // erste /api/me-Prüfung. Im Browser ist loadAuthToken() ein No-op.
+    loadAuthToken().finally(refresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Nach erfolgreicher Anmeldung Push in der nativen App aktivieren
+  // (Berechtigung anfragen, Geräte-Token registrieren). No-op im Browser.
+  useEffect(() => {
+    if (state.isAuthenticated) startPush((path) => navigate(path));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isAuthenticated]);
 
   const value = useMemo(
     () => ({
       ...state,
       async signIn(email: string, password: string) {
         try {
-          const res = await api.post<{ mfaRequired?: boolean; mfaToken?: string }>("/api/login", { email, password });
+          // loginRequest zieht im nativen Fall das Token aus der Antwort und
+          // legt es im Secure-Storage ab; im Browser identisch zu api.post.
+          const res = await loginRequest<{ mfaRequired?: boolean; mfaToken?: string }>("/api/login", {
+            email,
+            password,
+          });
           if (res.mfaRequired && res.mfaToken) return { mfaToken: res.mfaToken };
           await refresh();
           return {};
@@ -97,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async verifyMfa(mfaToken: string, code: string) {
         try {
-          await api.post("/api/login/mfa", { mfaToken, code });
+          await loginRequest("/api/login/mfa", { mfaToken, code });
           await refresh();
           return {};
         } catch (err) {
@@ -117,6 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (typeof caches !== "undefined") {
           caches.delete("api-cache").catch(() => {});
         }
+        await stopPush(); // Geräte-Token abmelden + Listener lösen (No-op im Browser)
+        await setAuthToken(null); // natives Bearer-Token verwerfen (No-op im Browser)
         setState({ ...EMPTY_STATE, authChecked: true });
       },
       refreshClub: refresh,
