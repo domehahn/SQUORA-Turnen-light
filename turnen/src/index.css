@@ -24,6 +24,24 @@
   --color-emerald-950: #172554;
 }
 
+/* Kein horizontales Scrollen: einzelne zu breite Elemente (z.B. die
+   überladene Header-Zeile auf schmalen Screens / in der nativen App) sollen
+   nicht die ganze Seite seitlich verschieben. `clip` statt `hidden`, damit
+   `position: sticky` weiterhin funktioniert. */
+html,
+body {
+  overflow-x: clip;
+}
+
+/* Safe-Area der nativen App im Querformat (abgerundete Ecken / Notch an der
+   Seite) - viewport-fit=cover ist in index.html gesetzt. Der obere Inset wird
+   von Capacitor (ios.contentInset) übernommen. Auf Geräten ohne Notch sind die
+   env()-Werte 0, also ein No-op fürs Web. */
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
 body {
   background-image:
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 28%),
