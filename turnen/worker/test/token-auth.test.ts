@@ -63,6 +63,23 @@ describe("Bearer-Token-Auth für die native App", () => {
     expect(after.status).toBe(401);
   });
 
+  it("Login von der nativen Origin (capacitor://localhost, kein Bearer, Sec-Fetch-Site: cross-site) wird nicht als CSRF geblockt", async () => {
+    const club = await seedClub("Token Club E");
+    await seedUser({ email: "token-e@test.local", password: "password-123", clubId: club.id });
+    const res = await SELF.fetch(`${BASE}/api/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client": "turnen-app",
+        Origin: "capacitor://localhost",
+        "Sec-Fetch-Site": "cross-site",
+      },
+      body: JSON.stringify({ email: "token-e@test.local", password: "password-123" }),
+    });
+    expect(res.status).toBe(200);
+    expect(typeof (await res.json<{ token?: string }>()).token).toBe("string");
+  });
+
   it("Web-Login (ohne X-Client) verhält sich unverändert - kein Token im Body", async () => {
     const club = await seedClub("Token Club D");
     await seedUser({ email: "token-d@test.local", password: "password-123", clubId: club.id });

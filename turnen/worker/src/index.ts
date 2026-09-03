@@ -201,10 +201,17 @@ app.use("/api/*", async (c, next) => {
 const CSRF_UNSAFE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
 
 function isSameOriginRequest(c: { req: { url: string; header: (name: string) => string | undefined } }, env: Env): boolean {
+  const origin = c.req.header("Origin");
+  // Native Capacitor-App: feste, nicht-Browser Origins (schon von CORS
+  // validiert). Ein cross-site-Request von dort ist kein Browser-CSRF-Vektor -
+  // capacitor://localhost hat keine ambient Cookies für squora.de, und der
+  // Login (noch ohne Bearer-Token) muss trotzdem durchkommen. Vor der
+  // Sec-Fetch-Site-Prüfung, da die WKWebView dort "cross-site" meldet.
+  if (origin && NATIVE_APP_ORIGINS.has(origin)) return true;
+
   const secFetchSite = c.req.header("Sec-Fetch-Site");
   if (secFetchSite) return secFetchSite === "same-origin" || secFetchSite === "none";
 
-  const origin = c.req.header("Origin");
   if (!origin) return false; // weder Origin noch Sec-Fetch-Site gesetzt: kein bekannter legitimer Aufrufer (s.o.)
 
   if (origin === new URL(env.FRONTEND_URL).origin) return true;
