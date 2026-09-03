@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./useAuth";
-import { api } from "../lib/api";
+import { api, IS_NATIVE } from "../lib/api";
 
 const LOCK_AFTER_MS = 5 * 60 * 1000; // 5:00 (300s)
 const WARNING_AFTER_MS = 4 * 60 * 1000; // 4:00 (240s)
@@ -25,7 +25,10 @@ export function IdleTimerProvider({ children }: { children: ReactNode }) {
   const lastServerPingRef = useRef(0);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    // Native App: kein client-seitiger 5-Minuten-Idle-Lock. Die App-Sitzung hat
+    // serverseitig einen 30-Tage-Idle-Timeout (Bearer-Token im Secure-Storage),
+    // ein Auto-Logout beim Weglegen des Handys wäre feindselige UX.
+    if (!isAuthenticated || IS_NATIVE) return;
 
     function resetActivity() {
       const now = Date.now();

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { IS_NATIVE } from "../lib/api";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
@@ -135,25 +136,25 @@ export function AppLayout() {
         <IdleLockOverlay />
         {passwordChangeRequired ? <PasswordChangeRequiredOverlay /> : mfaSetupRequired && <MfaEnforcementOverlay />}
         <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-            <div className="flex items-center gap-2">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4">
+            <div className="flex min-w-0 items-center gap-2">
               <button
                 type="button"
                 onClick={() => setNavOpen((prev) => !prev)}
                 aria-label="Navigation öffnen"
-                className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:hidden"
+                className="shrink-0 rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:hidden"
               >
                 <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                   <path fillRule="evenodd" d="M2 5h16v1.5H2V5Zm0 4.25h16v1.5H2v-1.5ZM2 13.5h16V15H2v-1.5Z" clipRule="evenodd" />
                 </svg>
               </button>
-              <SquoraBrand />
+              <SquoraBrand className="min-w-0" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               {isAdmin && <AdminClubSwitcher />}
               <GlobalSearch />
               <NotificationBell />
-              <SessionTimerBadge />
+              {!IS_NATIVE && <SessionTimerBadge />}
               <ThemeToggle />
               <UserMenu />
             </div>
