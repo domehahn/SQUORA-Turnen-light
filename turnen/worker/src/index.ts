@@ -2670,7 +2670,12 @@ app.get("/api/groups", requireAuth, async (c) => {
 // Die eigentliche Ausführung nutzt anschließend bewusst den etablierten
 // /children/:id/move-Flow mit Kapazitätsprüfung, Audit und Freigaben.
 app.get("/api/season-transition/proposals", requireAuth, async (c) => {
-  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+  // Lesen: Jugendleitung UND Plattform-Admin (nur lesend). Das Anstoßen der
+  // Wechsel läuft über POST /api/children/:id/move und ist für den Admin
+  // ohnehin über den Read-only-Block gesperrt.
+  if (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin")) {
+    return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+  }
   const clubId = c.get("clubId");
   if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
   const referenceDate = validDate(c.req.query("referenceDate"));
