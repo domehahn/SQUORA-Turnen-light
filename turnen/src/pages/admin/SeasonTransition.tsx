@@ -20,7 +20,11 @@ function defaultReferenceDate(): string {
 }
 
 export default function SeasonTransition() {
-  const { clubRole } = useAuth();
+  const { clubRole, isAdmin } = useAuth();
+  const isJugendleiter = clubRole === "jugendleiter";
+  // Plattform-Admin darf mitlesen (wie überall), aber nichts anstoßen -
+  // serverseitig ohnehin über den Read-only-Admin-Block abgesichert.
+  const readOnly = !isJugendleiter;
   const [referenceDate, setReferenceDate] = useState(defaultReferenceDate());
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [targets, setTargets] = useState<Record<string, string>>({});
@@ -74,7 +78,8 @@ export default function SeasonTransition() {
     }
   }
 
-  if (clubRole !== "jugendleiter") return <p className="text-sm text-red-600">Diese Seite ist nur für die Jugendleitung sichtbar.</p>;
+  if (!isJugendleiter && !isAdmin)
+    return <p className="text-sm text-red-600">Diese Seite ist nur für die Jugendleitung sichtbar.</p>;
 
   return (
     <div className="space-y-5">
@@ -85,8 +90,14 @@ export default function SeasonTransition() {
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <label className="text-sm text-slate-700 dark:text-slate-300">Stichtag<br /><input type="date" value={referenceDate} onChange={(e) => setReferenceDate(e.target.value)} className="mt-1 rounded-md border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950" /></label>
         <button type="button" onClick={load} disabled={loading} className="rounded-md border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">Neu berechnen</button>
-        <button type="button" onClick={applySelected} disabled={busy || loading} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Ausgewählte Wechsel starten</button>
+        <button type="button" onClick={applySelected} disabled={busy || loading || readOnly} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Ausgewählte Wechsel starten</button>
       </div>
+      {readOnly && (
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Nur-Lese-Ansicht als Plattform-Admin – die Vorschläge sind sichtbar, das Anstoßen der Wechsel bleibt der
+          Jugendleitung vorbehalten.
+        </p>
+      )}
       {message && <p className="text-sm text-slate-700 dark:text-slate-300">{message}</p>}
       {loading ? <p className="text-sm text-slate-500">Berechnung läuft…</p> : proposals.length === 0 ? <p className="text-sm text-emerald-700">Am Stichtag passen alle zugeordneten Kinder in ihre Altersgruppen.</p> : (
         <div className="space-y-2">

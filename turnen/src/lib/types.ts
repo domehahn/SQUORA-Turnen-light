@@ -38,6 +38,13 @@ export interface Child {
   createdAt: string;
 }
 
+// Zeile der vereinsweiten Kinder-Gesamtübersicht (/api/children/overview) -
+// wie Child, zusätzlich der Gruppenname (serverseitig gejoint), damit die
+// Übersicht ohne separaten /api/groups-Abruf auskommt.
+export interface ChildOverviewRow extends Child {
+  groupName: string | null;
+}
+
 export interface AttendanceEntry {
   childId: string;
   present: boolean;

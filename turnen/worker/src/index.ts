@@ -2670,7 +2670,12 @@ app.get("/api/groups", requireAuth, async (c) => {
 // Die eigentliche Ausführung nutzt anschließend bewusst den etablierten
 // /children/:id/move-Flow mit Kapazitätsprüfung, Audit und Freigaben.
 app.get("/api/season-transition/proposals", requireAuth, async (c) => {
-  if (c.get("clubRole") !== "jugendleiter") return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+  // Lesen: Jugendleitung UND Plattform-Admin (nur lesend). Das Anstoßen der
+  // Wechsel läuft über POST /api/children/:id/move und ist für den Admin
+  // ohnehin über den Read-only-Block gesperrt.
+  if (c.get("clubRole") !== "jugendleiter" && !c.get("isAdmin")) {
+    return c.json({ error: "Nur die Jugendleitung kann diese Aktion ausführen" }, 403);
+  }
   const clubId = c.get("clubId");
   if (!clubId) return c.json({ error: "Kein Verein ausgewählt" }, 400);
   const referenceDate = validDate(c.req.query("referenceDate"));
@@ -2979,6 +2984,21 @@ app.get("/api/children", requireAuth, async (c) => {
       return { ...full, emergencyContactName: null, emergencyContactPhone: null };
     })
   );
+  return c.json(decrypted);
+});
+
+// Vereinsweite Gesamtübersicht aller Kinder als flache, filterbare Liste -
+// ausschließlich für Jugendleitung, Kassenwart:in und Plattform-Admin. Rein
+// lesend (canEdit stets false); Notfallkontakte sind für diese drei Rollen
+// ohnehin sichtbar (fullView), daher hier unmaskiert.
+app.get("/api/children/overview", requireAuth, async (c) => {
+  const clubId = c.get("clubId");
+  if (!clubId || (c.get("clubRole") !== "jugendleiter" && !c.get("isKassenwart") && !c.get("isAdmin"))) {
+    return c.json({ error: "Keine Berechtigung" }, 403);
+  }
+  const includeArchived = c.req.query("includeArchived") === "true";
+  const children = await db.listChildrenForClub(c.env.DB, clubId, includeArchived);
+  const decrypted = await Promise.all(children.map((child) => decryptChild(child, c.env.ENCRYPTION_KEY)));
   return c.json(decrypted);
 });
 

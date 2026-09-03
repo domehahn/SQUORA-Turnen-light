@@ -60,6 +60,7 @@ const NAV_GROUPS: {
   {
     label: "Verein",
     items: [
+      { to: "/kinderuebersicht", label: "Kinderübersicht", kassenwartOrLeader: true },
       { to: "/stundennachweise", label: "Stundennachweise", kassenwartOrLeader: true },
       { to: "/mitgliederstatistik", label: "Statistik" },
       { to: "/export", label: "Export" },
