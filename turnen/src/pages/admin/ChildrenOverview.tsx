@@ -319,7 +319,7 @@ export default function ChildrenOverview() {
                 <th className="px-3 py-2 font-medium">Notfallkontakt</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="text-slate-700 dark:text-slate-300">
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-6 text-center text-slate-400 dark:text-slate-500">

@@ -281,6 +281,9 @@ export interface SubstituteRequest {
   claimedBy: string | null;
   claimedByName: string | null;
   createdAt: string;
+  // Gesetzt, sobald der Termin verstrichen ist – Anfrage bleibt sichtbar,
+  // ist aber nicht mehr übernehmbar.
+  archivedAt: string | null;
 }
 
 export interface HoursSummaryYear {

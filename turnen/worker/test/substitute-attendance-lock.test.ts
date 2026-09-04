@@ -7,8 +7,14 @@ beforeAll(async () => {
 });
 
 const BASE = "https://example.test";
-const DATE = "2026-03-04"; // Mittwoch
-const WEEKDAY = new Date(`${DATE}T00:00:00Z`).getUTCDay();
+// Termin bewusst in der Zukunft: verstrichene Vertretungs-Anfragen sind
+// nicht mehr übernehmbar (Archiv-Logik), deshalb kein fixes Datum.
+const FUTURE = new Date();
+FUTURE.setUTCDate(FUTURE.getUTCDate() + 14);
+const DATE = FUTURE.toISOString().slice(0, 10);
+const WEEKDAY = FUTURE.getUTCDay();
+const YEAR = FUTURE.getUTCFullYear();
+const QUARTER = Math.floor(FUTURE.getUTCMonth() / 3) + 1;
 
 describe("Vertretung sperrt die Anwesenheit für die ursprüngliche Leitung", () => {
   it("übergibt Erfassung + Stunde an die Vertretung, sperrt die Original-Leitung", async () => {
@@ -87,13 +93,13 @@ describe("Vertretung sperrt die Anwesenheit für die ursprüngliche Leitung", ()
     expect(sprPut.status).toBe(200);
 
     // Stundennachweis: die Stunde zählt für die Vertretung, nicht für die Original-Leitung
-    const sprReport = await (await SELF.fetch(`${BASE}/api/hours-report?year=2026&quarter=1`, {
+    const sprReport = await (await SELF.fetch(`${BASE}/api/hours-report?year=${YEAR}&quarter=${QUARTER}`, {
       headers: { Cookie: sprC, "Sec-Fetch-Site": "same-origin" },
     })).json<{ months: { sessions: { date: string }[] }[] }>();
     const sprDates = sprReport.months.flatMap((m) => m.sessions.map((s) => s.date));
     expect(sprDates).toContain(DATE);
 
-    const ownerReport = await (await SELF.fetch(`${BASE}/api/hours-report?year=2026&quarter=1`, {
+    const ownerReport = await (await SELF.fetch(`${BASE}/api/hours-report?year=${YEAR}&quarter=${QUARTER}`, {
       headers: { Cookie: ownerC, "Sec-Fetch-Site": "same-origin" },
     })).json<{ months: { sessions: { date: string }[] }[] }>();
     const ownerDates = ownerReport.months.flatMap((m) => m.sessions.map((s) => s.date));

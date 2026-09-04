@@ -3686,6 +3686,10 @@ app.post("/api/substitute-requests/:id/claim", requireAuth, async (c) => {
   const request = await db.getSubstituteRequestRowById(c.env.DB, id);
   if (!request) return c.json({ error: "Anfrage nicht gefunden" }, 404);
   if (request.status !== "open") return c.json({ error: "Anfrage ist nicht mehr offen" }, 409);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  if (request.archived_at || request.session_date < todayIso) {
+    return c.json({ error: "Der Termin liegt in der Vergangenheit und kann nicht mehr übernommen werden." }, 409);
+  }
 
   const group = await db.getGroupRowById(c.env.DB, request.group_id);
   if (!group || !group.club_id || group.club_id !== c.get("clubId")) {
@@ -5556,12 +5560,38 @@ app.post("/api/attendance/:groupId/:date/cancel", requireAuth, async (c) => {
   if (reason === undefined) return c.json({ error: "Grund ist zu lang" }, 400);
 
   await db.setSessionCancelled(c.env.DB, groupId, date, true, reason);
+
+  // Abgesagter Termin: alle Vertretungs-Anfragen dazu verschwinden komplett
+  // (kein Archiv). Eine bereits eingesprungene Vertretung bzw. die
+  // ursprünglich suchende Person wird darüber informiert.
+  const removedRequests = await db.deleteSubstituteRequestsForSession(c.env.DB, groupId, date);
+  const notifyIds = new Set<string>();
+  for (const req of removedRequests) {
+    if (req.claimed_by && req.claimed_by !== c.get("userId")) notifyIds.add(req.claimed_by);
+    if (req.requested_by && req.requested_by !== c.get("userId")) notifyIds.add(req.requested_by);
+  }
+  for (const uid of notifyIds) {
+    const target = await db.getUserById(c.env.DB, uid);
+    if (!target) continue;
+    await notifyUser(c.env, {
+      userId: target.id,
+      userEmail: target.email,
+      userName: target.name,
+      type: "substitute_request",
+      title: `Termin abgesagt: „${group.name}“`,
+      body: `Der Termin am ${date} in „${group.name}“ wurde abgesagt${reason ? ` (${reason})` : ""}. Eine damit verbundene Vertretungs-Anfrage entfällt.`,
+      link: "/vertretungen",
+    });
+  }
+
   await db.logAudit(c.env.DB, {
     clubId: c.get("clubId"),
     actorId: c.get("userId"),
     actorName: c.get("name"),
     action: "attendance.cancelled",
-    targetLabel: `${group.name} am ${date}${reason ? ` (${reason})` : ""}`,
+    targetLabel: `${group.name} am ${date}${reason ? ` (${reason})` : ""}${
+      removedRequests.length > 0 ? ` · ${removedRequests.length} Vertretungs-Anfrage(n) gelöscht` : ""
+    }`,
     groupId: group.id,
   });
   return c.json({ ok: true });
@@ -5710,6 +5740,16 @@ async function cleanupNotifications(env: Env): Promise<void> {
   await cleanupExpiredNotifications(env.DB, retentionDays);
 }
 
+// Täglicher Aufräumlauf für die Vertretungsbörse:
+//  - Anfragen zu inzwischen abgesagten Terminen endgültig löschen
+//    (Sicherheitsnetz zur direkten Löschung beim Absagen).
+//  - verstrichene, noch offene Anfragen ins Archiv legen (nicht mehr
+//    übernehmbar, bleiben aber sichtbar).
+async function tidySubstituteRequests(env: Env): Promise<void> {
+  await db.deleteSubstituteRequestsForCancelledSessions(env.DB);
+  await db.archivePastOpenSubstituteRequests(env.DB);
+}
+
 async function runTrackedCron(env: Env, jobName: string, job: () => Promise<void>): Promise<void> {
   await startCron(env.DB, jobName);
   try {
@@ -5725,6 +5765,7 @@ export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runTrackedCron(env, "stale-request-reminders", () => remindStaleRequests(env)));
+    ctx.waitUntil(runTrackedCron(env, "substitute-request-tidy", () => tidySubstituteRequests(env)));
     ctx.waitUntil(runTrackedCron(env, "archived-child-retention", () => deleteStaleArchivedChildren(env)));
     ctx.waitUntil(runTrackedCron(env, "security-log-retention", () => cleanupSecurityLogs(env)));
     ctx.waitUntil(runTrackedCron(env, "notification-retention", () => cleanupNotifications(env)));

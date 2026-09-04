@@ -113,8 +113,11 @@ export default function Substitutes() {
     }
   }
 
-  const openRequestsFromOthers = openRequests.filter((r) => r.requestedBy !== userId);
-  const pendingMine = myRequests.filter((r) => r.status === "open" && r.requestedBy === userId);
+  const openRequestsFromOthers = openRequests.filter((r) => r.requestedBy !== userId && !r.archivedAt);
+  const pendingMine = myRequests.filter((r) => r.status === "open" && r.requestedBy === userId && !r.archivedAt);
+  // Verstrichene, nie übernommene Anfragen - nur noch zur Nachvollziehbarkeit,
+  // nicht mehr übernehmbar.
+  const expiredMine = myRequests.filter((r) => r.requestedBy === userId && r.archivedAt);
   // Übernommen von mir (ich bin die Vertretung, habe also aktuell die
   // Schreibrechte für den Termin) vs. von mir vergeben (jemand anderes
   // vertritt mich gerade) - beide können den Termin per "return" wieder an
@@ -225,6 +228,26 @@ export default function Substitutes() {
             </div>
           )}
 
+          {expiredMine.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Abgelaufene Anfragen ({expiredMine.length})
+              </h3>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                Der Termin ist verstrichen, ohne dass jemand übernommen hat. Diese Anfragen sind nur noch zur
+                Nachvollziehbarkeit hier und können nicht mehr übernommen werden.
+              </p>
+              <ul className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                {expiredMine.map((r) => (
+                  <li key={r.id}>
+                    {formatDate(r.sessionDate)} · {r.groupName} · abgelaufen
+                    {r.note ? ` · „${r.note}“` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {claimedByMe.length > 0 && (
             <div>
               <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -325,12 +348,13 @@ export default function Substitutes() {
                     >
                       <span className="text-slate-700 dark:text-slate-300">
                         {formatDate(r.sessionDate)} · {r.groupName} · gesucht von {r.requestedByName ?? "unbekannt"}
-                        {r.status === "open" && " · offen"}
+                        {r.status === "open" && !r.archivedAt && " · offen"}
+                        {r.status === "open" && r.archivedAt && " · abgelaufen"}
                         {r.status === "claimed" && ` · übernommen von ${r.claimedByName ?? "jemandem"}`}
                         {r.status === "cancelled" && " · zurückgezogen"}
                         {r.status === "returned" && " · zurückgegeben"}
                       </span>
-                      {r.status === "open" && (
+                      {r.status === "open" && !r.archivedAt && (
                         <button
                           onClick={() => handleCancel(r.id)}
                           disabled={busy}
