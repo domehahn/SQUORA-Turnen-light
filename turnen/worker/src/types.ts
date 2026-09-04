@@ -518,6 +518,9 @@ export interface SubstituteRequestRow {
   claimed_by: string | null;
   claimed_at: string | null;
   created_at: string;
+  // Gesetzt, sobald der Termin verstrichen ist: Anfrage bleibt zur
+  // Nachvollziehbarkeit erhalten, ist aber nicht mehr übernehmbar.
+  archived_at: string | null;
 }
 
 export interface SubstituteRequestDetail {
@@ -532,6 +535,7 @@ export interface SubstituteRequestDetail {
   claimedBy: string | null;
   claimedByName: string | null;
   createdAt: string;
+  archivedAt: string | null;
 }
 
 // --- Vereinswarteliste / Platzvorschläge ----------------------------------------

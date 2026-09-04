@@ -2606,7 +2606,7 @@ export async function listSubstituteRequestsForGroupRange(
       `SELECT sr.session_date, sr.status, sr.claimed_by, u.name AS claimed_by_name, u.email AS claimed_by_email
        FROM substitute_requests sr
        LEFT JOIN users u ON u.id = sr.claimed_by
-       WHERE sr.group_id = ? AND sr.status IN ('open', 'claimed') AND sr.session_date BETWEEN ? AND ?`
+       WHERE sr.group_id = ? AND sr.status IN ('open', 'claimed') AND sr.archived_at IS NULL AND sr.session_date BETWEEN ? AND ?`
     )
     .bind(groupId, from, to)
     .all<{
@@ -2672,13 +2672,67 @@ export async function getSubstituteRequestRowById(db: D1Database, id: string): P
 }
 
 export async function claimSubstituteRequest(db: D1Database, id: string, claimedBy: string): Promise<boolean> {
+  // Nicht mehr übernehmbar, sobald der Termin verstrichen (session_date in
+  // der Vergangenheit) oder die Anfrage bereits archiviert ist - unabhängig
+  // davon, ob der tägliche Cron-Lauf archived_at schon gesetzt hat.
   const result = await db
     .prepare(
-      "UPDATE substitute_requests SET status = 'claimed', claimed_by = ?, claimed_at = datetime('now') WHERE id = ? AND status = 'open'"
+      `UPDATE substitute_requests SET status = 'claimed', claimed_by = ?, claimed_at = datetime('now')
+       WHERE id = ? AND status = 'open' AND archived_at IS NULL AND session_date >= date('now')`
     )
     .bind(claimedBy, id)
     .run();
   return (result.meta.changes ?? 0) > 0;
+}
+
+// Verstrichene, noch offene Anfragen ins Archiv legen (täglicher Cron). Sie
+// bleiben in der DB, sind aber über die Börse nicht mehr sichtbar/übernehmbar.
+export async function archivePastOpenSubstituteRequests(db: D1Database): Promise<number> {
+  const result = await db
+    .prepare(
+      `UPDATE substitute_requests SET archived_at = datetime('now')
+       WHERE status = 'open' AND archived_at IS NULL AND session_date < date('now')`
+    )
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+// Alle Vertretungs-Anfragen eines konkreten Termins endgültig löschen - wird
+// aufgerufen, wenn der Trainer den Termin absagt ("Turnen fällt aus"). Der
+// abgesagte Termin verschwindet dann ganz, auch aus dem Archiv. Gibt die
+// gelöschten Zeilen zurück, damit der Aufrufer eine bereits eingesprungene
+// Vertretung benachrichtigen kann.
+export async function deleteSubstituteRequestsForSession(
+  db: D1Database,
+  groupId: string,
+  sessionDate: string
+): Promise<SubstituteRequestRow[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM substitute_requests WHERE group_id = ? AND session_date = ?")
+    .bind(groupId, sessionDate)
+    .all<SubstituteRequestRow>();
+  if (results.length > 0) {
+    await db
+      .prepare("DELETE FROM substitute_requests WHERE group_id = ? AND session_date = ?")
+      .bind(groupId, sessionDate)
+      .run();
+  }
+  return results;
+}
+
+// Aufräum-Sicherheitsnetz für den Cron: löscht Vertretungs-Anfragen zu
+// Terminen, die inzwischen als abgesagt markiert sind (z.B. Absage vor
+// Einführung dieser Logik oder ein verpasster Löschlauf).
+export async function deleteSubstituteRequestsForCancelledSessions(db: D1Database): Promise<number> {
+  const result = await db
+    .prepare(
+      `DELETE FROM substitute_requests
+       WHERE (group_id, session_date) IN (
+         SELECT group_id, session_date FROM attendance_sessions WHERE cancelled = 1
+       )`
+    )
+    .run();
+  return result.meta.changes ?? 0;
 }
 
 export async function setSubstituteRequestStatus(
@@ -2710,6 +2764,7 @@ function rowToSubstituteRequestDetail(row: SubstituteRequestJoinRow): Substitute
     claimedBy: row.claimed_by,
     claimedByName: row.claimed_by_name ?? row.claimed_by_email ?? null,
     createdAt: row.created_at,
+    archivedAt: row.archived_at,
   };
 }
 
@@ -2725,9 +2780,13 @@ const SUBSTITUTE_REQUEST_DETAIL_SELECT = `
 `;
 
 // Offene Anfragen für Gruppen im übergebenen Verein - der "Marktplatz".
+// Verstrichene Termine fallen sofort raus (nicht erst, wenn der tägliche
+// Cron archived_at setzt).
 export async function listOpenSubstituteRequestsForClub(db: D1Database, clubId: string): Promise<SubstituteRequestDetail[]> {
   const { results } = await db
-    .prepare(`${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status = 'open' AND g.club_id = ?1 ORDER BY sr.session_date ASC`)
+    .prepare(
+      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status = 'open' AND sr.archived_at IS NULL AND sr.session_date >= date('now') AND g.club_id = ?1 ORDER BY sr.session_date ASC`
+    )
     .bind(clubId)
     .all<SubstituteRequestJoinRow>();
   return results.map(rowToSubstituteRequestDetail);
@@ -2745,7 +2804,7 @@ export async function listUpcomingSubstituteRequestsForClub(
 ): Promise<SubstituteRequestDetail[]> {
   const { results } = await db
     .prepare(
-      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status IN ('open', 'claimed') AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
+      `${SUBSTITUTE_REQUEST_DETAIL_SELECT} WHERE sr.status IN ('open', 'claimed') AND sr.archived_at IS NULL AND sr.session_date >= ?2 AND g.club_id = ?1 ORDER BY sr.session_date ASC`
     )
     .bind(clubId, fromDate)
     .all<SubstituteRequestJoinRow>();
